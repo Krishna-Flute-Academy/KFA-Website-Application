@@ -5,7 +5,7 @@ import {
     ClipboardList, X, UsersRound, User, Paperclip, Upload, 
     AlertTriangle, Loader2, Send, StickyNote, BookOpen, 
     NotebookPen, Plus, GripVertical, Edit3, Trash2, Download, Filter,
-    Calendar, ChevronUp, ChevronDown, Search
+    Calendar, ChevronUp, ChevronDown, Search, Mic
 } from 'lucide-react';
 import AutoLinkText from '../common/AutoLinkText';
 import { formatRecipientSummary } from '../../lib/assignment-service';
@@ -90,6 +90,7 @@ interface AssignmentsTabProps {
     handleDeleteAssignment: (id: string) => Promise<void>;
     handleOpenReviewModal: (studentSubmission: any, assignment: any) => void;
     handleEditAssignment?: (assignment: any) => void;
+    onOpenCreateAssignment?: () => void;
 }
 
 const NOTE_COLORS = {
@@ -169,7 +170,8 @@ export default function AssignmentsTab({
     deletingAssignmentId,
     handleDeleteAssignment,
     handleOpenReviewModal,
-    handleEditAssignment
+    handleEditAssignment,
+    onOpenCreateAssignment
 }: AssignmentsTabProps) {
     const [classroomTaskSearch, setClassroomTaskSearch] = React.useState('');
     const [selectedIndividualStudentId, setSelectedIndividualStudentId] = React.useState<string>('all');
@@ -465,7 +467,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         </div>
                         <button
                             id="new-assignment-btn"
-                            onClick={() => setShowAssignmentModal(true)}
+                            onClick={() => onOpenCreateAssignment ? onOpenCreateAssignment() : setShowAssignmentModal(true)}
                             className="admin-btn admin-btn-primary admin-btn-sm self-start sm:self-auto"
                             title="Create New Assignment"
                         >
@@ -535,7 +537,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         </div>
                     ) : visibleAssignments.length === 0 ? (
                         <button
-                            onClick={() => setShowAssignmentModal(true)}
+                            onClick={() => onOpenCreateAssignment ? onOpenCreateAssignment() : setShowAssignmentModal(true)}
                             className="w-full flex flex-col items-center justify-center gap-3 py-16 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-slate-350 transition-all group cursor-pointer text-center"
                         >
                             <ClipboardList className="w-10 h-10 text-slate-300 dark:text-slate-600 group-hover:scale-110 transition-transform" />
@@ -632,7 +634,53 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                         <AutoLinkText text={asg.description} />
                                                     </p>
                                                 )}
-                                                {asg.inventory_ref_id ? (
+                                                {/* Attachments rendering (Multi-materials & Legacy fallback) */}
+                                                {asg.attachments && asg.attachments.length > 0 ? (
+                                                    <div className="mt-2 space-y-1.5">
+                                                        <div className="flex flex-wrap items-center gap-1.5">
+                                                            {asg.attachments.map((att: any, idx: number) => {
+                                                                if (att.attachment_type === 'inventory') {
+                                                                    return (
+                                                                        <div 
+                                                                            key={att.id || idx} 
+                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 text-[10px] font-semibold text-amber-800 dark:text-amber-300 select-none"
+                                                                        >
+                                                                            <BookOpen className="w-3 h-3 text-[#ecb613] shrink-0" />
+                                                                            <span className="truncate max-w-[240px]">Topic: {att.title}</span>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                if (att.attachment_type === 'audio' || (att.file_url && (att.file_url.includes('.webm') || att.file_url.includes('.mp3') || att.file_url.includes('.wav') || att.file_url.includes('.m4a') || att.file_url.includes('.ogg') || (att.file_name && att.file_name.toLowerCase().includes('voice'))))) {
+                                                                    return (
+                                                                        <div key={att.id || idx} className="w-full space-y-1 my-1" onClick={e => e.stopPropagation()}>
+                                                                            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                                                                                <Mic className="w-3 h-3 text-[#ecb613]" />
+                                                                                <span>{att.title || 'Voice Note'}</span>
+                                                                            </div>
+                                                                            {att.file_url && (
+                                                                                <audio src={att.file_url} controls className="w-full h-8 rounded-lg" />
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <a
+                                                                        key={att.id || idx}
+                                                                        href={att.file_url || '#'}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-700 dark:text-slate-300 hover:border-[#ecb613]/50 hover:text-[#ecb613] transition-colors"
+                                                                    >
+                                                                        <Paperclip className="w-3 h-3 shrink-0 text-slate-400" />
+                                                                        <span className="truncate max-w-[200px]">{att.title || att.file_name || 'Attachment'}</span>
+                                                                        {att.file_size ? <span className="text-[9px] text-slate-400 font-mono">({formatFileSize(att.file_size)})</span> : null}
+                                                                    </a>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ) : asg.inventory_ref_id ? (
                                                     <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-450 select-none">
                                                         <BookOpen className="w-3 h-3 text-[#ecb613]" />
                                                         Topic: <span className="text-[#ecb613]">{asg.inventory_ref_title}</span>

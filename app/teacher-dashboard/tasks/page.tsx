@@ -103,14 +103,20 @@ export default function TaskReviewPage() {
                 `)
                 .in('classroom_id', classroomIds);
 
-            const assignmentsReq = supabaseAuth
+            // Query direct assignments
+            let directAsgQuery = supabaseAuth
                 .from('assignments')
-                .select('id, title, description, created_at, due_date, target_type, classroom_id, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
-                .in('classroom_id', classroomIds);
+                .select('id, title, description, created_at, due_date, target_type, classroom_id, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size');
+
+            if (!isAdmin) {
+                directAsgQuery = directAsgQuery.or(`classroom_id.in.(${classroomIds.join(',')}),teacher_id.eq.${userId}`);
+            } else {
+                directAsgQuery = directAsgQuery.in('classroom_id', classroomIds);
+            }
 
             const [{ data: enrollments, error: enrollError }, res] = await Promise.all([
                 enrollmentsReq,
-                assignmentsReq
+                directAsgQuery
             ]);
 
             if (enrollError) {
@@ -122,17 +128,23 @@ export default function TaskReviewPage() {
             const filteredEnrollments = rawEnrollments
                 .filter((e: any) => (isAdmin || e.users?.teacher_id === userId) && isStudentOperationallyActive(e.users?.status));
             const studentsList = filteredEnrollments;
+            const studentUserIds = Array.from(new Set(studentsList.map((s: any) => s.student_id).filter(Boolean))) as string[];
 
-            let assignmentsList: any[] | null = res.data;
+            let assignmentsList: any[] = res.data || [];
             let assignmentsError = res.error;
 
             if (assignmentsError && (assignmentsError.code === '42703' || assignmentsError.message?.includes('status'))) {
-                const fallback = await supabaseAuth
+                let fallback = supabaseAuth
                     .from('assignments')
-                    .select('id, title, description, created_at, due_date, target_type, classroom_id, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
-                    .in('classroom_id', classroomIds);
-                assignmentsList = fallback.data;
-                assignmentsError = fallback.error;
+                    .select('id, title, description, created_at, due_date, target_type, classroom_id, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size');
+                if (!isAdmin) {
+                    fallback = fallback.or(`classroom_id.in.(${classroomIds.join(',')}),teacher_id.eq.${userId}`);
+                } else {
+                    fallback = fallback.in('classroom_id', classroomIds);
+                }
+                const fallbackRes = await fallback;
+                assignmentsList = fallbackRes.data || [];
+                assignmentsError = fallbackRes.error;
             }
 
             if (assignmentsError) {
@@ -140,7 +152,37 @@ export default function TaskReviewPage() {
                 return;
             }
 
-            const assignmentIds = (assignmentsList || []).map(a => a.id);
+            // Also check for any canonical assignments targeting our students (even if assigned under another primary classroom)
+            if (studentUserIds.length > 0) {
+                const { data: studentAsgRows } = await supabaseAuth
+                    .from('assignment_students')
+                    .select('assignment_id')
+                    .in('student_id', studentUserIds);
+
+                const existingIds = new Set(assignmentsList.map(a => a.id));
+                const extraIds = Array.from(
+                    new Set((studentAsgRows || []).map(r => r.assignment_id).filter(Boolean))
+                ).filter(id => !existingIds.has(id));
+
+                if (extraIds.length > 0) {
+                    const { data: extraAsgs } = await supabaseAuth
+                        .from('assignments')
+                        .select('id, title, description, created_at, due_date, target_type, classroom_id, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
+                        .in('id', extraIds);
+                    if (extraAsgs && extraAsgs.length > 0) {
+                        assignmentsList = [...assignmentsList, ...extraAsgs];
+                    }
+                }
+            }
+
+            // Deduplicate assignments by id
+            const uniqueAsgMap = new Map<string, any>();
+            assignmentsList.forEach(a => {
+                if (a && a.id) uniqueAsgMap.set(a.id, a);
+            });
+            assignmentsList = Array.from(uniqueAsgMap.values());
+
+            const assignmentIds = assignmentsList.map(a => a.id);
             if (assignmentIds.length === 0) {
                 setSubmissions([]);
                 return;
@@ -217,67 +259,67 @@ export default function TaskReviewPage() {
                     return;
                 }
 
-                if (asg.target_type === 'individual') {
-                    const mappingRows = (assignmentStudents || []).filter(row => row.assignment_id === asg.id);
-                    if (mappingRows.length === 0) {
+                const mappingRows = (assignmentStudents || []).filter(row => row.assignment_id === asg.id);
+
+                if (mappingRows.length > 0) {
+                    mappingRows.forEach(row => {
+                        const studentInfo = studentsList.find(s => s.student_id === row.student_id);
+                        const directUser = directUsersMap.get(row.student_id);
+                        const studentClassId = studentInfo?.classroom_id || asg.classroom_id;
+                        const studentClassInfo = (classroomsData || []).find(c => c.id === studentClassId);
+                        const studentClassName = studentClassInfo?.name || className;
+                        const resolvedName = directUser?.name || (studentInfo?.users as any)?.name || 'Unknown Student';
+                        const resolvedPic = directUser?.profile_pic_url || (studentInfo?.users as any)?.profile_pic_url || null;
+                        const resolvedStatus = directUser?.status || (studentInfo?.users as any)?.status || 'active';
+
                         formatted.push({
-                            id: `no-students-${asg.id}`,
-                            student_id: 'no-students',
-                            student_name: 'No Students Assigned',
+                            id: row.id,
+                            student_id: row.student_id,
+                            student_name: resolvedName,
+                            student_profile_pic_url: resolvedPic,
+                            student_status: resolvedStatus,
+                            target_type: asgTargetType,
                             task_id: asg.id,
                             task_title: asg.title || 'Untitled Task',
                             task_description: asg.description || '',
-                            status: 'pending',
-                            submitted_at: asg.created_at || new Date().toISOString(),
-                            classroom_id: asg.classroom_id,
-                            classroom_name: className,
-                            target_type: 'individual',
-                            due_date: asg.due_date || null,
+                            status: row.status || 'pending',
+                            submitted_at: row.submitted_at || asg.created_at || new Date().toISOString(),
+                            video_url: row.video_url || '',
+                            feedback_text: row.feedback_text || '',
+                            score: row.score !== undefined ? row.score : undefined,
+                            proficiency_level: row.proficiency_level || '',
+                            classroom_id: studentClassId,
+                            classroom_name: studentClassName,
                             file_url: asg.file_url || '',
                             file_name: asg.file_name || '',
                             file_size: asg.file_size || null,
+                            due_date: asg.due_date || null,
                             inventory_ref_type: asg.inventory_ref_type || null,
                             inventory_ref_id: asg.inventory_ref_id || null,
                             inventory_ref_title: asg.inventory_ref_title || null
                         });
-                    } else {
-                        mappingRows.forEach(row => {
-                            const studentInfo = studentsList.find(s => s.student_id === row.student_id);
-                            const directUser = directUsersMap.get(row.student_id);
-                            const studentClassInfo = (classroomsData || []).find(c => c.id === studentInfo?.classroom_id);
-                            const studentClassName = studentClassInfo?.name || className;
-                            const resolvedName = directUser?.name || (studentInfo?.users as any)?.name || 'Unknown Student';
-                            const resolvedPic = directUser?.profile_pic_url || (studentInfo?.users as any)?.profile_pic_url || null;
-                            const resolvedStatus = directUser?.status || (studentInfo?.users as any)?.status || 'active';
-
-                            formatted.push({
-                                id: row.id,
-                                student_id: row.student_id,
-                                student_name: resolvedName,
-                                student_profile_pic_url: resolvedPic,
-                                student_status: resolvedStatus,
-                                target_type: 'individual',
-                                task_id: asg.id,
-                                task_title: asg.title || 'Untitled Task',
-                                task_description: asg.description || '',
-                                status: row.status || 'pending',
-                                submitted_at: row.submitted_at || asg.created_at || new Date().toISOString(),
-                                video_url: row.video_url || '',
-                                feedback_text: row.feedback_text || '',
-                                score: row.score !== undefined ? row.score : undefined,
-                                proficiency_level: row.proficiency_level || '',
-                                classroom_id: studentInfo?.classroom_id || asg.classroom_id,
-                                classroom_name: studentClassName,
-                                file_url: asg.file_url || '',
-                                file_name: asg.file_name || '',
-                                file_size: asg.file_size || null,
-                                due_date: asg.due_date || null,
-                                inventory_ref_type: asg.inventory_ref_type || null,
-                                inventory_ref_id: asg.inventory_ref_id || null,
-                                inventory_ref_title: asg.inventory_ref_title || null
-                            });
-                        });
-                    }
+                    });
+                } else if (asg.target_type === 'individual') {
+                    formatted.push({
+                        id: `no-students-${asg.id}`,
+                        student_id: 'no-students',
+                        student_name: 'No Students Assigned',
+                        task_id: asg.id,
+                        task_title: asg.title || 'Untitled Task',
+                        task_description: asg.description || '',
+                        status: 'pending',
+                        submitted_at: asg.created_at || new Date().toISOString(),
+                        classroom_id: asg.classroom_id,
+                        classroom_name: className,
+                        target_type: 'individual',
+                        due_date: asg.due_date || null,
+                        file_url: asg.file_url || '',
+                        file_name: asg.file_name || '',
+                        file_size: asg.file_size || null,
+                        inventory_ref_type: asg.inventory_ref_type || null,
+                        inventory_ref_id: asg.inventory_ref_id || null,
+                        inventory_ref_title: asg.inventory_ref_title || null
+                    });
                 } else {
                     // Everyone in classroom
                     if (associatedClassStudents.length === 0) {
@@ -579,7 +621,16 @@ export default function TaskReviewPage() {
             }
         });
 
-        return Object.values(batchMap);
+        return Object.values(batchMap).map(batch => {
+            const classNames = Array.from(new Set(batch.submissions.map(s => s.classroom_name).filter(Boolean)));
+            if (classNames.length > 1) {
+                return {
+                    ...batch,
+                    classroomName: classNames.length <= 2 ? classNames.join(', ') : `${classNames.length} Classrooms`
+                };
+            }
+            return batch;
+        });
     }, [submissions]);
 
     // Build Template Groups for Templates View
@@ -844,9 +895,37 @@ export default function TaskReviewPage() {
             console.warn('[handleEditAssignment] assignment_attachments fetch:', e);
         }
 
+        // Synthesize attachments if legacy fields exist and no assignment_attachments
+        if (loadedAttachments.length === 0) {
+            if (batch.inventoryRefId) {
+                loadedAttachments.push({
+                    id: `legacy-inv-${batch.assignmentId}`,
+                    title: batch.inventoryRefTitle || 'Curriculum Lesson',
+                    attachment_type: 'inventory',
+                    inventory_ref_id: batch.inventoryRefId,
+                    inventory_ref_title: batch.inventoryRefTitle,
+                    inventory_ref_type: batch.inventoryRefType || 'lesson'
+                });
+            }
+            if (batch.fileUrl) {
+                loadedAttachments.push({
+                    id: `legacy-file-${batch.assignmentId}`,
+                    title: batch.fileName || 'Attached Material',
+                    file_url: batch.fileUrl,
+                    file_name: batch.fileName,
+                    file_size: batch.fileSize,
+                    attachment_type: (batch.fileUrl.includes('.webm') || batch.fileUrl.includes('.mp3') || batch.fileUrl.includes('.wav') || batch.fileUrl.includes('.m4a') || batch.fileUrl.includes('.ogg') || (batch.fileName && batch.fileName.toLowerCase().includes('voice'))) ? 'audio' : 'document'
+                });
+            }
+        }
+
         const validStudentIds = batch.submissions
             .filter(s => s.student_id !== 'draft' && s.student_id !== 'no-students')
             .map(s => s.student_id);
+
+        const batchClassroomIds = Array.from(
+            new Set(batch.submissions.map(s => s.classroom_id).filter(Boolean))
+        ) as string[];
 
         const mappedTargetMode = batch.targetType === 'all' 
             ? 'all_students' 
@@ -863,13 +942,23 @@ export default function TaskReviewPage() {
             inventoryRefTitle: batch.inventoryRefTitle,
             classroomId: batch.classroomId,
             targetMode: mappedTargetMode,
-            selectedClassroomIds: batch.classroomId ? [batch.classroomId] : [],
+            selectedClassroomIds: batchClassroomIds.length > 0 ? batchClassroomIds : (batch.classroomId ? [batch.classroomId] : []),
             classRecipientMode: 'all_in_classes',
             selectedStudentIds: validStudentIds,
             attachments: loadedAttachments
         });
         setIsCreateModalOpen(true);
     };
+
+    // Auto-open edit modal if ?edit=[assignmentId] is in URL
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const params = new URLSearchParams(window.location.search);
+        const editId = params.get('edit');
+        if (editId && assignmentBatches.length > 0 && !isCreateModalOpen && !editingTaskId) {
+            handleEditAssignment(editId);
+        }
+    }, [assignmentBatches, isCreateModalOpen, editingTaskId]);
 
     // Assign again from template
     const handleAssignFromTemplate = (template: TaskTemplateGroup) => {
@@ -1000,12 +1089,43 @@ export default function TaskReviewPage() {
                     }
                 }
             } else {
-                // Insert new assignment
+                // Determine primary classroom for the canonical assignment record:
+                // (assignments.classroom_id is NOT NULL in database schema)
+                let primaryClassId = data.selectedClassroomId || '';
+                if (!primaryClassId && data.selectedClassroomIds && data.selectedClassroomIds.length > 0) {
+                    primaryClassId = data.selectedClassroomIds[0];
+                }
+                if (!primaryClassId && data.selectedStudentIds.length > 0) {
+                    for (const sid of data.selectedStudentIds) {
+                        const st = students.find(s => s.id === sid);
+                        if (st?.classroom_ids && st.classroom_ids.length > 0) {
+                            primaryClassId = st.classroom_ids[0];
+                            break;
+                        }
+                    }
+                }
+                if (!primaryClassId) {
+                    primaryClassId = classrooms[0]?.id || '';
+                }
+
+                // Determine student recipient list across all selected targets
+                let recipientStudentIds: string[] = [];
+                if (data.selectedStudentIds && data.selectedStudentIds.length > 0) {
+                    recipientStudentIds = Array.from(new Set(data.selectedStudentIds));
+                } else if (data.targetMode === 'classes' && data.classRecipientMode === 'all_in_classes') {
+                    const targetCids = new Set(data.selectedClassroomIds?.length ? data.selectedClassroomIds : [primaryClassId]);
+                    recipientStudentIds = students
+                        .filter(s => s.classroom_ids?.some(cid => targetCids.has(cid)))
+                        .map(s => s.id);
+                } else if (data.targetMode === 'all_students') {
+                    recipientStudentIds = students.map(s => s.id);
+                }
+
                 const insertData = {
                     classroom_id: primaryClassId,
-                    teacher_id: teacherId,
-                    title: data.title,
-                    description: data.description,
+                    teacher_id: session.user.id,
+                    title: data.title.trim(),
+                    description: data.description.trim() || null,
                     due_date: data.dueDate || null,
                     target_type: targetType,
                     status: data.isDraft ? 'draft' : 'active',
@@ -1021,7 +1141,7 @@ export default function TaskReviewPage() {
                 const { data: newAsg, error: newAsgError } = await supabaseAuth.from('assignments').insert(insertData).select().single();
                 if (newAsgError) throw newAsgError;
 
-                // Insert assignment_attachments
+                // Insert assignment_attachments once for canonical assignment
                 if (newAsg && data.attachments && data.attachments.length > 0) {
                     const rows = data.attachments.map(att => ({
                         assignment_id: newAsg.id,
@@ -1038,10 +1158,15 @@ export default function TaskReviewPage() {
                     if (attErr) console.warn('[assignment_attachments] insert warning:', attErr.message);
                 }
 
-                if (!data.isDraft && data.selectedStudentIds.length > 0 && newAsg) {
-                    await supabaseAuth.from('assignment_students').insert(
-                        data.selectedStudentIds.map(sid => ({ assignment_id: newAsg.id, student_id: sid, status: 'pending' }))
-                    );
+                // Insert recipient student mappings into assignment_students
+                if (!data.isDraft && recipientStudentIds.length > 0 && newAsg) {
+                    const studentRows = recipientStudentIds.map(sid => ({
+                        assignment_id: newAsg.id,
+                        student_id: sid,
+                        status: 'pending'
+                    }));
+                    const { error: stuErr } = await supabaseAuth.from('assignment_students').insert(studentRows);
+                    if (stuErr) console.warn('[assignment_students] insert warning:', stuErr.message);
                 }
             }
 

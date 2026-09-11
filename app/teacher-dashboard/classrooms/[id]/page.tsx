@@ -25,6 +25,7 @@ import { fetchEffectiveClassroomParticipants } from '../../../../src/lib/classro
 import { isStudentOperationallyActive } from '../../../../src/lib/student-lifecycle';
 
 import dynamic from 'next/dynamic';
+import TaskCreateDialog from '../../../../src/components/teacher-dashboard/tasks/TaskCreateDialog';
 
 // Tab components
 import OverviewTab from '../../../../src/components/classroom/OverviewTab';
@@ -73,6 +74,7 @@ interface ClassroomDetails {
     created_at: string;
     type?: string;
     class_date?: string;
+    teacher_id?: string;
     teacher_name?: string;
     start_time?: string;
     end_time?: string;
@@ -1006,6 +1008,7 @@ export default function ClassroomDashboardPage({
     };
     const [showAssignmentModal, setShowAssignmentModal] = useState(false);
     const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+    const [initialTaskData, setInitialTaskData] = useState<any>(null);
     const [showAssignmentAudioRecorder, setShowAssignmentAudioRecorder] = useState(false);
     const [showNoteAudioRecorder, setShowNoteAudioRecorder] = useState(false);
     const [isSavingAssignment, setIsSavingAssignment] = useState(false);
@@ -1044,6 +1047,26 @@ export default function ClassroomDashboardPage({
         const lowerTitle = assignmentForm.title.toLowerCase();
         return unique.filter(t => t.title?.toLowerCase().includes(lowerTitle));
     }, [previousTasks, assignmentForm.title]);
+
+    const taskDialogClassrooms = useMemo(() => {
+        return classroom ? [{
+            id: classroom.id,
+            name: classroom.name,
+            teacher_id: classroom.teacher_id || teacherProfile?.id
+        }] : [];
+    }, [classroom, teacherProfile?.id]);
+
+    const taskDialogStudents = useMemo(() => {
+        return students.map(s => ({
+            id: s.student_id,
+            name: s.name,
+            profile_pic_url: s.profile_pic_url || undefined,
+            selected: false,
+            classroom_ids: [classroomId],
+            classroom_names: [classroom?.name || 'Classroom'],
+            status: 'active'
+        }));
+    }, [students, classroomId, classroom?.name]);
 
     const handleSelectPreviousTask = (task: any) => {
         setAssignmentForm(prev => ({
@@ -1149,6 +1172,7 @@ export default function ClassroomDashboardPage({
     const closeAssignmentModal = () => {
         setShowAssignmentModal(false);
         setEditingAssignmentId(null);
+        setInitialTaskData(null);
         setAssignmentForm({
             title: '',
             description: '',
@@ -1165,25 +1189,85 @@ export default function ClassroomDashboardPage({
         setShowSuggestions(false);
     };
 
-    const handleEditAssignment = (asg: any) => {
+    const handleOpenCreateAssignment = () => {
+        setEditingAssignmentId(null);
+        setInitialTaskData({
+            title: '',
+            description: '',
+            dueDate: '',
+            classroomId: classroomId,
+            targetMode: 'classes',
+            selectedClassroomIds: [classroomId],
+            classRecipientMode: 'all_in_classes',
+            selectedStudentIds: students.map(s => s.student_id),
+            attachments: []
+        });
+        setShowAssignmentModal(true);
+    };
+
+    const handleEditAssignment = async (asg: any) => {
         setEditingAssignmentId(asg.id);
-        const assignedStudentIds = new Set<string>(
-            (asg.assignment_students || []).map((s: any) => s.student_id)
-        );
+
+        let loadedAttachments: any[] = [];
+        try {
+            const { data: atts } = await supabaseAuth
+                .from('assignment_attachments')
+                .select('*')
+                .eq('assignment_id', asg.id)
+                .order('created_at', { ascending: true });
+            if (atts && atts.length > 0) {
+                loadedAttachments = atts;
+            }
+        } catch (e) {
+            console.warn('[handleEditAssignment] assignment_attachments fetch error:', e);
+        }
+
+        if (loadedAttachments.length === 0) {
+            if (asg.inventory_ref_id) {
+                loadedAttachments.push({
+                    id: `legacy-inv-${asg.id}`,
+                    title: asg.inventory_ref_title || 'Curriculum Lesson',
+                    attachment_type: 'inventory',
+                    inventory_ref_id: asg.inventory_ref_id,
+                    inventory_ref_title: asg.inventory_ref_title,
+                    inventory_ref_type: asg.inventory_ref_type || 'lesson'
+                });
+            }
+            if (asg.file_url) {
+                const isAudio = (asg.file_url.includes('.webm') || asg.file_url.includes('.mp3') || asg.file_url.includes('.wav') || asg.file_url.includes('.m4a') || asg.file_url.includes('.ogg') || (asg.file_name && asg.file_name.toLowerCase().includes('voice')));
+                loadedAttachments.push({
+                    id: `legacy-file-${asg.id}`,
+                    title: asg.file_name || 'Attached Material',
+                    file_url: asg.file_url,
+                    file_name: asg.file_name,
+                    file_size: asg.file_size,
+                    attachment_type: isAudio ? 'audio' : 'document'
+                });
+            }
+        }
+
+        const assignedStudentIds = (asg.assignment_students || []).map((s: any) => s.student_id);
         let formattedDate = '';
         if (asg.due_date) {
             const str = String(asg.due_date).trim();
             formattedDate = str.includes('T') ? str.split('T')[0] : str;
         }
-        setAssignmentForm({
+
+        setInitialTaskData({
             title: asg.title || '',
             description: asg.description || '',
-            due_date: formattedDate,
-            target_type: asg.target_type || (assignedStudentIds.size > 0 && assignedStudentIds.size < students.length ? 'individual' : 'all'),
-            selectedStudentIds: assignedStudentIds.size > 0 ? assignedStudentIds : new Set(students.map(s => s.student_id)),
-            file_url: asg.file_url || null,
-            file_name: asg.file_name || null,
-            file_size: asg.file_size ? Number(asg.file_size) : null,
+            dueDate: formattedDate,
+            fileUrl: asg.file_url || '',
+            fileName: asg.file_name || '',
+            fileSize: asg.file_size ? Number(asg.file_size) : null,
+            inventoryRefId: asg.inventory_ref_id || null,
+            inventoryRefTitle: asg.inventory_ref_title || null,
+            classroomId: asg.classroom_id || classroomId,
+            targetMode: asg.target_type === 'individual' ? 'selected_students' : 'classes',
+            selectedClassroomIds: [asg.classroom_id || classroomId],
+            classRecipientMode: asg.target_type === 'individual' ? 'selective_in_classes' : 'all_in_classes',
+            selectedStudentIds: assignedStudentIds.length > 0 ? assignedStudentIds : students.map(s => s.student_id),
+            attachments: loadedAttachments
         });
         setShowAssignmentModal(true);
     };
@@ -1229,17 +1313,33 @@ export default function ClassroomDashboardPage({
             const noteData = e.dataTransfer.getData('application/json');
             if (noteData) {
                 const note = JSON.parse(noteData) as ClassNote;
-                setAssignmentForm({
+                const noteAttachments: any[] = [];
+                if (note.file_url) {
+                    const isAudio = (note.file_url.includes('.webm') || note.file_url.includes('.mp3') || note.file_url.includes('.wav') || note.file_url.includes('.m4a') || note.file_url.includes('.ogg') || (note.file_name && note.file_name.toLowerCase().includes('voice')));
+                    noteAttachments.push({
+                        id: `temp-${Date.now()}`,
+                        title: note.file_name || 'Note Attachment',
+                        file_url: note.file_url,
+                        file_name: note.file_name,
+                        file_size: note.file_size,
+                        attachment_type: isAudio ? 'audio' : 'document'
+                    });
+                }
+                setEditingAssignmentId(null);
+                setInitialTaskData({
                     title: note.title,
                     description: note.content || '',
-                    due_date: '',
-                    target_type: 'all',
-                    selectedStudentIds: new Set<string>(),
-                    file_url: note.file_url || null,
-                    file_name: note.file_name || null,
-                    file_size: note.file_size || null,
+                    dueDate: '',
+                    classroomId: classroomId,
+                    targetMode: 'classes',
+                    selectedClassroomIds: [classroomId],
+                    classRecipientMode: 'all_in_classes',
+                    selectedStudentIds: students.map(s => s.student_id),
+                    fileUrl: note.file_url || '',
+                    fileName: note.file_name || '',
+                    fileSize: note.file_size || null,
+                    attachments: noteAttachments
                 });
-                setAssignmentFile(null);
                 setShowAssignmentModal(true);
             }
         } catch (err) {
@@ -1924,6 +2024,7 @@ export default function ClassroomDashboardPage({
         setAssignmentsLoading(true);
         setDbSetupError(false);
         try {
+            // 1. Fetch assignments directly tied to this classroom
             const { data: asgData, error } = await supabaseAuth
                 .from('assignments')
                 .select('*')
@@ -1936,19 +2037,73 @@ export default function ClassroomDashboardPage({
                 return;
             }
 
-            const asgList = asgData || [];
+            // 2. Fetch assignments targeted to students in this classroom
+            const studentUserIds = students.map(s => s.student_id).filter(Boolean);
+            let studentTargetedAsgs: any[] = [];
+            if (studentUserIds.length > 0) {
+                const { data: studentAsgRows } = await supabaseAuth
+                    .from('assignment_students')
+                    .select('assignment_id')
+                    .in('student_id', studentUserIds);
+
+                const existingIds = new Set((asgData || []).map(a => a.id));
+                const extraIds = Array.from(
+                    new Set((studentAsgRows || []).map(r => r.assignment_id).filter(Boolean))
+                ).filter(id => !existingIds.has(id));
+
+                if (extraIds.length > 0) {
+                    const { data: extraAsgs } = await supabaseAuth
+                        .from('assignments')
+                        .select('*')
+                        .in('id', extraIds);
+                    studentTargetedAsgs = extraAsgs || [];
+                }
+            }
+
+            // Deduplicate all assignments
+            const asgMap = new Map<string, any>();
+            [...(asgData || []), ...studentTargetedAsgs].forEach(a => {
+                if (a && a.id) asgMap.set(a.id, a);
+            });
+            const asgList = Array.from(asgMap.values()).sort(
+                (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+
             const asgIds = asgList.map((a: Assignment) => a.id);
             let allAsData: any[] = [];
+            let allAttData: any[] = [];
             if (asgIds.length > 0) {
-                const { data: asData } = await supabaseAuth
-                    .from('assignment_students')
-                    .select('*')
-                    .in('assignment_id', asgIds);
-                allAsData = asData || [];
+                const [asRes, attRes] = await Promise.all([
+                    supabaseAuth.from('assignment_students').select('*').in('assignment_id', asgIds),
+                    supabaseAuth.from('assignment_attachments').select('*').in('assignment_id', asgIds).order('created_at', { ascending: true })
+                ]);
+                allAsData = asRes.data || [];
+                allAttData = attRes.data || [];
             }
 
             const enriched = asgList.map((a: Assignment) => {
                 const existingRows = allAsData.filter(row => row.assignment_id === a.id);
+                const matchingAtts = allAttData.filter(att => att.assignment_id === a.id);
+
+                // Synthesize attachments if legacy fields exist and no assignment_attachments row
+                const finalAtts = matchingAtts.length > 0 ? matchingAtts : [
+                    ...(a.inventory_ref_id ? [{
+                        id: `legacy-inv-${a.id}`,
+                        title: a.inventory_ref_title || 'Curriculum Lesson',
+                        attachment_type: 'inventory',
+                        inventory_ref_id: a.inventory_ref_id,
+                        inventory_ref_title: a.inventory_ref_title,
+                        inventory_ref_type: a.inventory_ref_type || 'lesson'
+                    }] : []),
+                    ...(a.file_url ? [{
+                        id: `legacy-file-${a.id}`,
+                        title: a.file_name || 'Attached Material',
+                        file_url: a.file_url,
+                        file_name: a.file_name,
+                        file_size: a.file_size,
+                        attachment_type: (a.file_url.includes('.webm') || a.file_url.includes('.mp3') || a.file_url.includes('.wav') || a.file_url.includes('.m4a') || a.file_url.includes('.ogg') || (a.file_name && a.file_name.toLowerCase().includes('voice'))) ? 'audio' : 'document'
+                    }] : [])
+                ];
 
                 if (a.target_type === 'individual') {
                     const enrichedStudents = existingRows.map((as: AssignmentStudent) => {
@@ -1959,7 +2114,7 @@ export default function ClassroomDashboardPage({
                             student_pic: match?.profile_pic_url || null 
                         };
                     });
-                    return { ...a, assignment_students: enrichedStudents };
+                    return { ...a, attachments: finalAtts, assignment_students: enrichedStudents };
                 } else {
                     const enrichedStudents = students.map(s => {
                         const existing = existingRows.find(row => row.student_id === s.student_id);
@@ -1985,7 +2140,7 @@ export default function ClassroomDashboardPage({
                             };
                         }
                     });
-                    return { ...a, assignment_students: enrichedStudents };
+                    return { ...a, attachments: finalAtts, assignment_students: enrichedStudents };
                 }
             });
 
@@ -2852,11 +3007,179 @@ export default function ClassroomDashboardPage({
         }
     };
 
+    // ── Save Task / Assignment from Unified TaskCreateDialog ─────────────────
+    const handleSaveAssignmentDialog = async (data: {
+        title: string;
+        description: string;
+        dueDate: string;
+        targetMode: 'all_students' | 'classes' | 'selected_students';
+        selectedClassroomIds: string[];
+        classRecipientMode: 'all_in_classes' | 'selective_in_classes';
+        selectedStudentIds: string[];
+        attachments: any[];
+        fileUrl: string;
+        fileName: string;
+        fileSize: number | null;
+        inventoryRefId: string | null;
+        inventoryRefTitle: string | null;
+        selectedClassroomId: string;
+        isDraft: boolean;
+    }) => {
+        if (!teacherProfile?.id) return;
+        setIsSavingAssignment(true);
+        try {
+            const targetType = data.targetMode === 'all_students'
+                ? 'all'
+                : (data.targetMode === 'classes' && data.classRecipientMode === 'all_in_classes' ? 'classroom' : 'individual');
+
+            let studentIdsToAssign: string[] = [];
+            if (data.selectedStudentIds && data.selectedStudentIds.length > 0) {
+                studentIdsToAssign = Array.from(new Set(data.selectedStudentIds));
+            } else {
+                studentIdsToAssign = students.map(s => s.student_id);
+            }
+
+            if (editingAssignmentId) {
+                // Update existing assignment
+                const updateData: any = {
+                    title: data.title.trim(),
+                    description: data.description.trim() || null,
+                    due_date: data.dueDate || null,
+                    target_type: targetType,
+                    status: data.isDraft ? 'draft' : 'active',
+                    file_url: data.fileUrl || null,
+                    file_name: data.fileName || null,
+                    file_size: data.fileSize || null,
+                    inventory_ref_id: data.inventoryRefId || null,
+                    inventory_ref_title: data.inventoryRefTitle || null,
+                    inventory_ref_type: data.inventoryRefId ? 'lesson' : null
+                };
+
+                const { error: updateError } = await supabaseAuth
+                    .from('assignments')
+                    .update(updateData)
+                    .eq('id', editingAssignmentId);
+
+                if (updateError) throw updateError;
+
+                // Sync assignment_attachments
+                if (data.attachments) {
+                    await supabaseAuth.from('assignment_attachments').delete().eq('assignment_id', editingAssignmentId);
+                    if (data.attachments.length > 0) {
+                        const rows = data.attachments.map(att => ({
+                            assignment_id: editingAssignmentId,
+                            attachment_type: att.attachment_type,
+                            title: att.title,
+                            file_url: att.file_url || null,
+                            file_name: att.file_name || null,
+                            file_size: typeof att.file_size === 'number' ? att.file_size : null,
+                            duration_seconds: att.duration_seconds || null,
+                            inventory_ref_type: att.inventory_ref_type || null,
+                            inventory_ref_id: att.inventory_ref_id || null
+                        }));
+                        const { error: attErr } = await supabaseAuth.from('assignment_attachments').insert(rows);
+                        if (attErr) console.warn('[assignment_attachments] insert warning:', attErr.message);
+                    }
+                }
+
+                // Sync student mappings safely
+                if (!data.isDraft) {
+                    const { data: currentMappings } = await supabaseAuth
+                        .from('assignment_students')
+                        .select('id, student_id, status, video_url, feedback_text')
+                        .eq('assignment_id', editingAssignmentId);
+
+                    const existingMap = new Map((currentMappings || []).map(m => [m.student_id, m]));
+                    const existingStudentIds = new Set(existingMap.keys());
+                    const targetStudentIds = new Set(studentIdsToAssign);
+
+                    const toRemove: string[] = [];
+                    for (const studentId of existingStudentIds) {
+                        if (!targetStudentIds.has(studentId)) {
+                            const rec = existingMap.get(studentId);
+                            const hasWork = rec && (rec.status !== 'pending' || rec.video_url || rec.feedback_text);
+                            if (!hasWork) toRemove.push(studentId);
+                        }
+                    }
+
+                    if (toRemove.length > 0) {
+                        await supabaseAuth.from('assignment_students').delete().eq('assignment_id', editingAssignmentId).in('student_id', toRemove);
+                    }
+
+                    const toAdd = studentIdsToAssign.filter(id => !existingStudentIds.has(id));
+                    if (toAdd.length > 0) {
+                        await supabaseAuth.from('assignment_students').insert(
+                            toAdd.map(sid => ({ assignment_id: editingAssignmentId, student_id: sid, status: 'pending' }))
+                        );
+                    }
+                }
+            } else {
+                // Insert new assignment
+                const insertData: any = {
+                    classroom_id: classroomId,
+                    teacher_id: teacherProfile.id,
+                    title: data.title.trim(),
+                    description: data.description.trim() || null,
+                    due_date: data.dueDate || null,
+                    target_type: targetType,
+                    status: data.isDraft ? 'draft' : 'active',
+                    file_url: data.fileUrl || null,
+                    file_name: data.fileName || null,
+                    file_size: data.fileSize || null,
+                    inventory_ref_id: data.inventoryRefId || null,
+                    inventory_ref_title: data.inventoryRefTitle || null,
+                    inventory_ref_type: data.inventoryRefId ? 'lesson' : null,
+                    created_at: new Date().toISOString()
+                };
+
+                const { data: newAsg, error: newAsgError } = await supabaseAuth
+                    .from('assignments')
+                    .insert(insertData)
+                    .select()
+                    .single();
+
+                if (newAsgError) throw newAsgError;
+
+                // Insert assignment_attachments
+                if (newAsg && data.attachments && data.attachments.length > 0) {
+                    const rows = data.attachments.map(att => ({
+                        assignment_id: newAsg.id,
+                        attachment_type: att.attachment_type,
+                        title: att.title,
+                        file_url: att.file_url || null,
+                        file_name: att.file_name || null,
+                        file_size: typeof att.file_size === 'number' ? att.file_size : null,
+                        duration_seconds: att.duration_seconds || null,
+                        inventory_ref_type: att.inventory_ref_type || null,
+                        inventory_ref_id: att.inventory_ref_id || null
+                    }));
+                    const { error: attErr } = await supabaseAuth.from('assignment_attachments').insert(rows);
+                    if (attErr) console.warn('[assignment_attachments] insert warning:', attErr.message);
+                }
+
+                if (!data.isDraft && studentIdsToAssign.length > 0 && newAsg) {
+                    await supabaseAuth.from('assignment_students').insert(
+                        studentIdsToAssign.map(sid => ({ assignment_id: newAsg.id, student_id: sid, status: 'pending' }))
+                    );
+                }
+            }
+
+            closeAssignmentModal();
+            await fetchAssignments();
+        } catch (err: any) {
+            console.error('Error saving assignment:', err);
+            alert(`Failed to save assignment: ${err.message || 'Unknown error'}`);
+        } finally {
+            setIsSavingAssignment(false);
+        }
+    };
+
     // ── Delete Assignment ──────────────────────────────────────────────────────
     const handleDeleteAssignment = async (id: string) => {
         if (!window.confirm('Delete this assignment?')) return;
         setDeletingAssignmentId(id);
         try {
+            await supabaseAuth.from('assignment_attachments').delete().eq('assignment_id', id);
             await supabaseAuth.from('assignment_students').delete().eq('assignment_id', id);
             const { error } = await supabaseAuth.from('assignments').delete().eq('id', id);
             if (error) throw error;
@@ -5414,6 +5737,7 @@ export default function ClassroomDashboardPage({
                             handleDeleteAssignment={handleDeleteAssignment}
                             handleOpenReviewModal={handleOpenReviewModal}
                             handleEditAssignment={handleEditAssignment}
+                            onOpenCreateAssignment={handleOpenCreateAssignment}
                         />
                     )}
 
@@ -6372,270 +6696,23 @@ export default function ClassroomDashboardPage({
                     </div>
                 )}
 
-                {/* 6. ASSIGNMENT COMPOSER MODAL */}
+                {/* 6. UNIFIED TASK / ASSIGNMENT COMPOSER MODAL */}
                 {showAssignmentModal && (
-                    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300">
-                            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/10 flex-shrink-0">
-                                <div className="flex items-center gap-2.5 text-left">
-                                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-505">
-                                        <ClipboardList className="size-5 text-[#ecb613]" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-extrabold text-slate-905 dark:text-white text-base tracking-tight leading-none">{editingAssignmentId ? 'Edit Homework Assignment' : 'Create Homework Assignment'}</h3>
-                                        <p className="text-[9px] text-slate-455 font-bold uppercase tracking-wider mt-1">{editingAssignmentId ? 'Update practice details & assignees' : 'Assign Practice Tasks & Checklists'}</p>
-                                    </div>
-                                </div>
-                                <button 
-                                    onClick={closeAssignmentModal} 
-                                    className="p-1.5 rounded-lg text-slate-455 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
-                                >
-                                    <X className="size-5" />
-                                </button>
-                            </div>
-
-                            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-left custom-scrollbar">
-                                <div className="space-y-1.5 text-left relative">
-                                    <label className="block text-xs font-black text-slate-505 uppercase tracking-wide">Assignment Title *</label>
-                                    <div className="relative flex items-center">
-                                        <input 
-                                            type="text" 
-                                            placeholder="e.g., practice middle C scale, 20 mins daily"
-                                            value={assignmentForm.title}
-                                            onChange={e => handleAssignmentTitleChange(e.target.value)}
-                                            onFocus={() => setShowSuggestions(true)}
-                                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 pr-10 text-sm font-semibold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
-                                        />
-                                        <button
-                                            type="button"
-                                            onMouseDown={(e) => e.preventDefault()}
-                                            onClick={() => setShowSuggestions(prev => !prev)}
-                                            className="absolute right-3 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                                            title="Show previous tasks"
-                                        >
-                                            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showSuggestions ? 'rotate-180' : ''}`} />
-                                        </button>
-                                    </div>
-
-                                    {showSuggestions && filteredPreviousTasks.length > 0 && (
-                                        <div 
-                                            onMouseDown={(e) => e.preventDefault()}
-                                            className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/50"
-                                        >
-                                            <div className="px-4 py-2 text-[10px] font-black text-slate-400 dark:text-slate-505 uppercase tracking-widest bg-slate-50/50 dark:bg-slate-800/10 flex items-center justify-between">
-                                                <span>Previous Tasks (Click to Reuse)</span>
-                                                <span className="text-[9px] font-normal text-slate-400">{filteredPreviousTasks.length} available</span>
-                                            </div>
-                                            {filteredPreviousTasks.map(task => (
-                                                <button
-                                                    key={task.id}
-                                                    type="button"
-                                                    onClick={() => handleSelectPreviousTask(task)}
-                                                    className="w-full text-left px-4 py-3 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 flex items-center justify-between transition-colors group cursor-pointer"
-                                                >
-                                                    <div className="flex-1 min-w-0 pr-4">
-                                                        <div className="font-bold text-sm text-slate-800 dark:text-slate-205 truncate group-hover:text-amber-600 transition-colors">
-                                                            {task.title}
-                                                        </div>
-                                                        {task.description && (
-                                                            <div className="text-xs text-slate-505 dark:text-slate-400 truncate mt-0.5">
-                                                                {task.description}
-                                                            </div>
-                                                        )}
-                                                        {(task.file_name || task.file_url) && (
-                                                            <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1 mt-1">
-                                                                <Paperclip className="w-3 h-3" />
-                                                                <span className="truncate">{task.file_name || 'Attached Material / Voice Note'}</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {task.status === 'draft' && (
-                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-100 dark:bg-slate-800 text-slate-505 tracking-wider shrink-0">Draft</span>
-                                                    )}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="space-y-1.5 text-left">
-                                    <label className="block text-xs font-black text-slate-505 uppercase tracking-wide">Instructions / Description</label>
-                                    <textarea 
-                                        rows={4}
-                                        placeholder="Add instructions, helpful links, performance checklists..."
-                                        value={assignmentForm.description}
-                                        onChange={e => setAssignmentForm(prev => ({ ...prev, description: e.target.value }))}
-                                        className="w-full rounded-xl border border-slate-202 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-sm font-semibold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all resize-none text-slate-800 dark:text-slate-100"
-                                    ></textarea>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1.5 text-left">
-                                        <label className="block text-xs font-black text-slate-505 uppercase tracking-wide">Due Date</label>
-                                        <input 
-                                            type="date"
-                                            value={assignmentForm.due_date}
-                                            onChange={e => setAssignmentForm(prev => ({ ...prev, due_date: e.target.value }))}
-                                            className="w-full rounded-xl border border-slate-202 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-sm font-semibold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-850 dark:text-slate-100"
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5 text-left">
-                                        <label className="block text-xs font-black text-slate-550 uppercase tracking-wide">Assign To</label>
-                                        <select 
-                                            value={assignmentForm.target_type}
-                                            onChange={e => setAssignmentForm(prev => ({ ...prev, target_type: e.target.value as any }))}
-                                            className="w-full rounded-xl border border-slate-202 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-sm font-semibold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-850 dark:text-slate-100 cursor-pointer"
-                                        >
-                                            <option value="all">All Enrolled Students</option>
-                                            <option value="individual">Select Students</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                {assignmentForm.target_type === 'individual' && students.length > 0 && (
-                                    <div className="space-y-2 animate-in fade-in duration-200">
-                                        <span className="block text-xs font-black text-slate-505 uppercase tracking-wide">Select Students *</span>
-                                        <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-202 dark:border-slate-750 max-h-[140px] overflow-y-auto space-y-1.5 custom-scrollbar">
-                                            {students.map(s => {
-                                                const isSelected = assignmentForm.selectedStudentIds.has(s.student_id);
-                                                return (
-                                                    <div 
-                                                        key={s.id}
-                                                        onClick={() => setAssignmentForm(prev => {
-                                                            const ids = new Set(prev.selectedStudentIds);
-                                                            if (isSelected) ids.delete(s.student_id);
-                                                            else ids.add(s.student_id);
-                                                            return { ...prev, selectedStudentIds: ids };
-                                                        })}
-                                                        className="flex items-center justify-between p-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-805 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer select-none"
-                                                    >
-                                                        <div className="flex items-center gap-2.5 min-w-0">
-                                                            <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0">
-                                                                {s.profile_pic_url ? (
-                                                                    <img src={s.profile_pic_url} alt={s.name || 'Student'} className="w-full h-full object-cover" />
-                                                                ) : (
-                                                                    <span className="text-[10px] font-bold text-slate-500">{(s.name || 'S').charAt(0)}</span>
-                                                                )}
-                                                            </div>
-                                                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{s.name}</span>
-                                                        </div>
-                                                        <input 
-                                                            type="checkbox" 
-                                                            checked={isSelected}
-                                                            onChange={() => {}}
-                                                            className="rounded text-amber-500 focus:ring-amber-400 size-3.5 cursor-pointer"
-                                                        />
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="space-y-2 text-left">
-                                    <div className="flex items-center justify-between">
-                                        <label className="block text-xs font-black text-slate-505 uppercase tracking-wide">Attach Learning Material / Voice Note</label>
-                                        <button 
-                                            type="button"
-                                            onClick={() => setShowAssignmentAudioRecorder(prev => !prev)}
-                                            className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
-                                        >
-                                            <Mic className="w-3.5 h-3.5" />
-                                            {showAssignmentAudioRecorder ? 'Close Voice Recorder' : 'Record Voice Note'}
-                                        </button>
-                                    </div>
-
-                                    {showAssignmentAudioRecorder && (
-                                        <AudioRecorderWidget
-                                            onAudioRecorded={(file) => {
-                                                setAssignmentFile(file);
-                                                setShowAssignmentAudioRecorder(false);
-                                            }}
-                                            onCancel={() => setShowAssignmentAudioRecorder(false)}
-                                            label="Record Assignment Voice Note"
-                                        />
-                                    )}
-
-                                    <div 
-                                        onClick={() => assignmentFileRef.current?.click()}
-                                        className="border-2 border-dashed border-slate-205 dark:border-slate-700/80 hover:border-[#ecb613]/50 rounded-2xl p-5 text-center cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-all flex flex-col items-center justify-center gap-1.5 group select-none"
-                                    >
-                                        <input 
-                                            type="file" 
-                                            className="hidden" 
-                                            ref={assignmentFileRef} 
-                                            onChange={(e) => {
-                                                if (e.target.files && e.target.files[0]) {
-                                                    setAssignmentFile(e.target.files[0]);
-                                                }
-                                            }}
-                                        />
-                                        <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover:scale-105 transition-all">
-                                            <Upload className="size-5" />
-                                        </div>
-                                        {assignmentFile ? (
-                                            <div className="space-y-1">
-                                                <p className="text-xs font-extrabold text-[#ecb613] truncate max-w-[320px]">{assignmentFile.name}</p>
-                                                <p className="text-[10px] text-slate-405 font-mono">Size: {formatFileSize(assignmentFile.size)}</p>
-                                            </div>
-                                        ) : assignmentForm.file_url ? (
-                                            <div className="space-y-1">
-                                                <p className="text-xs font-extrabold text-[#ecb613] truncate max-w-[320px]">{assignmentForm.file_name || 'Attached Material / Voice Note'}</p>
-                                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-1">
-                                                    <CheckCircle className="w-3 h-3" /> Reused attachment from previous task
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <div>
-                                                <p className="text-xs font-bold text-slate-700 dark:text-slate-355 group-hover:text-[#ecb613] transition-colors">Choose local file or drop here</p>
-                                                <p className="text-[10px] text-slate-405 mt-0.5">PDF sheet music, audio tracks, lesson videos up to 50MB</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                    {(assignmentFile || assignmentForm.file_url) && (
-                                        <div className="mt-1 text-center">
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setAssignmentFile(null);
-                                                    setAssignmentForm(prev => ({ ...prev, file_url: null, file_name: null, file_size: null }));
-                                                }}
-                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-500 hover:text-rose-700 hover:underline cursor-pointer"
-                                            >
-                                                <X className="w-3.5 h-3.5" /> Clear Attachment
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {assignmentError && (
-                                    <div className="flex items-center gap-2 p-3 bg-rose-50 dark:bg-rose-955/20 border border-rose-200 dark:border-rose-800 rounded-xl">
-                                        <AlertTriangle className="size-4 text-rose-500 flex-shrink-0" />
-                                        <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">{assignmentError}</p>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-3 flex-shrink-0">
-                                <button
-                                    onClick={closeAssignmentModal}
-                                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-550 dark:text-slate-300 font-black rounded-xl text-[10px] tracking-wider uppercase transition-colors cursor-pointer"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleCreateAssignment}
-                                    disabled={isSavingAssignment || !assignmentForm.title.trim() || (assignmentForm.target_type === 'individual' && assignmentForm.selectedStudentIds.size === 0)}
-                                    className="px-5 py-2.5 rounded-xl text-[10px] font-black tracking-wider uppercase bg-[#ecb613] hover:bg-amber-500 text-slate-900 shadow-md shadow-[#ecb613]/25 hover:shadow-amber-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
-                                >
-                                    {isSavingAssignment ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5 stroke-[3]" />}
-                                    <span>{isSavingAssignment ? 'Saving...' : (editingAssignmentId ? 'Save Changes' : 'Assign Task')}</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                    <TaskCreateDialog
+                        isOpen={showAssignmentModal}
+                        onClose={closeAssignmentModal}
+                        editingTaskId={editingAssignmentId}
+                        initialData={initialTaskData}
+                        classrooms={taskDialogClassrooms}
+                        students={taskDialogStudents}
+                        previousTasks={previousTasks}
+                        inventoryCategories={categories}
+                        inventoryModules={courseModules}
+                        inventoryChapters={courseChapters}
+                        inventoryLessons={courseLessons}
+                        onSaveTask={handleSaveAssignmentDialog}
+                        isSaving={isSavingAssignment}
+                    />
                 )}
 
                 {/* 7. CLASS NOTE EDITOR MODAL */}
