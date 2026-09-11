@@ -8,6 +8,7 @@ import Link from 'next/link';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { fetchAcademyTeachers } from '../../../src/lib/teachers';
+import { isStudentOperationallyActive } from '../../../src/lib/student-lifecycle';
 
 function formatTime12hr(time24: string) {
     if (!time24) return '';
@@ -690,15 +691,15 @@ export default function ClassroomsPage() {
                 : Promise.resolve({ data: [] });
 
             const permStudentsReq = roomIds.length > 0
-                ? supabaseAuth.from('classroom_students').select('classroom_id, student_id, users!student_id(id, name, profile_pic_url)').in('classroom_id', roomIds)
+                ? supabaseAuth.from('classroom_students').select('classroom_id, student_id, users!student_id(id, name, profile_pic_url, status)').in('classroom_id', roomIds)
                 : Promise.resolve({ data: [] });
 
             const tempStudentsReq = tempClassIds.length > 0
-                ? supabaseAuth.from('temporary_class_students').select('temporary_class_id, student_id, users!student_id(id, name, profile_pic_url)').in('temporary_class_id', tempClassIds)
+                ? supabaseAuth.from('temporary_class_students').select('temporary_class_id, student_id, users!student_id(id, name, profile_pic_url, status)').in('temporary_class_id', tempClassIds)
                 : Promise.resolve({ data: [] });
 
             const tempOverridesReq = tempRoomIds.length > 0
-                ? supabaseAuth.from('session_student_overrides').select('target_classroom_id, student_id, users!student_id(id, name, profile_pic_url)').in('target_classroom_id', tempRoomIds)
+                ? supabaseAuth.from('session_student_overrides').select('target_classroom_id, student_id, users!student_id(id, name, profile_pic_url, status)').in('target_classroom_id', tempRoomIds)
                 : Promise.resolve({ data: [] });
 
             const [
@@ -755,7 +756,8 @@ export default function ClassroomsPage() {
             (permStudentsData || []).forEach((row: any) => {
                 const cid = row.classroom_id;
                 if (!studentMap[cid]) studentMap[cid] = [];
-                if (row.users) {
+                // Only operationally active students count and show on classroom cards
+                if (row.users && isStudentOperationallyActive(row.users.status)) {
                     studentMap[cid].push({
                         id: row.users.id || row.student_id,
                         name: row.users.name || 'Student',
@@ -783,7 +785,7 @@ export default function ClassroomsPage() {
             (tempStudentsData || []).forEach((row: any) => {
                 const tcid = row.temporary_class_id;
                 if (!tempStudentMap[tcid]) tempStudentMap[tcid] = [];
-                if (row.users && !tempStudentMap[tcid].some(s => s.id === (row.users.id || row.student_id))) {
+                if (row.users && isStudentOperationallyActive(row.users.status) && !tempStudentMap[tcid].some(s => s.id === (row.users.id || row.student_id))) {
                     tempStudentMap[tcid].push({
                         id: row.users.id || row.student_id,
                         name: row.users.name || 'Student',
@@ -795,7 +797,7 @@ export default function ClassroomsPage() {
                 const targetId = row.target_classroom_id;
                 if (targetId) {
                     if (!tempStudentMap[targetId]) tempStudentMap[targetId] = [];
-                    if (row.users && !tempStudentMap[targetId].some(s => s.id === (row.users.id || row.student_id))) {
+                    if (row.users && isStudentOperationallyActive(row.users.status) && !tempStudentMap[targetId].some(s => s.id === (row.users.id || row.student_id))) {
                         tempStudentMap[targetId].push({
                             id: row.users.id || row.student_id,
                             name: row.users.name || 'Student',

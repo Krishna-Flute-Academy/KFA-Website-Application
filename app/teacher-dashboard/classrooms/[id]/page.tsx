@@ -22,6 +22,7 @@ import AudioRecorderWidget from '../../../../src/components/AudioRecorderWidget'
 import AutoLinkText from '../../../../src/components/common/AutoLinkText';
 import { getCurriculumMediaInfo } from '../../../../src/lib/curriculum-media';
 import { fetchEffectiveClassroomParticipants } from '../../../../src/lib/classroom-participants';
+import { isStudentOperationallyActive } from '../../../../src/lib/student-lifecycle';
 
 import dynamic from 'next/dynamic';
 
@@ -1525,19 +1526,19 @@ export default function ClassroomDashboardPage({
                                 id,
                                 student_id,
                                 override_date,
-                                users!student_id(name, profile_pic_url, level)
+                                users!student_id(name, profile_pic_url, level, status)
                               `).eq('target_classroom_id', classroomId).eq('override_date', tempClassData.class_date)
                             : supabaseAuth.from('session_student_overrides').select(`
                                 id,
                                 student_id,
                                 override_date,
-                                users!student_id(name, profile_pic_url, level)
+                                users!student_id(name, profile_pic_url, level, status)
                               `).eq('target_classroom_id', classroomId))
                         : supabaseAuth.from('classroom_students').select(`
                             id,
                             student_id,
                             joined_at,
-                            users!student_id(name, profile_pic_url, level)
+                            users!student_id(name, profile_pic_url, level, status)
                           `).eq('classroom_id', classroomId),
                     roomData.type === 'temporary' && tempClassData?.class_date
                         ? supabaseAuth.from('session_student_overrides').select(`
@@ -1545,20 +1546,20 @@ export default function ClassroomDashboardPage({
                             student_id,
                             override_date,
                             reason,
-                            users!student_id(name, profile_pic_url, level)
+                            users!student_id(name, profile_pic_url, level, status)
                           `).eq('target_classroom_id', classroomId).eq('override_date', tempClassData.class_date).order('override_date', { ascending: true })
                         : supabaseAuth.from('session_student_overrides').select(`
                             id,
                             student_id,
                             override_date,
                             reason,
-                            users!student_id(name, profile_pic_url, level)
+                            users!student_id(name, profile_pic_url, level, status)
                           `).eq('target_classroom_id', classroomId).order('override_date', { ascending: true }),
                     (roomData.type === 'temporary' && tempClassData?.id)
                         ? supabaseAuth.from('temporary_class_students').select(`
                             id,
                             student_id,
-                            users!student_id(name, profile_pic_url, level)
+                            users!student_id(name, profile_pic_url, level, status)
                           `).eq('temporary_class_id', tempClassData.id)
                         : Promise.resolve({ data: [] as any[] }),
                     supabaseAuth.from('batch_schedules').select('*').eq('classroom_id', classroomId).order('day_of_week', { ascending: true }).order('start_time', { ascending: true }),
@@ -1584,8 +1585,16 @@ export default function ClassroomDashboardPage({
                     });
                     rawRoster = Array.from(combinedMap.values());
                 }
-                const roster = rawRoster;
-                const overridesData = overridesRes.data || [];
+
+                const isLearningCircle = roomData.type === 'learning_circle';
+                const operationalRoster = isLearningCircle
+                    ? rawRoster
+                    : rawRoster.filter((r: any) => isStudentOperationallyActive(r.users?.status));
+
+                const roster = operationalRoster;
+                const overridesData = (overridesRes.data || []).filter((o: any) =>
+                    isLearningCircle ? true : isStudentOperationallyActive(o.users?.status)
+                );
                 const allClassStudentIds = Array.from(new Set([
                     ...roster.map((r: any) => r.student_id),
                     ...overridesData.map((o: any) => o.student_id)
@@ -2339,7 +2348,7 @@ export default function ClassroomDashboardPage({
             const enrolledIds = new Set(students.map(s => s.student_id));
             const usersQuery = supabaseAuth
                 .from('users')
-                .select('id, name, profile_pic_url, level')
+                .select('id, name, profile_pic_url, level, status')
                 .or('role.eq.student,role.eq.pending,role.eq.mentor');
 
             const { data, error } = teacherProfile.role === 'admin'
@@ -2347,7 +2356,7 @@ export default function ClassroomDashboardPage({
                 : await usersQuery.eq('teacher_id', teacherProfile.id).order('name', { ascending: true });
 
             if (error) throw error;
-            const available = (data || []).filter((s: any) => !enrolledIds.has(s.id));
+            const available = (data || []).filter((s: any) => !enrolledIds.has(s.id) && isStudentOperationallyActive(s.status));
             setDirectoryStudentsForOverride(available);
             if (available.length > 0) {
                 setOverrideForm(prev => ({ ...prev, studentId: available[0].id }));
@@ -2373,7 +2382,7 @@ export default function ClassroomDashboardPage({
             const enrolledIds = new Set(students.map(s => s.student_id));
             const usersQuery = supabaseAuth
                 .from('users')
-                .select('id, name, profile_pic_url, level')
+                .select('id, name, profile_pic_url, level, status')
                 .or('role.eq.student,role.eq.pending,role.eq.mentor');
 
             const { data, error } = teacherProfile.role === 'admin'
@@ -2381,13 +2390,14 @@ export default function ClassroomDashboardPage({
                 : await usersQuery.eq('teacher_id', teacherProfile.id).order('name', { ascending: true });
 
             if (error) throw error;
-            const available = (data || []).filter((s: any) => !enrolledIds.has(s.id));
+            const available = (data || []).filter((s: any) => !enrolledIds.has(s.id) && isStudentOperationallyActive(s.status));
             if (override.student_id && !available.some((s: any) => s.id === override.student_id)) {
                 available.push({
                     id: override.student_id,
                     name: override.users?.name || 'Unknown Student',
                     level: override.users?.level || 'Beginner',
-                    profile_pic_url: override.users?.profile_pic_url || null
+                    profile_pic_url: override.users?.profile_pic_url || null,
+                    status: 'active'
                 });
             }
             setDirectoryStudentsForOverride(available);
@@ -2523,10 +2533,15 @@ export default function ClassroomDashboardPage({
 
             if (error) throw error;
 
-            const availableUserIds = (data || []).map((u: any) => u.id).filter(Boolean);
+            const isLearningCircle = classroom?.type === 'learning_circle';
+            const operationalUsers = isLearningCircle
+                ? (data || [])
+                : (data || []).filter((u: any) => isStudentOperationallyActive(u.status));
+
+            const availableUserIds = operationalUsers.map((u: any) => u.id).filter(Boolean);
             const onlineUserIds = await fetchOnlineStudentIds(availableUserIds);
 
-            const available = (data || [])
+            const available = operationalUsers
                 .map((s: any) => ({
                     ...s,
                     is_online: onlineUserIds.has(s.id)

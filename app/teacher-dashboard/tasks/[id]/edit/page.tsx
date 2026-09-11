@@ -13,6 +13,7 @@ import TeacherHeader from '../../../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { sortClassroomsByDayAndTime } from '../../../../../src/lib/classroomSort';
 import AudioRecorderWidget from '../../../../../src/components/AudioRecorderWidget';
+import { isStudentOperationallyActive } from '../../../../../src/lib/student-lifecycle';
 
 interface Classroom {
     id: string;
@@ -245,17 +246,18 @@ export default function EditTaskPage() {
                 if (studentIds.length > 0) {
                     const { data: studentUsers, error: usersError } = await supabaseAuth
                         .from('users')
-                        .select('id, name, profile_pic_url')
+                        .select('id, name, profile_pic_url, status')
                         .in('id', studentIds);
 
                     if (studentUsers) {
+                        const operationalUsers = studentUsers.filter((u: any) => isStudentOperationallyActive(u.status));
                         const classroomNameMap: Record<string, string> = {};
                         classrooms.forEach(c => {
                             classroomNameMap[c.id] = c.name;
                         });
 
                         const isTargetAll = assignmentData.target_type === 'all';
-                        const formatted = studentUsers.map((item: any) => {
+                        const formatted = operationalUsers.map((item: any) => {
                             const cids = studentClassroomMap[item.id] || [];
                             const cnames = cids.map(cid => classroomNameMap[cid]).filter(Boolean);
                             const isInClass = assignmentData.classroom_id ? cids.includes(assignmentData.classroom_id) : true;

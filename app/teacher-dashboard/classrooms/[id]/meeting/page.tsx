@@ -10,6 +10,7 @@ import {
 import TeacherSidebar from '../../../../../src/components/TeacherSidebar';
 import ClassroomDashboardPage from '../page';
 import { sendClassroomNotification } from '../../../../../src/lib/notifications';
+import { isStudentOperationallyActive } from '../../../../../src/lib/student-lifecycle';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionType = 'online' | 'offline';
@@ -73,16 +74,16 @@ export default function MeetingPage() {
                         classroom.type === 'temporary'
                             ? supabaseAuth
                                 .from('session_student_overrides')
-                                .select('student_id, users!student_id(name, profile_pic_url)')
+                                .select('student_id, users!student_id(name, profile_pic_url, status)')
                                 .eq('target_classroom_id', classroomId)
                             : supabaseAuth
                                 .from('classroom_students')
-                                .select('student_id, users!student_id(name, profile_pic_url)')
+                                .select('student_id, users!student_id(name, profile_pic_url, status)')
                                 .eq('classroom_id', classroomId),
                         classroom.type !== 'temporary'
                             ? supabaseAuth
                                 .from('session_student_overrides')
-                                .select('student_id, users!student_id(name, profile_pic_url)')
+                                .select('student_id, users!student_id(name, profile_pic_url, status)')
                                 .eq('target_classroom_id', classroomId)
                                 .eq('override_date', sessionDate)
                             : Promise.resolve({ data: [] }),
@@ -93,11 +94,16 @@ export default function MeetingPage() {
                             .eq('date', sessionDate)
                     ]);
 
+                    const isLearningCircle = classroom.type === 'learning_circle';
                     if (classroom.type === 'temporary') {
-                        roster = rosterRes.data || [];
+                        const raw = rosterRes.data || [];
+                        roster = isLearningCircle ? raw : raw.filter((r: any) => isStudentOperationallyActive(r.users?.status));
                     } else {
-                        const permList = rosterRes.data || [];
-                        const overrideList = (overrideRes.data || []).map((row: any) => ({
+                        const rawPerm = rosterRes.data || [];
+                        const permList = isLearningCircle ? rawPerm : rawPerm.filter((r: any) => isStudentOperationallyActive(r.users?.status));
+                        const rawOverrides = overrideRes.data || [];
+                        const filteredOverrides = isLearningCircle ? rawOverrides : rawOverrides.filter((r: any) => isStudentOperationallyActive(r.users?.status));
+                        const overrideList = filteredOverrides.map((row: any) => ({
                             ...row,
                             users: {
                                 ...row.users,

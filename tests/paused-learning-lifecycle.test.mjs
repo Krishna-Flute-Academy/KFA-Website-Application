@@ -327,3 +327,143 @@ test('11. History Preservation: Permanent classroom is preserved alongside Learn
     assert.equal(permRef.classrooms.name, 'Bageshree Batch');
 });
 
+test('12. Classroom Cards & Student Count: Inactive students excluded from operational classroom card & count', () => {
+    // Friday Slot 3 has 2 students in DB: 1 Active, 1 Inactive (Gajendra Babu Alji)
+    const rawClassroomStudents = [
+        {
+            classroom_id: 'friday-slot-3',
+            student_id: 'student-active-1',
+            users: { id: 'student-active-1', name: 'Vimal Patel', status: 'active' }
+        },
+        {
+            classroom_id: 'friday-slot-3',
+            student_id: 'student-gajendra',
+            users: { id: 'student-gajendra', name: 'Gajendra Babu Alji', status: 'inactive' }
+        }
+    ];
+
+    const studentMap = {};
+    rawClassroomStudents.forEach(row => {
+        if (row && row.classroom_id && row.student_id && row.users) {
+            if (isStudentOperationallyActive(row.users.status)) {
+                if (!studentMap[row.classroom_id]) studentMap[row.classroom_id] = [];
+                studentMap[row.classroom_id].push({
+                    id: row.student_id,
+                    name: row.users.name
+                });
+            }
+        }
+    });
+
+    const enrolledStudents = studentMap['friday-slot-3'] || [];
+    assert.equal(enrolledStudents.length, 1);
+    assert.equal(enrolledStudents[0].name, 'Vimal Patel');
+    assert.equal(enrolledStudents.some(s => s.name === 'Gajendra Babu Alji'), false);
+});
+
+test('13. Classroom Detail Roster: Inactive students excluded in operational classroom, allowed in Learning Circle', () => {
+    const rawRoster = [
+        {
+            id: 'cs-1',
+            student_id: 'student-active-1',
+            users: { name: 'Vimal Patel', status: 'active', level: 'Level 2' }
+        },
+        {
+            id: 'cs-2',
+            student_id: 'student-gajendra',
+            users: { name: 'Gajendra Babu Alji', status: 'inactive', level: 'Level 1' }
+        }
+    ];
+
+    // In permanent classroom (type = 'permanent')
+    const permRoster = rawRoster.filter(r => isStudentOperationallyActive(r.users?.status));
+    assert.equal(permRoster.length, 1);
+    assert.equal(permRoster[0].name, undefined); // raw record before formatting
+    assert.equal(permRoster[0].student_id, 'student-active-1');
+    assert.equal(permRoster.some(r => r.student_id === 'student-gajendra'), false);
+
+    // In Learning Circle (type = 'learning_circle')
+    const circleRoster = rawRoster; // Not filtered out
+    assert.equal(circleRoster.length, 2);
+    assert.equal(circleRoster.some(r => r.student_id === 'student-gajendra'), true);
+});
+
+test('14. Meeting Live Roster: Inactive students excluded from live meeting participant list', () => {
+    const permRosterRes = [
+        { student_id: 'student-active-1', users: { name: 'Vimal Patel', status: 'active' } },
+        { student_id: 'student-gajendra', users: { name: 'Gajendra Babu Alji', status: 'inactive' } }
+    ];
+    const overrideRes = [
+        { student_id: 'student-guest-1', users: { name: 'Arun Kumar', status: 'active' } },
+        { student_id: 'student-paused-guest', users: { name: 'Paused Guest', status: 'inactive' } }
+    ];
+
+    const isLearningCircle = false;
+    const permList = isLearningCircle
+        ? permRosterRes
+        : permRosterRes.filter(r => isStudentOperationallyActive(r.users?.status));
+    const filteredOverrides = isLearningCircle
+        ? overrideRes
+        : overrideRes.filter(r => isStudentOperationallyActive(r.users?.status));
+
+    const meetingRoster = [
+        ...permList,
+        ...filteredOverrides.map(r => ({ ...r, users: { ...r.users, name: `${r.users.name} (Makeup)` } }))
+    ];
+
+    assert.equal(meetingRoster.length, 2);
+    assert.equal(meetingRoster.some(r => r.student_id === 'student-gajendra'), false);
+    assert.equal(meetingRoster.some(r => r.student_id === 'student-paused-guest'), false);
+    assert.equal(meetingRoster[0].student_id, 'student-active-1');
+    assert.equal(meetingRoster[1].student_id, 'student-guest-1');
+});
+
+test('15. Tasks & Assignments: Inactive students excluded from classroom assignments', () => {
+    const rawEnrollments = [
+        { classroom_id: 'c1', student_id: 's1', users: { name: 'Alice', status: 'active', teacher_id: 't1' } },
+        { classroom_id: 'c1', student_id: 's2', users: { name: 'Gajendra', status: 'inactive', teacher_id: 't1' } }
+    ];
+
+    const filteredStudents = rawEnrollments.filter(e => isStudentOperationallyActive(e.users?.status));
+    assert.equal(filteredStudents.length, 1);
+    assert.equal(filteredStudents[0].student_id, 's1');
+    assert.equal(filteredStudents.some(s => s.users.name === 'Gajendra'), false);
+});
+
+test('16. Messages & Broadcasts: Inactive students excluded from operational classroom broadcasts', () => {
+    const classRooms = [
+        { id: 'c1', name: 'Friday Slot 3', type: 'permanent' },
+        { id: 'c-circle', name: 'KFA Learning Circle', type: 'learning_circle' }
+    ];
+    const classMap = new Map();
+    classRooms.forEach(c => classMap.set(c.id, c));
+
+    const assoc = [
+        { classroom_id: 'c1', student_id: 's1', users: { status: 'active' } },
+        { classroom_id: 'c1', student_id: 's2', users: { status: 'inactive' } }, // Gajendra in c1
+        { classroom_id: 'c-circle', student_id: 's2', users: { status: 'inactive' } } // Gajendra in Learning Circle
+    ];
+
+    // Broadcast to operational class c1
+    const studentIdsForC1 = new Set();
+    assoc.filter(a => a.classroom_id === 'c1').forEach(row => {
+        const room = classMap.get(row.classroom_id);
+        const isLC = room?.type === 'learning_circle';
+        if (isLC || isStudentOperationallyActive(row.users?.status)) {
+            studentIdsForC1.add(row.student_id);
+        }
+    });
+    assert.deepEqual(Array.from(studentIdsForC1), ['s1']);
+
+    // Broadcast to Learning Circle c-circle
+    const studentIdsForLC = new Set();
+    assoc.filter(a => a.classroom_id === 'c-circle').forEach(row => {
+        const room = classMap.get(row.classroom_id);
+        const isLC = room?.type === 'learning_circle';
+        if (isLC || isStudentOperationallyActive(row.users?.status)) {
+            studentIdsForLC.add(row.student_id);
+        }
+    });
+    assert.deepEqual(Array.from(studentIdsForLC), ['s2']);
+});
+

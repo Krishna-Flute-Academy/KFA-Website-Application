@@ -13,6 +13,7 @@ export interface Student {
     selected: boolean;
     classroom_ids: string[];
     classroom_names?: string[];
+    status?: 'active' | 'inactive' | 'archived' | string;
 }
 
 export interface TaskSubmission {
@@ -20,6 +21,8 @@ export interface TaskSubmission {
     student_id: string;
     student_name: string;
     student_profile_pic_url?: string;
+    student_status?: string;
+    target_type?: string;
     task_id: string;
     task_title: string;
     task_description?: string;
@@ -56,6 +59,15 @@ export interface AttachedMaterial {
     created_at?: string;
 }
 
+export interface AssignmentBatchRecipient {
+    id: string;
+    name: string;
+    profile_pic_url?: string | null;
+    status?: string;
+    submission_status?: string;
+    is_past_due?: boolean;
+}
+
 export interface AssignmentBatch {
     assignmentId: string;
     taskTitle: string;
@@ -73,6 +85,7 @@ export interface AssignmentBatch {
     fileName?: string;
     fileSize?: string | number | null;
     submissions: TaskSubmission[];
+    recipients?: AssignmentBatchRecipient[];
     totalCount: number;
     submittedCount: number;
     reviewedCount: number;

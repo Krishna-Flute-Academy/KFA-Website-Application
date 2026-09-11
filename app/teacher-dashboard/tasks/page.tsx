@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { 
     Loader2, Plus, Inbox, ClipboardList, Library, CheckCircle2, 
-    Search, Filter, Sparkles, BookOpen 
+    Search, Filter, Sparkles, BookOpen, Users 
 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
@@ -18,11 +18,14 @@ import {
 } from '../../../src/components/teacher-dashboard/tasks/types';
 import TaskReviewQueue from '../../../src/components/teacher-dashboard/tasks/TaskReviewQueue';
 import TaskAssignmentList from '../../../src/components/teacher-dashboard/tasks/TaskAssignmentList';
+import TaskStudentAssignmentView from '../../../src/components/teacher-dashboard/tasks/TaskStudentAssignmentView';
 import TaskTemplateLibrary from '../../../src/components/teacher-dashboard/tasks/TaskTemplateLibrary';
 import TaskCompletedList from '../../../src/components/teacher-dashboard/tasks/TaskCompletedList';
 import ReviewDrawer from '../../../src/components/teacher-dashboard/tasks/ReviewDrawer';
 import MobileReviewScreen from '../../../src/components/teacher-dashboard/tasks/MobileReviewScreen';
 import TaskCreateDialog from '../../../src/components/teacher-dashboard/tasks/TaskCreateDialog';
+import { isDueDatePassed } from '../../../src/lib/assignment-service';
+import { isStudentOperationallyActive } from '../../../src/lib/student-lifecycle';
 
 export default function TaskReviewPage() {
     const router = useRouter();
@@ -32,6 +35,7 @@ export default function TaskReviewPage() {
     
     // Top-level 4 views navigation
     const [activeTab, setActiveTab] = useState<TasksTab>('review');
+    const [assignmentViewMode, setAssignmentViewMode] = useState<'by_assignment' | 'by_student'>('by_assignment');
     const [reviewSubTab, setReviewSubTab] = useState<'awaiting' | 'revision' | 'approved'>('awaiting');
     const [searchQuery, setSearchQuery] = useState('');
     const [isSaving, setIsSaving] = useState(false);
@@ -95,7 +99,7 @@ export default function TaskReviewPage() {
                 .select(`
                     classroom_id,
                     student_id,
-                    users!student_id(name, profile_pic_url, teacher_id)
+                    users!student_id(name, profile_pic_url, teacher_id, status)
                 `)
                 .in('classroom_id', classroomIds);
 
@@ -115,7 +119,8 @@ export default function TaskReviewPage() {
             }
 
             const rawEnrollments = enrollments || [];
-            const filteredEnrollments = rawEnrollments.filter((e: any) => isAdmin || e.users?.teacher_id === userId);
+            const filteredEnrollments = rawEnrollments
+                .filter((e: any) => (isAdmin || e.users?.teacher_id === userId) && isStudentOperationallyActive(e.users?.status));
             const studentsList = filteredEnrollments;
 
             let assignmentsList: any[] | null = res.data;
@@ -165,6 +170,17 @@ export default function TaskReviewPage() {
                 assignmentStudents = fallback.data as any[];
             }
 
+            // Fetch any missing users for assignment_students to avoid 'Unknown Student'
+            const allStudentIdsInAsg = Array.from(new Set((assignmentStudents || []).map(r => r.student_id))).filter(Boolean);
+            const directUsersMap = new Map<string, any>();
+            if (allStudentIdsInAsg.length > 0) {
+                const { data: directUsers } = await supabaseAuth
+                    .from('users')
+                    .select('id, name, profile_pic_url, status')
+                    .in('id', allStudentIdsInAsg);
+                (directUsers || []).forEach(u => directUsersMap.set(u.id, u));
+            }
+
             // Step 5: Format submissions list
             const formatted: TaskSubmission[] = [];
 
@@ -175,6 +191,7 @@ export default function TaskReviewPage() {
                 const associatedClassStudents = studentsList.filter(s => s.classroom_id === asg.classroom_id);
                 const classInfo = (classroomsData || []).find(c => c.id === asg.classroom_id);
                 const className = classInfo?.name || 'Unknown Class';
+                const asgTargetType = asg.target_type || (asg.classroom_id ? 'classroom' : 'all');
 
                 if ((asg as any).status === 'draft') {
                     formatted.push({
@@ -188,6 +205,7 @@ export default function TaskReviewPage() {
                         submitted_at: asg.created_at || new Date().toISOString(),
                         classroom_id: asg.classroom_id,
                         classroom_name: className,
+                        target_type: asgTargetType,
                         due_date: asg.due_date || null,
                         inventory_ref_type: asg.inventory_ref_type || null,
                         inventory_ref_id: asg.inventory_ref_id || null,
@@ -213,6 +231,7 @@ export default function TaskReviewPage() {
                             submitted_at: asg.created_at || new Date().toISOString(),
                             classroom_id: asg.classroom_id,
                             classroom_name: className,
+                            target_type: 'individual',
                             due_date: asg.due_date || null,
                             file_url: asg.file_url || '',
                             file_name: asg.file_name || '',
@@ -224,14 +243,20 @@ export default function TaskReviewPage() {
                     } else {
                         mappingRows.forEach(row => {
                             const studentInfo = studentsList.find(s => s.student_id === row.student_id);
+                            const directUser = directUsersMap.get(row.student_id);
                             const studentClassInfo = (classroomsData || []).find(c => c.id === studentInfo?.classroom_id);
                             const studentClassName = studentClassInfo?.name || className;
+                            const resolvedName = directUser?.name || (studentInfo?.users as any)?.name || 'Unknown Student';
+                            const resolvedPic = directUser?.profile_pic_url || (studentInfo?.users as any)?.profile_pic_url || null;
+                            const resolvedStatus = directUser?.status || (studentInfo?.users as any)?.status || 'active';
 
                             formatted.push({
                                 id: row.id,
                                 student_id: row.student_id,
-                                student_name: (studentInfo?.users as any)?.name || 'Unknown Student',
-                                student_profile_pic_url: (studentInfo?.users as any)?.profile_pic_url,
+                                student_name: resolvedName,
+                                student_profile_pic_url: resolvedPic,
+                                student_status: resolvedStatus,
+                                target_type: 'individual',
                                 task_id: asg.id,
                                 task_title: asg.title || 'Untitled Task',
                                 task_description: asg.description || '',
@@ -267,6 +292,7 @@ export default function TaskReviewPage() {
                             submitted_at: asg.created_at || new Date().toISOString(),
                             classroom_id: asg.classroom_id,
                             classroom_name: className,
+                            target_type: asgTargetType,
                             file_url: asg.file_url || '',
                             file_name: asg.file_name || '',
                             file_size: asg.file_size || null,
@@ -278,12 +304,18 @@ export default function TaskReviewPage() {
                     } else {
                         associatedClassStudents.forEach(studentInfo => {
                             const existingRow = (assignmentStudents || []).find(row => row.assignment_id === asg.id && row.student_id === studentInfo.student_id);
+                            const directUser = directUsersMap.get(studentInfo.student_id);
+                            const resolvedName = (studentInfo.users as any)?.name || directUser?.name || 'Unknown Student';
+                            const resolvedPic = (studentInfo.users as any)?.profile_pic_url || directUser?.profile_pic_url || null;
+                            const resolvedStatus = (studentInfo.users as any)?.status || directUser?.status || 'active';
 
                             formatted.push({
                                 id: existingRow?.id || `temp-impl-${asg.id}-${studentInfo.student_id}`,
                                 student_id: studentInfo.student_id,
-                                student_name: (studentInfo.users as any)?.name || 'Unknown Student',
-                                student_profile_pic_url: (studentInfo.users as any)?.profile_pic_url,
+                                student_name: resolvedName,
+                                student_profile_pic_url: resolvedPic,
+                                student_status: resolvedStatus,
+                                target_type: asgTargetType,
                                 task_id: asg.id,
                                 task_title: asg.title || 'Untitled Task',
                                 task_description: asg.description || '',
@@ -372,17 +404,14 @@ export default function TaskReviewPage() {
                     if (!studentClassMap[e.student_id].includes(e.classroom_id)) studentClassMap[e.student_id].push(e.classroom_id);
                 });
 
-                overrides.forEach((o: any) => {
-                    if (!studentClassMap[o.student_id]) studentClassMap[o.student_id] = [];
-                    if (!studentClassMap[o.student_id].includes(o.target_classroom_id)) studentClassMap[o.student_id].push(o.target_classroom_id);
-                });
-
+                // Note: session_student_overrides are for temporary single-session guest attendance / makeups.
+                // They must NOT grant permanent classroom assignments to the guest student.
                 studentIds = [...new Set([...enrollments.map((e: any) => e.student_id), ...overrides.map((o: any) => o.student_id)])];
             }
 
             let studentsUserQuery = supabaseAuth
                 .from('users')
-                .select('id, name, profile_pic_url')
+                .select('id, name, profile_pic_url, status')
                 .or('role.eq.student,role.eq.pending,role.eq.mentor');
 
             if (!userIsAdmin) {
@@ -399,20 +428,22 @@ export default function TaskReviewPage() {
             if (studentIds.length > 0) {
                 const { data: usersData } = await supabaseAuth
                     .from('users')
-                    .select('id, name, profile_pic_url, teacher_id')
+                    .select('id, name, profile_pic_url, teacher_id, status')
                     .in('id', studentIds);
 
                 const classMap: Record<string, string> = {};
                 (classes || []).forEach((c: any) => { classMap[c.id] = c.name; });
 
                 if (usersData) {
-                    const formattedStudents = usersData.map((item: any) => {
+                    const operationalUsers = usersData.filter((item: any) => isStudentOperationallyActive(item.status));
+                    const formattedStudents = operationalUsers.map((item: any) => {
                         const cids = studentClassMap[item.id] || [];
                         const cnames = cids.map(cid => classMap[cid]).filter(Boolean);
                         return {
                             id: item.id,
                             name: item.name || 'Unknown Student',
                             profile_pic_url: item.profile_pic_url || null,
+                            status: item.status || 'active',
                             selected: false,
                             classroom_ids: cids,
                             classroom_names: cnames
@@ -497,13 +528,14 @@ export default function TaskReviewPage() {
             if (!assignmentId) return;
 
             if (!batchMap[assignmentId]) {
+                const resolvedTargetType = sub.target_type || (sub.classroom_name?.toLowerCase().includes('all') ? 'all' : 'individual');
                 batchMap[assignmentId] = {
                     assignmentId,
                     taskTitle: sub.task_title || 'Untitled Task',
                     taskDescription: sub.task_description,
                     classroomName: sub.classroom_name || 'Individual',
                     classroomId: sub.classroom_id,
-                    targetType: sub.classroom_name?.toLowerCase().includes('all') ? 'all' : 'individual',
+                    targetType: resolvedTargetType,
                     dueDate: sub.due_date,
                     createdAt: sub.submitted_at,
                     isDraft: sub.status === 'draft',
@@ -514,6 +546,7 @@ export default function TaskReviewPage() {
                     fileName: sub.file_name,
                     fileSize: sub.file_size,
                     submissions: [],
+                    recipients: [],
                     totalCount: 0,
                     submittedCount: 0,
                     reviewedCount: 0,
@@ -531,6 +564,18 @@ export default function TaskReviewPage() {
                 else if (sub.status === 'reviewed') batch.reviewedCount++;
                 else if (sub.status === 'approved') batch.approvedCount++;
                 else if (sub.status === 'pending') batch.pendingCount++;
+
+                if (!batch.recipients) batch.recipients = [];
+                if (!batch.recipients.some(r => r.id === sub.student_id)) {
+                    batch.recipients.push({
+                        id: sub.student_id,
+                        name: sub.student_name,
+                        profile_pic_url: sub.student_profile_pic_url,
+                        status: sub.student_status,
+                        submission_status: sub.status,
+                        is_past_due: sub.status === 'pending' && isDueDatePassed(sub.due_date)
+                    });
+                }
             }
         });
 
@@ -1052,6 +1097,7 @@ export default function TaskReviewPage() {
                     userName={teacherProfile?.name}
                     searchQuery={searchQuery}
                     onSearchChange={setSearchQuery}
+                    placeholder="Search student, assignment or task..."
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 
@@ -1170,16 +1216,71 @@ export default function TaskReviewPage() {
                         )}
 
                         {activeTab === 'assignments' && (
-                            <TaskAssignmentList 
-                                batches={assignmentBatches}
-                                classrooms={classrooms}
-                                onEditAssignment={handleEditAssignment}
-                                onDeleteAssignment={handleDeleteAssignment}
-                                onQuickUpdateDueDate={handleQuickUpdateDueDate}
-                                onReviewSubmission={handleOpenReview}
-                                onNavigateToRevisionQueue={handleNavigateToRevisionQueue}
-                                searchQuery={searchQuery}
-                            />
+                            <div className="space-y-4">
+                                {/* View Switcher Bar: [ By Assignment ] [ By Student ] */}
+                                <div className="flex items-center justify-between gap-3 flex-wrap bg-white dark:bg-slate-900 p-2 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs">
+                                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                                        <button
+                                            type="button"
+                                            onClick={() => setAssignmentViewMode('by_assignment')}
+                                            className={`min-h-[36px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                                assignmentViewMode === 'by_assignment'
+                                                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                            }`}
+                                        >
+                                            <ClipboardList className="w-3.5 h-3.5 text-amber-600" />
+                                            <span>By Assignment</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setAssignmentViewMode('by_student')}
+                                            className={`min-h-[36px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                                assignmentViewMode === 'by_student'
+                                                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                            }`}
+                                        >
+                                            <Users className="w-3.5 h-3.5 text-indigo-600" />
+                                            <span>By Student</span>
+                                        </button>
+                                    </div>
+
+                                    <div className="text-xs text-slate-400 font-semibold px-2">
+                                        {assignmentViewMode === 'by_assignment' 
+                                            ? `Browsing ${assignmentBatches.length} task assignments` 
+                                            : `Browsing ${students.length} students`
+                                        }
+                                    </div>
+                                </div>
+
+                                {assignmentViewMode === 'by_assignment' ? (
+                                    <TaskAssignmentList 
+                                        batches={assignmentBatches}
+                                        classrooms={classrooms}
+                                        onEditAssignment={handleEditAssignment}
+                                        onDeleteAssignment={handleDeleteAssignment}
+                                        onQuickUpdateDueDate={handleQuickUpdateDueDate}
+                                        onReviewSubmission={handleOpenReview}
+                                        onNavigateToRevisionQueue={handleNavigateToRevisionQueue}
+                                        searchQuery={searchQuery}
+                                        onSearchChange={setSearchQuery}
+                                    />
+                                ) : (
+                                    <TaskStudentAssignmentView 
+                                        students={students}
+                                        classrooms={classrooms}
+                                        batches={assignmentBatches}
+                                        submissions={submissions}
+                                        searchQuery={searchQuery}
+                                        onSearchChange={setSearchQuery}
+                                        onReviewSubmission={handleOpenReview}
+                                        onEditAssignment={handleEditAssignment}
+                                        onQuickUpdateDueDate={handleQuickUpdateDueDate}
+                                        onNavigateToRevisionQueue={handleNavigateToRevisionQueue}
+                                    />
+                                )}
+                            </div>
                         )}
 
                         {activeTab === 'templates' && (

@@ -5,9 +5,10 @@ import {
     ClipboardList, X, UsersRound, User, Paperclip, Upload, 
     AlertTriangle, Loader2, Send, StickyNote, BookOpen, 
     NotebookPen, Plus, GripVertical, Edit3, Trash2, Download, Filter,
-    Calendar, ChevronUp, ChevronDown
+    Calendar, ChevronUp, ChevronDown, Search
 } from 'lucide-react';
 import AutoLinkText from '../common/AutoLinkText';
+import { formatRecipientSummary } from '../../lib/assignment-service';
 
 interface Student {
     id: string;
@@ -170,6 +171,39 @@ export default function AssignmentsTab({
     handleOpenReviewModal,
     handleEditAssignment
 }: AssignmentsTabProps) {
+    const [classroomTaskSearch, setClassroomTaskSearch] = React.useState('');
+    const [selectedIndividualStudentId, setSelectedIndividualStudentId] = React.useState<string>('all');
+
+    const visibleAssignments = React.useMemo(() => {
+        return (filteredAssignments || []).filter((asg: any) => {
+            // Student filter
+            if (selectedIndividualStudentId !== 'all') {
+                if (asg.target_type !== 'all') {
+                    const matchesStudent = asg.assignment_students?.some(
+                        (as: any) => as.student_id === selectedIndividualStudentId || as.id === selectedIndividualStudentId
+                    );
+                    if (!matchesStudent) return false;
+                }
+            }
+
+            // Search query
+            if (classroomTaskSearch.trim()) {
+                const q = classroomTaskSearch.toLowerCase().trim();
+                const titleMatch = asg.title?.toLowerCase().includes(q);
+                const descMatch = asg.description?.toLowerCase().includes(q);
+                const topicMatch = asg.inventory_ref_title?.toLowerCase().includes(q);
+                const studentMatch = asg.assignment_students?.some(
+                    (as: any) => (as.student_name || '').toLowerCase().includes(q)
+                );
+                if (!titleMatch && !descMatch && !topicMatch && !studentMatch) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }, [filteredAssignments, selectedIndividualStudentId, classroomTaskSearch]);
+
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
 
@@ -440,21 +474,58 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         </button>
                     </div>
 
-                    {/* Filter Tabs */}
-                    <div className="flex items-center gap-2">
-                        {([['all', 'All', Filter], ['all_students', '👥 For Everyone', UsersRound], ['individual', '👤 Individual', User]] as const).map(([value, label]) => (
-                            <button
-                                key={value}
-                                onClick={() => setAssignmentFilter(value)}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-                                    assignmentFilter === value
-                                        ? 'bg-[#ecb613]/10 text-[#ecb613] border-[#ecb613]/40'
-                                        : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-slate-300'
-                                }`}
+                    {/* Filter Tabs & Search Bar */}
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {([['all', 'All', Filter], ['all_students', '👥 For Everyone', UsersRound], ['individual', '👤 Individual', User]] as const).map(([value, label]) => (
+                                <button
+                                    key={value}
+                                    onClick={() => setAssignmentFilter(value)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                                        assignmentFilter === value
+                                            ? 'bg-[#ecb613]/10 text-[#ecb613] border-[#ecb613]/40'
+                                            : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+
+                            {/* Filter by Student dropdown */}
+                            <select
+                                value={selectedIndividualStudentId}
+                                onChange={(e) => setSelectedIndividualStudentId(e.target.value)}
+                                className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none focus:border-[#ecb613] cursor-pointer"
                             >
-                                {label}
-                            </button>
-                        ))}
+                                <option value="all">All Students</option>
+                                {students.map((s) => (
+                                    <option key={s.id || s.student_id} value={s.id || s.student_id}>
+                                        {s.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Search input */}
+                        <div className="relative flex-1 md:max-w-xs">
+                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                                type="text"
+                                value={classroomTaskSearch}
+                                onChange={(e) => setClassroomTaskSearch(e.target.value)}
+                                placeholder="Search assignment or student..."
+                                className="w-full pl-8 pr-7 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:border-[#ecb613]"
+                            />
+                            {classroomTaskSearch && (
+                                <button
+                                    type="button"
+                                    onClick={() => setClassroomTaskSearch('')}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Assignment Cards */}
@@ -462,7 +533,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         <div className="flex items-center justify-center py-20">
                             <Loader2 className="w-8 h-8 animate-spin text-[#ecb613]" />
                         </div>
-                    ) : filteredAssignments.length === 0 ? (
+                    ) : visibleAssignments.length === 0 ? (
                         <button
                             onClick={() => setShowAssignmentModal(true)}
                             className="w-full flex flex-col items-center justify-center gap-3 py-16 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-slate-350 transition-all group cursor-pointer text-center"
@@ -470,14 +541,14 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                             <ClipboardList className="w-10 h-10 text-slate-300 dark:text-slate-600 group-hover:scale-110 transition-transform" />
                             <div>
                                 <p className="font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200">
-                                    {assignmentFilter !== 'all' ? 'No assignments match this filter.' : 'No assignments yet'}
+                                    {classroomTaskSearch || selectedIndividualStudentId !== 'all' || assignmentFilter !== 'all' ? 'No assignments match your search/filter.' : 'No assignments yet'}
                                 </p>
-                                {assignmentFilter === 'all' && <p className="text-xs text-slate-400 mt-1">Click to create your first assignment</p>}
+                                {assignmentFilter === 'all' && !classroomTaskSearch && selectedIndividualStudentId === 'all' && <p className="text-xs text-slate-400 mt-1">Click to create your first assignment</p>}
                             </div>
                         </button>
                     ) : (
                         <div className="space-y-3">
-                            {filteredAssignments.map((asg: any) => {
+                            {visibleAssignments.map((asg: any) => {
                                 const isExpanded = expandedAssignmentId === asg.id;
                                 const isDeleting = deletingAssignmentId === asg.id;
                                 const isDue = asg.due_date && new Date(asg.due_date) < new Date();
@@ -506,12 +577,14 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                             <div className="flex-1 min-w-0 text-left">
                                                 <div className="flex flex-wrap items-center gap-2 mb-1">
                                                     <h4 className="font-bold text-slate-900 dark:text-white text-sm">{asg.title}</h4>
-                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                                                         asg.target_type === 'all'
-                                                            ? 'bg-indigo-105 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
-                                                            : 'bg-amber-105 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                            ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+                                                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                                                     }`}>
-                                                        {asg.target_type === 'all' ? '👥 All Students' : `👤 Individual (${asg.assignment_students?.length ?? 0})`}
+                                                        {asg.target_type === 'all' 
+                                                            ? `👥 For Everyone · ${classroom?.name || 'Classroom'} (${students?.length || 0} Students)` 
+                                                            : `👤 Individual · ${asg.assignment_students?.length ?? 0} student${(asg.assignment_students?.length ?? 0) === 1 ? '' : 's'}`}
                                                     </span>
                                                     {asg.due_date && (
                                                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -524,6 +597,36 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                         </span>
                                                     )}
                                                 </div>
+
+                                                {/* Recipient Chips for Individual Assignments */}
+                                                {asg.target_type !== 'all' && asg.assignment_students && asg.assignment_students.length > 0 && (() => {
+                                                    const summary = formatRecipientSummary(asg.assignment_students);
+                                                    return (
+                                                        <div className="flex flex-wrap items-center gap-1.5 my-1 text-xs">
+                                                            <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">Assigned to:</span>
+                                                            {summary.primaryNames.map((name: string, i: number) => (
+                                                                <span
+                                                                    key={i}
+                                                                    className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 text-[11px] font-semibold border border-amber-200 dark:border-amber-800/40"
+                                                                >
+                                                                    {name}
+                                                                </span>
+                                                            ))}
+                                                            {summary.remainingCount > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setExpandedAssignmentId(isExpanded ? null : asg.id);
+                                                                    }}
+                                                                    className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[11px] font-bold transition-colors cursor-pointer"
+                                                                >
+                                                                    +{summary.remainingCount} more
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                                 {asg.description && (
                                                     <p className="text-xs text-slate-550 dark:text-slate-400 leading-relaxed line-clamp-2">
                                                         <AutoLinkText text={asg.description} />

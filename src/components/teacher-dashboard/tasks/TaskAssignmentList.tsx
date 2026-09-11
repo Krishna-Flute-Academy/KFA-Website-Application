@@ -8,6 +8,7 @@ import {
 import { AssignmentBatch, TaskSubmission, Classroom, formatDateForInput } from './types';
 import TaskStudentsModal from './TaskStudentsModal';
 import AutoLinkText from '../../../components/common/AutoLinkText';
+import { formatRecipientSummary } from '../../../lib/assignment-service';
 
 interface TaskAssignmentListProps {
     batches: AssignmentBatch[];
@@ -18,6 +19,7 @@ interface TaskAssignmentListProps {
     onReviewSubmission: (sub: TaskSubmission) => void;
     onNavigateToRevisionQueue?: (taskTitle?: string) => void;
     searchQuery: string;
+    onSearchChange?: (query: string) => void;
 }
 
 export default function TaskAssignmentList({
@@ -28,7 +30,8 @@ export default function TaskAssignmentList({
     onQuickUpdateDueDate,
     onReviewSubmission,
     onNavigateToRevisionQueue,
-    searchQuery
+    searchQuery,
+    onSearchChange
 }: TaskAssignmentListProps) {
     const [selectedFilterClassroomId, setSelectedFilterClassroomId] = useState<string>('all');
     const [activeStatusFilter, setActiveStatusFilter] = useState<'all' | 'active' | 'completed' | 'draft'>('all');
@@ -72,7 +75,8 @@ export default function TaskAssignmentList({
             list = list.filter(b => 
                 b.taskTitle.toLowerCase().includes(query) ||
                 (b.classroomName && b.classroomName.toLowerCase().includes(query)) ||
-                (b.inventoryRefTitle && b.inventoryRefTitle.toLowerCase().includes(query))
+                (b.inventoryRefTitle && b.inventoryRefTitle.toLowerCase().includes(query)) ||
+                (b.submissions && b.submissions.some(s => s.student_name && s.student_name.toLowerCase().includes(query)))
             );
         }
 
@@ -83,68 +87,92 @@ export default function TaskAssignmentList({
     return (
         <div className="space-y-4">
             {/* Filter Controls Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3 shadow-xs">
-                {/* Status Tabs */}
-                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                    <button
-                        type="button"
-                        onClick={() => setActiveStatusFilter('all')}
-                        className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            activeStatusFilter === 'all'
-                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
-                        }`}
-                    >
-                        All ({batches.length})
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setActiveStatusFilter('active')}
-                        className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            activeStatusFilter === 'active'
-                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
-                        }`}
-                    >
-                        Active ({batches.filter(b => !b.isDraft && (b.approvedCount < b.totalCount || b.totalCount === 0)).length})
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setActiveStatusFilter('completed')}
-                        className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            activeStatusFilter === 'completed'
-                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
-                        }`}
-                    >
-                        Completed ({batches.filter(b => !b.isDraft && b.totalCount > 0 && b.approvedCount === b.totalCount).length})
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setActiveStatusFilter('draft')}
-                        className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            activeStatusFilter === 'draft'
-                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
-                        }`}
-                    >
-                        Drafts ({batches.filter(b => b.isDraft).length})
-                    </button>
+            <div className="space-y-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
+                {/* Search Bar */}
+                <div className="relative w-full">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                        type="text"
+                        placeholder="Search student, assignment or task..."
+                        value={searchQuery}
+                        onChange={(e) => onSearchChange?.(e.target.value)}
+                        className="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#ecb613] transition-all"
+                    />
+                    {searchQuery && (
+                        <button
+                            type="button"
+                            onClick={() => onSearchChange?.('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                            Clear
+                        </button>
+                    )}
                 </div>
 
-                {/* Classroom Filter */}
-                <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-400 hidden sm:inline">Classroom:</span>
-                    <select
-                        value={selectedFilterClassroomId}
-                        onChange={(e) => setSelectedFilterClassroomId(e.target.value)}
-                        className="min-h-[38px] px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#ecb613]"
-                    >
-                        <option value="all">All Classrooms ({batches.length})</option>
-                        {activeAssignmentClassrooms.map(c => (
-                            <option key={c.id} value={c.id}>{c.name} ({c.count})</option>
-                        ))}
-                    </select>
+                {/* Status Tabs and Classroom Filter */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                    {/* Status Tabs */}
+                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl overflow-x-auto scrollbar-none">
+                        <button
+                            type="button"
+                            onClick={() => setActiveStatusFilter('all')}
+                            className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                                activeStatusFilter === 'all'
+                                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
+                            }`}
+                        >
+                            All ({batches.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveStatusFilter('active')}
+                            className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                                activeStatusFilter === 'active'
+                                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
+                            }`}
+                        >
+                            Active ({batches.filter(b => !b.isDraft && (b.approvedCount < b.totalCount || b.totalCount === 0)).length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveStatusFilter('completed')}
+                            className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                                activeStatusFilter === 'completed'
+                                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
+                            }`}
+                        >
+                            Completed ({batches.filter(b => !b.isDraft && b.totalCount > 0 && b.approvedCount === b.totalCount).length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveStatusFilter('draft')}
+                            className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                                activeStatusFilter === 'draft'
+                                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
+                            }`}
+                        >
+                            Drafts ({batches.filter(b => b.isDraft).length})
+                        </button>
+                    </div>
+
+                    {/* Classroom Filter */}
+                    <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-bold text-slate-400 hidden sm:inline">Classroom:</span>
+                        <select
+                            value={selectedFilterClassroomId}
+                            onChange={(e) => setSelectedFilterClassroomId(e.target.value)}
+                            className="min-h-[38px] px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#ecb613]"
+                        >
+                            <option value="all">All Classrooms ({batches.length})</option>
+                            {activeAssignmentClassrooms.map(c => (
+                                <option key={c.id} value={c.id}>{c.name} ({c.count})</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -156,19 +184,38 @@ export default function TaskAssignmentList({
                         const percentApproved = totalStudents > 0 ? Math.round((batch.approvedCount / totalStudents) * 100) : 0;
                         const isOverdue = batch.dueDate && new Date(batch.dueDate) < new Date() && !batch.isDraft && percentApproved < 100;
 
+                        const isIndividual = batch.targetType === 'individual';
+                        const validSubmissions = batch.submissions.filter(s => s.student_id !== 'draft' && s.student_id !== 'no-students');
+                        const recipientSummary = formatRecipientSummary(validSubmissions.map(s => ({ name: s.student_name })));
+
                         return (
                             <div 
                                 key={batch.assignmentId}
-                                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs p-5 flex flex-col justify-between hover:shadow-md transition-all space-y-4"
+                                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs p-5 flex flex-col justify-between hover:shadow-md transition-all space-y-4 text-left"
                             >
                                 {/* Card Top: Title, Target & Menu Actions */}
                                 <div className="space-y-2">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-2 flex-wrap mb-1">
-                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 truncate">
-                                                    🏫 {batch.classroomName}
-                                                </span>
+                                                {/* Targeting Badge: For Everyone vs Individual */}
+                                                {isIndividual ? (
+                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20">
+                                                        👤 Individual · {validSubmissions.length} {validSubmissions.length === 1 ? 'student' : 'students'}
+                                                    </span>
+                                                ) : (
+                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 border border-indigo-500/20">
+                                                        👥 For Everyone · {batch.classroomName} · {totalStudents} Students
+                                                    </span>
+                                                )}
+
+                                                {/* Classroom Badge if Individual */}
+                                                {isIndividual && batch.classroomName && (
+                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                                        🏫 {batch.classroomName}
+                                                    </span>
+                                                )}
+
                                                 {batch.isDraft ? (
                                                     <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                                         Draft
@@ -179,9 +226,38 @@ export default function TaskAssignmentList({
                                                     </span>
                                                 ) : null}
                                             </div>
+
                                             <h3 className="font-extrabold text-base text-slate-900 dark:text-white leading-snug truncate">
                                                 {batch.taskTitle}
                                             </h3>
+
+                                            {/* Assigned to Recipient Chips for Individual assignments */}
+                                            {isIndividual && (
+                                                <div className="flex items-center gap-1.5 flex-wrap pt-1 text-xs">
+                                                    <span className="font-semibold text-slate-500 dark:text-slate-400 text-[11px]">Assigned to:</span>
+                                                    {recipientSummary.mode === 'empty' ? (
+                                                        <span className="text-slate-400 text-[11px] italic">No students assigned</span>
+                                                    ) : (
+                                                        <>
+                                                            {recipientSummary.primaryNames.map((name, idx) => (
+                                                                <span key={idx} className="font-bold text-slate-800 dark:text-slate-200 text-[11px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                                                                    {name}
+                                                                </span>
+                                                            ))}
+                                                            {recipientSummary.remainingCount > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setInspectingBatch(batch)}
+                                                                    className="text-[11px] font-bold text-[#ecb613] hover:underline cursor-pointer"
+                                                                    title="View all assigned students"
+                                                                >
+                                                                    +{recipientSummary.remainingCount} more
+                                                                </button>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="flex items-center gap-1 shrink-0">

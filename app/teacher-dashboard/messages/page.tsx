@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import RichTextEditor from '../../../src/components/common/RichTextEditor';
 import AutoLinkText from '../../../src/components/common/AutoLinkText';
+import { isStudentOperationallyActive } from '../../../src/lib/student-lifecycle';
 
 interface Broadcast {
     id: string;
@@ -1415,7 +1416,7 @@ function MessagesDashboardContent() {
                 // 2. Pre-fetch Classrooms and Students for recipients modal
                 let roomsQuery = supabaseAuth
                     .from('classrooms')
-                    .select('id, name');
+                    .select('id, name, type');
                 if (!isAdmin) {
                     roomsQuery = roomsQuery.eq('teacher_id', profile.id);
                 }
@@ -1434,26 +1435,30 @@ function MessagesDashboardContent() {
                 if (isAdmin) {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
-                        .select('id, name, profile_pic_url')
+                        .select('id, name, profile_pic_url, status')
                         .or('role.eq.student,role.eq.pending,role.eq.mentor');
-                    uniqueStudents = (studentList || []).map((s: any) => ({
-                        id: s.id,
-                        name: s.name || 'Unknown',
-                        profile_pic_url: s.profile_pic_url || null,
-                        is_online: onlineUserIds.has(s.id)
-                    }));
+                    uniqueStudents = (studentList || [])
+                        .filter((s: any) => isStudentOperationallyActive(s.status))
+                        .map((s: any) => ({
+                            id: s.id,
+                            name: s.name || 'Unknown',
+                            profile_pic_url: s.profile_pic_url || null,
+                            is_online: onlineUserIds.has(s.id)
+                        }));
                 } else {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
-                        .select('id, name, profile_pic_url')
+                        .select('id, name, profile_pic_url, status')
                         .or('role.eq.student,role.eq.pending,role.eq.mentor')
                         .eq('teacher_id', profile.id);
-                    uniqueStudents = (studentList || []).map((s: any) => ({
-                        id: s.id,
-                        name: s.name || 'Unknown',
-                        profile_pic_url: s.profile_pic_url || null,
-                        is_online: onlineUserIds.has(s.id)
-                    }));
+                    uniqueStudents = (studentList || [])
+                        .filter((s: any) => isStudentOperationallyActive(s.status))
+                        .map((s: any) => ({
+                            id: s.id,
+                            name: s.name || 'Unknown',
+                            profile_pic_url: s.profile_pic_url || null,
+                            is_online: onlineUserIds.has(s.id)
+                        }));
                 }
                 setStudents(uniqueStudents);
 
@@ -1826,9 +1831,19 @@ function MessagesDashboardContent() {
         if (classIds.length > 0) {
             const { data: assoc } = await supabaseAuth
                 .from('classroom_students')
-                .select('student_id')
+                .select('classroom_id, student_id, users!student_id(status)')
                 .in('classroom_id', classIds);
-            (assoc || []).forEach((row: any) => studentIds.add(row.student_id));
+            
+            const classMap = new Map<string, any>();
+            (classrooms || []).forEach(c => classMap.set(c.id, c));
+
+            (assoc || []).forEach((row: any) => {
+                const room = classMap.get(row.classroom_id);
+                const isLearningCircle = room?.type === 'learning_circle';
+                if (isLearningCircle || isStudentOperationallyActive(row.users?.status)) {
+                    studentIds.add(row.student_id);
+                }
+            });
         }
         
         return Array.from(studentIds);
