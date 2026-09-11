@@ -32,38 +32,72 @@ async function resolveRecipientsToStudentIds(
 
     const promises: Promise<any>[] = [];
 
-    // 1. Global recipients
+    // 1. Global recipients (only active students)
     if (hasGlobal) {
         promises.push(
             (async () => {
                 const { data: students } = await supabaseAuth
                     .from('users')
                     .select('id')
-                    .eq('role', 'student');
+                    .eq('role', 'student')
+                    .eq('status', 'active');
                 (students || []).forEach(s => studentIdsSet.add(s.id));
             })()
         );
     }
 
-    // 2. Class recipients (batched in single queries for permanent + today's makeup students)
+    // 2. Class recipients (operational classrooms strictly target active students; learning circles target community)
     if (classIds.length > 0) {
-        const today = new Date().toISOString().split('T')[0];
         promises.push(
             (async () => {
-                const { data: permStudents } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('student_id')
-                    .in('classroom_id', classIds);
-                (permStudents || []).forEach(s => studentIdsSet.add(s.student_id));
-            })()
-        );
-        promises.push(
-            (async () => {
-                const { data: overrideStudents } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .select('student_id')
-                    .in('target_classroom_id', classIds);
-                (overrideStudents || []).forEach(s => studentIdsSet.add(s.student_id));
+                const { data: targetRooms } = await supabaseAuth
+                    .from('classrooms')
+                    .select('id, type, name')
+                    .in('id', classIds);
+
+                const operationalClassIds = (targetRooms || [])
+                    .filter(c => c.type !== 'learning_circle' && !(c.name && c.name.toLowerCase().includes('learning circle')))
+                    .map(c => c.id);
+
+                const circleClassIds = (targetRooms || [])
+                    .filter(c => c.type === 'learning_circle' || (c.name && c.name.toLowerCase().includes('learning circle')))
+                    .map(c => c.id);
+
+                if (operationalClassIds.length > 0) {
+                    const [permRes, overrideRes] = await Promise.all([
+                        supabaseAuth
+                            .from('classroom_students')
+                            .select('student_id, users!student_id(status)')
+                            .in('classroom_id', operationalClassIds),
+                        supabaseAuth
+                            .from('session_student_overrides')
+                            .select('student_id, users!student_id(status)')
+                            .in('target_classroom_id', operationalClassIds)
+                    ]);
+
+                    (permRes.data || []).forEach((s: any) => {
+                        if (s.users?.status === 'active') {
+                            studentIdsSet.add(s.student_id);
+                        }
+                    });
+
+                    (overrideRes.data || []).forEach((s: any) => {
+                        if (s.users?.status === 'active') {
+                            studentIdsSet.add(s.student_id);
+                        }
+                    });
+                }
+
+                if (circleClassIds.length > 0) {
+                    const { data: circleStudents } = await supabaseAuth
+                        .from('classroom_students')
+                        .select('student_id')
+                        .in('classroom_id', circleClassIds);
+
+                    (circleStudents || []).forEach((s: any) => {
+                        studentIdsSet.add(s.student_id);
+                    });
+                }
             })()
         );
     }

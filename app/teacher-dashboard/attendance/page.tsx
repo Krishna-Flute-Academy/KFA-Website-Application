@@ -34,6 +34,7 @@ import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { ArrangeMakeupModal } from '../../../src/components/makeup/ArrangeMakeupModal';
 import { StudentAttendanceModal } from '../../../src/components/teacher-dashboard/attendance/StudentAttendanceModal';
+import { isStudentOperationallyActive } from '../../../src/lib/student-lifecycle';
 
 interface Classroom {
     id: string;
@@ -480,11 +481,11 @@ export default function AttendancePage() {
                 const allBatchIds = activeBatchesOnSelectedDate.map(b => b.id);
 
                 const permStudentsPromise = permanentBatchIds.length > 0
-                    ? supabaseAuth.from('classroom_students').select('classroom_id').in('classroom_id', permanentBatchIds)
+                    ? supabaseAuth.from('classroom_students').select('classroom_id, users!student_id(status)').in('classroom_id', permanentBatchIds)
                     : Promise.resolve({ data: [] });
 
                 const overridesPromise = allBatchIds.length > 0
-                    ? supabaseAuth.from('session_student_overrides').select('target_classroom_id').in('target_classroom_id', allBatchIds).eq('override_date', selectedDate)
+                    ? supabaseAuth.from('session_student_overrides').select('target_classroom_id, users!student_id(status)').in('target_classroom_id', allBatchIds).eq('override_date', selectedDate)
                     : Promise.resolve({ data: [] });
 
                 const attendancePromise = allBatchIds.length > 0
@@ -502,13 +503,17 @@ export default function AttendancePage() {
                 ]);
 
                 const enrolledCountMap = new Map<string, number>();
-                (permRows || []).forEach(r => {
-                    enrolledCountMap.set(r.classroom_id, (enrolledCountMap.get(r.classroom_id) || 0) + 1);
+                (permRows || []).forEach((r: any) => {
+                    if (isStudentOperationallyActive(r.users?.status)) {
+                        enrolledCountMap.set(r.classroom_id, (enrolledCountMap.get(r.classroom_id) || 0) + 1);
+                    }
                 });
 
                 const overrideCountMap = new Map<string, number>();
-                (overrideRows || []).forEach(r => {
-                    overrideCountMap.set(r.target_classroom_id, (overrideCountMap.get(r.target_classroom_id) || 0) + 1);
+                (overrideRows || []).forEach((r: any) => {
+                    if (isStudentOperationallyActive(r.users?.status)) {
+                        overrideCountMap.set(r.target_classroom_id, (overrideCountMap.get(r.target_classroom_id) || 0) + 1);
+                    }
                 });
 
                 const attendanceStatsMap = new Map<string, { present: number; absent: number; late: number; excused: number }>();
@@ -606,11 +611,11 @@ export default function AttendancePage() {
                 if (!isTemporary) {
                     const { data: permanentStudents } = await supabaseAuth
                         .from('classroom_students')
-                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id, status)')
                         .eq('classroom_id', batchId);
                     
                     const permRoster = (permanentStudents || [])
-                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile?.id)
+                        .filter((row: any) => isStudentOperationallyActive(row.users?.status) && (isAdmin || row.users?.teacher_id === teacherProfile?.id))
                         .map((row: any) => ({
                             id: row.student_id,
                             name: row.users?.name || 'Unknown Student',
@@ -620,11 +625,12 @@ export default function AttendancePage() {
                     // Fetch temporary session override (makeup) students for this date
                     const { data: overrideStudents } = await supabaseAuth
                         .from('session_student_overrides')
-                        .select('student_id, missed_session_date, reason, users!student_id(name, profile_pic_url, teacher_id)')
+                        .select('student_id, missed_session_date, reason, users!student_id(name, profile_pic_url, teacher_id, status)')
                         .eq('target_classroom_id', batchId)
                         .eq('override_date', selectedDate);
 
                     const tempRoster = (overrideStudents || [])
+                        .filter((row: any) => isStudentOperationallyActive(row.users?.status))
                         .map((row: any) => ({
                             id: row.student_id,
                             name: row.users?.name || 'Unknown Student',
@@ -638,11 +644,12 @@ export default function AttendancePage() {
                 } else {
                     const { data: tempStudents } = await supabaseAuth
                         .from('session_student_overrides')
-                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id, status)')
                         .eq('target_classroom_id', batchId)
                         .eq('override_date', selectedDate);
                     
                     roster = (tempStudents || [])
+                        .filter((row: any) => isStudentOperationallyActive(row.users?.status))
                         .map((row: any) => ({
                             id: row.student_id,
                             name: row.users?.name || 'Unknown Student',
@@ -1073,11 +1080,11 @@ export default function AttendancePage() {
                     // Permanent classroom: enrolled students
                     const { data: permanentStudents } = await supabaseAuth
                         .from('classroom_students')
-                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id, status)')
                         .eq('classroom_id', batchId);
 
                     (permanentStudents || [])
-                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile.id)
+                        .filter((row: any) => isStudentOperationallyActive(row.users?.status) && (isAdmin || row.users?.teacher_id === teacherProfile.id))
                         .forEach((row: any) => {
                             entries.push({
                                 student: { id: row.student_id, name: row.users?.name || 'Unknown Student', profile_pic_url: row.users?.profile_pic_url },
@@ -1090,11 +1097,12 @@ export default function AttendancePage() {
                     // Makeup students assigned to this classroom on this date
                     const { data: overrideStudents } = await supabaseAuth
                         .from('session_student_overrides')
-                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id, status)')
                         .eq('target_classroom_id', batchId)
                         .eq('override_date', selectedDate);
 
                     (overrideStudents || [])
+                        .filter((row: any) => isStudentOperationallyActive(row.users?.status))
                         .forEach((row: any) => {
                             entries.push({
                                 student: { id: row.student_id, name: row.users?.name || 'Unknown Student', profile_pic_url: row.users?.profile_pic_url },
@@ -1107,11 +1115,12 @@ export default function AttendancePage() {
                     // Temporary class: only override/makeup students
                     const { data: tempStudents } = await supabaseAuth
                         .from('session_student_overrides')
-                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id, status)')
                         .eq('target_classroom_id', batchId)
                         .eq('override_date', selectedDate);
 
                     (tempStudents || [])
+                        .filter((row: any) => isStudentOperationallyActive(row.users?.status))
                         .forEach((row: any) => {
                             entries.push({
                                 student: { id: row.student_id, name: row.users?.name || 'Unknown Student', profile_pic_url: row.users?.profile_pic_url },
@@ -1777,17 +1786,17 @@ export default function AttendancePage() {
             // Fetch classroom students
             const { data: permStudentsData } = await supabaseAuth
                 .from('classroom_students')
-                .select('classroom_id, student_id, users!student_id(name)');
+                .select('classroom_id, student_id, users!student_id(name, status)');
             
             // Fetch temporary classroom students
             const { data: tempStudentsData } = await supabaseAuth
                 .from('temporary_class_students')
-                .select('temporary_class_id, student_id, users!student_id(name)');
+                .select('temporary_class_id, student_id, users!student_id(name, status)');
 
             // Fetch overrides for this date
             const { data: overridesData } = await supabaseAuth
                 .from('session_student_overrides')
-                .select('target_classroom_id, student_id, users!student_id(name)')
+                .select('target_classroom_id, student_id, users!student_id(name, status)')
                 .eq('override_date', dateStr);
 
             // Fetch attendance on this date
@@ -1810,7 +1819,7 @@ export default function AttendancePage() {
                 
                 schedules.forEach((sched: any) => {
                     const regularStudents = (permStudentsData || [])
-                        .filter((cs: any) => cs.classroom_id === room.id)
+                        .filter((cs: any) => cs.classroom_id === room.id && isStudentOperationallyActive(cs.users?.status))
                         .map((cs: any) => ({
                             id: cs.student_id,
                             name: cs.users?.name || 'Unknown Student',
@@ -1818,7 +1827,7 @@ export default function AttendancePage() {
                         }));
 
                     const overrideStudents = (overridesData || [])
-                        .filter((o: any) => o.target_classroom_id === room.id)
+                        .filter((o: any) => o.target_classroom_id === room.id && isStudentOperationallyActive(o.users?.status))
                         .map((o: any) => ({
                             id: o.student_id,
                             name: o.users?.name || 'Unknown Student',
@@ -1859,7 +1868,7 @@ export default function AttendancePage() {
             activeTemps.forEach((tc: any) => {
                 const targetRoomId = tc.classroom_id || tc.id;
                 const overrideStudents = (overridesData || [])
-                    .filter((o: any) => o.target_classroom_id === targetRoomId || o.target_classroom_id === tc.id)
+                    .filter((o: any) => (o.target_classroom_id === targetRoomId || o.target_classroom_id === tc.id) && isStudentOperationallyActive(o.users?.status))
                     .map((o: any) => ({
                         id: o.student_id,
                         name: o.users?.name || 'Unknown Student',

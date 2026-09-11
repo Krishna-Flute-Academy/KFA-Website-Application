@@ -53,7 +53,7 @@ export function getStudentAccess(status?: string | null): StudentAccessRules {
                 curriculumMode: 'readonly_paused',
                 dashboardMode: 'learning_paused',
                 studentFacingLabel: 'Learning Paused',
-                adminLabel: 'Inactive'
+                adminLabel: 'Paused'
             };
 
         case 'archived':
@@ -92,19 +92,38 @@ export function getStudentAccess(status?: string | null): StudentAccessRules {
 }
 
 /**
+ * Returns true if student is operationally active (eligible for live classroom rosters,
+ * attendance tracking, active fee cycles, operational notifications, and assignments).
+ */
+export function isStudentOperationallyActive(status?: string | null): boolean {
+    const normalized = (status || '').toLowerCase().trim();
+    return normalized === 'active';
+}
+
+export function isStudentPaused(status?: string | null): boolean {
+    const normalized = (status || '').toLowerCase().trim();
+    return normalized === 'inactive' || normalized === 'paused';
+}
+
+export function isStudentArchived(status?: string | null): boolean {
+    const normalized = (status || '').toLowerCase().trim();
+    return normalized === 'archived';
+}
+
+/**
  * Returns badge styling and label for teacher/admin dashboard tables.
  */
 export function getStudentStatusBadge(status?: string | null): {
-    label: 'Active' | 'Inactive' | 'Archived';
+    label: 'Active' | 'Paused' | 'Archived';
     badgeClass: string;
     dotClass: string;
 } {
     const normalized = (status || 'active').toLowerCase().trim();
 
-    if (normalized === 'inactive') {
+    if (normalized === 'inactive' || normalized === 'paused') {
         return {
-            label: 'Inactive',
-            badgeClass: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/40',
+            label: 'Paused',
+            badgeClass: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300 dark:border-amber-700/60 font-black',
             dotClass: 'bg-amber-500'
         };
     }
@@ -112,14 +131,15 @@ export function getStudentStatusBadge(status?: string | null): {
     if (normalized === 'archived') {
         return {
             label: 'Archived',
-            badgeClass: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700',
+            badgeClass: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700 font-bold',
             dotClass: 'bg-slate-400'
         };
     }
 
     return {
         label: 'Active',
-        badgeClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/40',
+        badgeClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/40 font-bold',
         dotClass: 'bg-emerald-500'
     };
 }
+

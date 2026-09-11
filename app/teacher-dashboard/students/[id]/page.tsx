@@ -12,6 +12,8 @@ import { INITIAL_MODULES } from '../../inventory/initial-data';
 
 import { stripHtml } from '../../../../src/lib/text-utils';
 import AutoLinkText from '../../../../src/components/common/AutoLinkText';
+import { PauseLearningModal } from '../../../../src/components/teacher-dashboard/students/PauseLearningModal';
+import { ResumeLearningModal } from '../../../../src/components/teacher-dashboard/students/ResumeLearningModal';
 
 interface StudentInfo {
     id: string;
@@ -278,7 +280,7 @@ export default function StudentProfilePage() {
                 const studentRooms = userData.classroom_students || [];
                 const permRoomRef = studentRooms.find((cs: any) => {
                     const room = Array.isArray(cs.classrooms) ? cs.classrooms[0] : cs.classrooms;
-                    return room?.type !== 'temporary';
+                    return room && room.type !== 'temporary' && room.type !== 'learning_circle' && !(room.name && room.name.toLowerCase().includes('learning circle'));
                 }) || studentRooms[0];
 
                 const studentClassroom = permRoomRef?.classrooms as any;
@@ -692,24 +694,11 @@ export default function StudentProfilePage() {
         router.push('/');
     };
 
-    const handlePauseStudent = async () => {
-        if (!studentInfo) return;
-        if (!confirm(`Pause learning for ${studentInfo.name}? Their classes will be paused. Learning progress and practice tools will remain accessible.`)) return;
+    const [showPauseModal, setShowPauseModal] = useState(false);
+    const [showResumeModal, setShowResumeModal] = useState(false);
 
-        try {
-            const { error: userError } = await supabaseAuth
-                .from('users')
-                .update({ status: 'inactive' })
-                .eq('id', studentId);
-
-            if (userError) throw userError;
-
-            setReloadTrigger(prev => prev + 1);
-            alert(`Learning paused for ${studentInfo.name}.`);
-        } catch (err: any) {
-            console.error('Error pausing student:', err);
-            alert(`Error: ${err.message || String(err)}`);
-        }
+    const handlePauseStudent = () => {
+        setShowPauseModal(true);
     };
 
     const handleArchiveStudent = async () => {
@@ -732,39 +721,8 @@ export default function StudentProfilePage() {
         }
     };
 
-    const handleResumeStudent = async () => {
-        if (!studentInfo) return;
-
-        const currentBatchName = (studentInfo.batch_name || '').trim();
-        const isInvalidBatch = !classroomId ||
-            !currentBatchName ||
-            currentBatchName.toLowerCase() === 'unassigned' ||
-            currentBatchName.toLowerCase().includes('learning circle');
-
-        if (isInvalidBatch) {
-            alert("This student's classroom enrollment requires review before learning can be resumed.");
-            return;
-        }
-
-        if (!confirm(`Resume learning for ${studentInfo.name}?\nThey will return to their current batch:\n${currentBatchName}`)) {
-            return;
-        }
-
-        try {
-            const { error: userErr } = await supabaseAuth
-                .from('users')
-                .update({ status: 'active' })
-                .eq('id', studentId);
-
-            if (userErr) throw userErr;
-
-            setStudentInfo((prev: any) => prev ? { ...prev, status: 'active' } : null);
-            setReloadTrigger(prev => prev + 1);
-            alert(`Student ${studentInfo.name} has resumed learning in batch: ${currentBatchName}`);
-        } catch (err: any) {
-            console.error('Error resuming student:', err);
-            alert(`Error resuming student: ${err.message || err.details || String(err)}`);
-        }
+    const handleResumeStudent = () => {
+        setShowResumeModal(true);
     };
 
     const handleOpenReactivateModal = () => {
@@ -2886,6 +2844,54 @@ export default function StudentProfilePage() {
                 </div>
             )}
 
+            {/* Pause Learning Modal */}
+            <PauseLearningModal
+                isOpen={showPauseModal}
+                onClose={() => setShowPauseModal(false)}
+                student={studentInfo ? {
+                    id: studentInfo.id,
+                    name: studentInfo.name,
+                    email: studentInfo.email,
+                    classroom_name: studentInfo.batch_name,
+                    classroom_id: studentInfo.classroom_id || undefined,
+                    profile_pic_url: studentInfo.profile_pic_url
+                } : null}
+                onSuccess={(updatedStudent) => {
+                    setStudentInfo((prev: any) => prev ? { 
+                        ...prev, 
+                        status: 'inactive', 
+                        batch_name: 'KFA Learning Circle' 
+                    } : null);
+                    setReloadTrigger(prev => prev + 1);
+                }}
+            />
+
+            {/* Resume Learning Modal */}
+            <ResumeLearningModal
+                isOpen={showResumeModal}
+                onClose={() => setShowResumeModal(false)}
+                student={studentInfo ? {
+                    id: studentInfo.id,
+                    name: studentInfo.name,
+                    email: studentInfo.email,
+                    classroom_name: studentInfo.batch_name,
+                    classroom_id: studentInfo.classroom_id || undefined,
+                    profile_pic_url: studentInfo.profile_pic_url,
+                    fees_basis: studentInfo.fees_basis,
+                    fees_collection_date: studentInfo.fees_collection_date
+                } : null}
+                classrooms={allClassrooms}
+                onSuccess={(updatedStudent) => {
+                    setStudentInfo((prev: any) => prev ? { 
+                        ...prev, 
+                        status: 'active', 
+                        batch_name: updatedStudent.batch,
+                        classroom_id: updatedStudent.classroom_id,
+                        fees_collection_date: updatedStudent.fees_collection_date
+                    } : null);
+                    setReloadTrigger(prev => prev + 1);
+                }}
+            />
 
             {/* ─── Mentor Note Compose Modal ────────────────────────────────────── */}
             {isMentorModalOpen && studentInfo && (

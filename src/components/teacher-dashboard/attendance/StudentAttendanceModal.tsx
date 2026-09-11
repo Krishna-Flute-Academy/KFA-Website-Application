@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { supabaseAuth } from '../../../lib/supabase-auth';
 import { getStudentFeeStatus, FeeStatusDetails } from '../../../lib/fee-utils';
+import { isStudentPaused } from '../../../lib/student-lifecycle';
 
 export interface StudentAttendanceModalProps {
     isOpen: boolean;
@@ -41,6 +42,7 @@ interface StudentProfile {
     fees_amount?: number;
     fees_classes_paid?: number;
     created_at?: string;
+    status?: string;
 }
 
 interface ClassroomInfo {
@@ -201,7 +203,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
             // 1. Fetch Student Profile
             const { data: profileData, error: profileErr } = await supabaseAuth
                 .from('users')
-                .select('id, name, email, phone, profile_pic_url, fees_basis, fees_collection_date, fees_amount, fees_classes_paid, created_at')
+                .select('id, name, email, phone, profile_pic_url, fees_basis, fees_collection_date, fees_amount, fees_classes_paid, created_at, status')
                 .eq('id', studentId)
                 .single();
 
@@ -227,7 +229,8 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                 profile.fees_collection_date ? Number(profile.fees_collection_date) : undefined,
                 paymentsData || [],
                 new Date(),
-                profile.created_at
+                profile.created_at,
+                profile.status
             );
             setFeeStatus(derivedFeeStatus);
 
@@ -433,7 +436,22 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
 
     // Fee Status Badge Details
     let feeBadgeContent = null;
-    if (studentProfile?.fees_basis === 'monthly') {
+    if (feeStatus?.status === 'paused' || feeStatus?.isPaused || isStudentPaused(studentProfile?.status)) {
+        feeBadgeContent = (
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
+                <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium">
+                    <CreditCard className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span>Fee Status: <strong className="text-slate-900 dark:text-white font-bold">Billing Paused</strong></span>
+                </div>
+                <div className="text-slate-500 dark:text-slate-400">
+                    • Next Due: <strong className="text-slate-800 dark:text-slate-200 font-bold">Paused (No Active Due)</strong>
+                </div>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-200 dark:border-amber-800">
+                    Billing Paused
+                </span>
+            </div>
+        );
+    } else if (studentProfile?.fees_basis === 'monthly') {
         const collectionDay = Number(studentProfile.fees_collection_date) || 1;
         const ordinal = getOrdinalSuffix(collectionDay);
         const dayLabel = `${collectionDay}${ordinal} of every month`;
@@ -524,6 +542,11 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                                     <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#ecb613]/15 text-[#92400e] dark:text-[#ecb613] border border-[#ecb613]/30">
                                         Student History
                                     </span>
+                                    {isStudentPaused(studentProfile?.status) && (
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                                            Paused Learning
+                                        </span>
+                                    )}
                                 </div>
 
                                 {/* Permanent Classroom & Timing */}
@@ -562,6 +585,23 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                             <X className="w-5 h-5" />
                         </button>
                     </div>
+
+                    {/* Paused Learning Banner */}
+                    {isStudentPaused(studentProfile?.status) && (
+                        <div className="mt-3 p-2.5 rounded-xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                                <div>
+                                    <strong>Learning is currently paused for this student.</strong> Classroom attendance and active fee billing cycles are suspended. Historical attendance and payment records are preserved below.
+                                </div>
+                                {feeStatus?.hasPrePauseDebt && (
+                                    <div className="text-amber-800 dark:text-amber-300 font-semibold text-[11px]">
+                                        ⚠️ Outstanding Pre-Pause Balance: An unpaid fee cycle from before learning was paused remains pending.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* ── MODAL BODY: Scrollable content ── */}

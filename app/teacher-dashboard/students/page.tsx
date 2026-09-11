@@ -11,6 +11,8 @@ import Link from 'next/link';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 import { getStudentStatusBadge } from '../../../src/lib/student-lifecycle';
 import { fetchAcademyTeachers } from '../../../src/lib/teachers';
+import { PauseLearningModal } from '../../../src/components/teacher-dashboard/students/PauseLearningModal';
+import { ResumeLearningModal } from '../../../src/components/teacher-dashboard/students/ResumeLearningModal';
 
 const GUIDANCE_TEMPLATES = [
     {
@@ -683,7 +685,7 @@ export default function StudentDirectory() {
                         fees_classes_paid,
                         classroom_students(
                             classroom_id,
-                            classrooms(id, name)
+                            classrooms(id, name, type)
                         )
                     `)
                     .eq('role', 'student');
@@ -820,10 +822,14 @@ export default function StudentDirectory() {
                             attendancePct = Math.round((presentCount / eligibleAttendance.length) * 100);
                         }
 
-                        const cs = s.classroom_students?.[0];
-                        const room = Array.isArray(cs?.classrooms) ? cs?.classrooms[0] : cs?.classrooms;
+                        const enrollments = s.classroom_students || [];
+                        const permCs = enrollments.find((cs: any) => {
+                            const r = Array.isArray(cs?.classrooms) ? cs?.classrooms[0] : cs?.classrooms;
+                            return r && r.type !== 'learning_circle' && r.type !== 'temporary';
+                        }) || enrollments[0];
+                        const room = Array.isArray(permCs?.classrooms) ? permCs?.classrooms[0] : permCs?.classrooms;
                         const resolvedRoomName = room?.name || null;
-                        const resolvedRoomId = cs?.classroom_id || room?.id || null;
+                        const resolvedRoomId = permCs?.classroom_id || room?.id || null;
 
                         // 2. Evaluate KFA Needs Attention Rules (Active Students Only)
                         const attentionIssues: AttentionIssue[] = [];
@@ -1195,27 +1201,15 @@ export default function StudentDirectory() {
     const [reactivateBatchId, setReactivateBatchId] = useState('');
     const [isReactivating, setIsReactivating] = useState(false);
 
-    const handlePauseStudent = async (student: StudentData) => {
-        if (!confirm(`Pause learning for ${student.name}? Their classes and task alerts will be temporarily suspended.`)) {
-            return;
-        }
+    const [pauseStudentTarget, setPauseStudentTarget] = useState<StudentData | null>(null);
+    const [resumeStudentTarget, setResumeStudentTarget] = useState<StudentData | null>(null);
 
-        // Optimistic update
-        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: 'Inactive' } : s));
+    const handlePauseStudent = (student: StudentData) => {
+        setPauseStudentTarget(student);
+    };
 
-        try {
-            const { error: userError } = await supabaseAuth
-                .from('users')
-                .update({ status: 'inactive' })
-                .eq('id', student.id);
-
-            if (userError) throw userError;
-        } catch (err: any) {
-            console.error('Error pausing student:', err);
-            alert(`Error pausing student: ${err.message || err.details || String(err)}`);
-            // Revert on error
-            setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: student.status } : s));
-        }
+    const handleResumeStudent = (student: StudentData) => {
+        setResumeStudentTarget(student);
     };
 
     const handleArchiveStudent = async (student: StudentData) => {
@@ -1236,42 +1230,6 @@ export default function StudentDirectory() {
         } catch (err: any) {
             console.error('Error archiving student:', err);
             alert(`Error archiving student: ${err.message || err.details || String(err)}`);
-            // Revert on error
-            setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: student.status } : s));
-        }
-    };
-
-    const handleResumeStudent = async (student: StudentData) => {
-        const batchName = (student.classroom_name || student.batch || '').trim();
-        const isInvalidBatch = !student.classroom_id ||
-            !batchName ||
-            batchName.toLowerCase() === 'unassigned' ||
-            batchName.toLowerCase().includes('learning circle');
-
-        if (isInvalidBatch) {
-            alert("This student's classroom enrollment requires review before learning can be resumed.");
-            return;
-        }
-
-        if (!confirm(`Resume learning for ${student.name}?\nThey will return to their current batch:\n${batchName}`)) {
-            return;
-        }
-
-        // Optimistic update
-        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: 'Active' } : s));
-
-        try {
-            const { error: userError } = await supabaseAuth
-                .from('users')
-                .update({ status: 'active' })
-                .eq('id', student.id);
-
-            if (userError) throw userError;
-
-            alert(`Student ${student.name} has resumed learning in batch: ${batchName}`);
-        } catch (err: any) {
-            console.error('Error resuming student:', err);
-            alert(`Error resuming student: ${err.message || err.details || String(err)}`);
             // Revert on error
             setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: student.status } : s));
         }
@@ -1631,22 +1589,31 @@ export default function StudentDirectory() {
             const userId = teacherProfile.id;
             const { data: studentsData } = await supabaseAuth
                 .from('users')
-                .select(`id, name, status, profile_pic_url, created_at, classroom_students(classrooms(name))`)
+                .select(`id, name, status, profile_pic_url, created_at, classroom_students(classrooms(name, type))`)
                 .eq('role', 'student')
                 .eq('teacher_id', userId);
 
             if (studentsData) {
-                const formatted: StudentData[] = studentsData.map((s: any) => ({
-                    id: s.id,
-                    user_id: s.id,
-                    name: s.name,
-                    student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
-                    batch: s.classroom_students?.[0]?.classrooms?.name || 'Unassigned',
-                    attendance_pct: Math.floor(Math.random() * 20) + 70,
-                    profile_pic_url: s.profile_pic_url,
-                    status: s.status === 'active' ? 'Active' : 'Inactive',
-                    created_at: s.created_at,
-                }));
+                const formatted: StudentData[] = studentsData.map((s: any) => {
+                    const enrs = s.classroom_students || [];
+                    const permRoom = enrs.find((cs: any) => {
+                        const r = Array.isArray(cs.classrooms) ? cs.classrooms[0] : cs.classrooms;
+                        return r && r.type !== 'learning_circle' && r.type !== 'temporary';
+                    }) || enrs[0];
+                    const roomObj = Array.isArray(permRoom?.classrooms) ? permRoom?.classrooms[0] : permRoom?.classrooms;
+
+                    return {
+                        id: s.id,
+                        user_id: s.id,
+                        name: s.name,
+                        student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
+                        batch: roomObj?.name || 'Unassigned',
+                        attendance_pct: Math.floor(Math.random() * 20) + 70,
+                        profile_pic_url: s.profile_pic_url,
+                        status: s.status === 'active' ? 'Active' : 'Inactive',
+                        created_at: s.created_at,
+                    };
+                });
                 setStudents(formatted);
                 if (formatted.length > 0) {
                     const avg = Math.round(formatted.reduce((acc, curr) => acc + curr.attendance_pct, 0) / formatted.length);
@@ -3712,6 +3679,41 @@ export default function StudentDirectory() {
                 onClose={handleCloseAttentionPopover}
                 onMouseEnter={handlePopoverMouseEnter}
                 onMouseLeave={handlePopoverMouseLeave}
+            />
+
+            {/* Pause Learning Modal */}
+            <PauseLearningModal
+                isOpen={!!pauseStudentTarget}
+                onClose={() => setPauseStudentTarget(null)}
+                student={pauseStudentTarget}
+                onSuccess={(updatedStudent) => {
+                    setStudents(prev => prev.map(s => s.id === updatedStudent.id ? { 
+                        ...s, 
+                        status: 'Inactive', 
+                        batch: 'KFA Learning Circle', 
+                        classroom_name: 'KFA Learning Circle' 
+                    } : s));
+                    router.refresh();
+                }}
+            />
+
+            {/* Resume Learning Modal */}
+            <ResumeLearningModal
+                isOpen={!!resumeStudentTarget}
+                onClose={() => setResumeStudentTarget(null)}
+                student={resumeStudentTarget}
+                classrooms={classrooms}
+                onSuccess={(updatedStudent) => {
+                    setStudents(prev => prev.map(s => s.id === updatedStudent.id ? { 
+                        ...s, 
+                        status: 'Active', 
+                        batch: updatedStudent.batch, 
+                        classroom_name: updatedStudent.batch, 
+                        classroom_id: updatedStudent.classroom_id,
+                        fees_collection_date: updatedStudent.fees_collection_date
+                    } : s));
+                    router.refresh();
+                }}
             />
         </div>
     );

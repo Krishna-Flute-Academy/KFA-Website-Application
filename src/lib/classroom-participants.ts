@@ -99,13 +99,13 @@ export async function fetchEffectiveClassroomParticipants(
             // Permanent Classroom: classroom_students + session_student_overrides for date if provided
             const permQuery = supabaseClient
                 .from('classroom_students')
-                .select('id, student_id, joined_at, users!student_id(id, name, email, role, level, profile_pic_url)')
+                .select('id, student_id, joined_at, users!student_id(id, name, email, role, level, profile_pic_url, status)')
                 .eq('classroom_id', classroomId);
 
             if (options?.date) {
                 const overrideQuery = supabaseClient
                     .from('session_student_overrides')
-                    .select('id, student_id, override_date, reason, credit_treatment, missed_session_date, users!student_id(id, name, email, role, level, profile_pic_url)')
+                    .select('id, student_id, override_date, reason, credit_treatment, missed_session_date, users!student_id(id, name, email, role, level, profile_pic_url, status)')
                     .eq('target_classroom_id', classroomId)
                     .eq('override_date', options.date);
 
@@ -135,11 +135,17 @@ export async function fetchEffectiveClassroomParticipants(
         }
 
         // 4. Build unified deduped student list
+        const isLearningCircle = classroom?.type === 'learning_circle' || 
+                                 (classroom?.name && classroom.name.toLowerCase().includes('learning circle'));
         const studentMap = new Map<string, ClassroomParticipant>();
 
         permStudents.forEach((row: any) => {
             const u = row.users || {};
             const sid = row.student_id || u.id;
+            // Operational filter: inactive / paused students must not appear in active operational classrooms
+            if (!isLearningCircle && u.status && u.status !== 'active') {
+                return;
+            }
             if (sid) {
                 studentMap.set(sid, {
                     id: sid,
@@ -161,6 +167,10 @@ export async function fetchEffectiveClassroomParticipants(
         overrideStudents.forEach((row: any) => {
             const u = row.users || {};
             const sid = row.student_id || u.id;
+            // Overrides are operational: student must be active
+            if (u.status && u.status !== 'active') {
+                return;
+            }
             if (sid) {
                 const existing = studentMap.get(sid);
                 studentMap.set(sid, {

@@ -7,6 +7,7 @@ import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, AlertCircle,
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { getStudentFeeStatus, calculateClassesAdded, getStudentBillingCycle, calculateStudentFeeCycleMetrics, getStudentFeeCycleLedger, StudentFeeCycleMetrics, FeeCycleLedgerReport } from '../../../src/lib/fee-utils';
+import { isStudentOperationallyActive } from '../../../src/lib/student-lifecycle';
 import FeeCycleLedgerModal from '../../../src/components/teacher-dashboard/fees/FeeCycleLedgerModal';
 import { exportFeesCSV } from '../../../src/lib/csv-export';
 
@@ -397,26 +398,33 @@ export default function FeesManagementDashboard() {
             if (studentsRes.data) {
                 const formatted: StudentFeesData[] = studentsRes.data
                     .filter((s: any) => {
-                        const stLower = (s.status || '').toLowerCase();
-                        if (stLower === 'archived' || stLower === 'inactive') return false;
+                        // 1. Student must be operationally active
+                        if (!isStudentOperationallyActive(s.status)) return false;
 
-                        const studentClassroomRef = s.classroom_students?.[0] as any;
-                        const studentClassroom = studentClassroomRef?.classrooms;
-                        const batch_name = Array.isArray(studentClassroom) 
-                            ? studentClassroom[0]?.name 
-                            : studentClassroom?.name;
+                        // 2. Exclude students whose only enrollment is non-operational learning circle
+                        const enrollments = s.classroom_students || [];
+                        const hasPermanentEnrollment = enrollments.some((cs: any) => {
+                            const room = Array.isArray(cs.classrooms) ? cs.classrooms[0] : cs.classrooms;
+                            return room && room.type !== 'learning_circle' && !(room.name && room.name.toLowerCase().includes('learning circle'));
+                        });
 
-                        if (batch_name && String(batch_name).toLowerCase().includes('learning circle')) {
+                        // If student has classrooms but only learning circle, exclude from fee cycles
+                        if (enrollments.length > 0 && !hasPermanentEnrollment) {
                             return false;
                         }
                         return true;
                     })
                     .map((s: any) => {
-                        const studentClassroomRef = s.classroom_students?.[0] as any;
-                        const studentClassroom = studentClassroomRef?.classrooms;
-                        const batch_name = Array.isArray(studentClassroom) 
-                            ? studentClassroom[0]?.name 
-                            : studentClassroom?.name;
+                        // Prefer the permanent operational classroom over learning circle
+                        const enrollments = s.classroom_students || [];
+                        const permRef = enrollments.find((cs: any) => {
+                            const room = Array.isArray(cs.classrooms) ? cs.classrooms[0] : cs.classrooms;
+                            return room && room.type !== 'learning_circle' && room.type !== 'temporary';
+                        }) || enrollments[0];
+
+                        const studentClassroom = permRef?.classrooms;
+                        const room = Array.isArray(studentClassroom) ? studentClassroom[0] : studentClassroom;
+                        const batch_name = room?.name;
 
                         const joinDateVal = s.join_date || s.created_at?.split('T')[0] || new Date().toISOString().split('T')[0];
                         const derivedCollectionDate = s.fees_collection_date 
