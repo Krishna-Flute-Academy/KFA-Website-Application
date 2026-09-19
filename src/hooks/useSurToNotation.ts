@@ -55,6 +55,8 @@ export function useSurToNotation(initialSa?: RootNote): UseSurToNotationReturn {
     const audioContextRef = useRef<AudioContext | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
+    const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const filterNodesRef = useRef<BiquadFilterNode[]>([]);
     const rafIdRef = useRef<number | null>(null);
     const statusRef = useRef<ListeningStatus>('idle');
     useEffect(() => { statusRef.current = status; }, [status]);
@@ -112,6 +114,11 @@ export function useSurToNotation(initialSa?: RootNote): UseSurToNotationReturn {
         const analyser = analyserRef.current;
         const ctx = audioContextRef.current;
         if (!analyser || !ctx) return;
+
+        // Auto-resume AudioContext if suspended by browser
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+        }
 
         const buffer = new Float32Array(analyser.fftSize);
         analyser.getFloatTimeDomainData(buffer);
@@ -195,6 +202,29 @@ export function useSurToNotation(initialSa?: RootNote): UseSurToNotationReturn {
             streamRef.current = null;
         }
 
+        if (sourceNodeRef.current) {
+            try {
+                sourceNodeRef.current.disconnect();
+            } catch (e) {}
+            sourceNodeRef.current = null;
+        }
+
+        if (filterNodesRef.current.length > 0) {
+            filterNodesRef.current.forEach(node => {
+                try {
+                    node.disconnect();
+                } catch (e) {}
+            });
+            filterNodesRef.current = [];
+        }
+
+        if (analyserRef.current) {
+            try {
+                analyserRef.current.disconnect();
+            } catch (e) {}
+            analyserRef.current = null;
+        }
+
         if (audioContextRef.current) {
             try {
                 if (audioContextRef.current.state !== 'closed') {
@@ -206,7 +236,6 @@ export function useSurToNotation(initialSa?: RootNote): UseSurToNotationReturn {
             audioContextRef.current = null;
         }
 
-        analyserRef.current = null;
         stabilizerRef.current.reset();
     }, []);
 
@@ -216,12 +245,14 @@ export function useSurToNotation(initialSa?: RootNote): UseSurToNotationReturn {
             cancelAnimationFrame(rafIdRef.current);
             rafIdRef.current = null;
         }
+        statusRef.current = 'paused';
         setStatus('paused');
         setLivePitch(null);
     }, []);
 
     // ── Stop ──────────────────────────────────────────────────────────────────
     const stop = useCallback(() => {
+        statusRef.current = 'idle';
         stopMicrophone();
         setStatus('idle');
         setLivePitch(null);
@@ -253,7 +284,11 @@ export function useSurToNotation(initialSa?: RootNote): UseSurToNotationReturn {
             if (audioContextRef.current.state === 'suspended') {
                 await audioContextRef.current.resume();
             }
+            statusRef.current = 'listening';
             setStatus('listening');
+            if (rafIdRef.current) {
+                cancelAnimationFrame(rafIdRef.current);
+            }
             rafIdRef.current = requestAnimationFrame(updateLoop);
             return;
         }
@@ -293,6 +328,7 @@ export function useSurToNotation(initialSa?: RootNote): UseSurToNotationReturn {
             }
 
             const source = ctx.createMediaStreamSource(stream);
+            sourceNodeRef.current = source;
 
             // 1. High-Pass Filter (80 Hz)
             const highPass = ctx.createBiquadFilter();
@@ -303,6 +339,8 @@ export function useSurToNotation(initialSa?: RootNote): UseSurToNotationReturn {
             const lowPass = ctx.createBiquadFilter();
             lowPass.type = 'lowpass';
             lowPass.frequency.value = SUR_NOTATION_CONFIG.lowPassHz;
+
+            filterNodesRef.current = [highPass, lowPass];
 
             // 3. Analyser Node
             const analyser = ctx.createAnalyser();
@@ -316,12 +354,17 @@ export function useSurToNotation(initialSa?: RootNote): UseSurToNotationReturn {
             lowPass.connect(analyser);
 
             stabilizerRef.current.reset();
+            statusRef.current = 'listening';
             setStatus('listening');
 
+            if (rafIdRef.current) {
+                cancelAnimationFrame(rafIdRef.current);
+            }
             rafIdRef.current = requestAnimationFrame(updateLoop);
         } catch (err: any) {
             console.error('Error starting microphone for Sur to Notation:', err);
             stopMicrophone();
+            statusRef.current = 'idle';
             setStatus('idle');
             if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
                 setError('Microphone permission was denied. Please allow microphone access in your browser settings to use Sur to Notation.');

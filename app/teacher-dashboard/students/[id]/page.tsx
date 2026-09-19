@@ -519,9 +519,7 @@ export default function StudentProfilePage() {
                 const { data: attData } = await supabaseAuth
                     .from('attendance')
                     .select(`
-                        date, 
-                        status, 
-                        classroom_id,
+                        *,
                         classrooms(name)
                     `)
                     .eq('student_id', studentId)

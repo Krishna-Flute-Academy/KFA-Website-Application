@@ -593,6 +593,8 @@ export interface FeeCycleSessionItem {
     actionUrl?: string;
     actionLabel?: string;
     notes?: string;
+    actualDate?: string;             // Physical attendance date if different
+    onBehalfOfDate?: string;         // Scheduled target date if satisfied on behalf of
 }
 
 export interface FeeCycleDiagnostic {
@@ -645,11 +647,11 @@ export interface StudentCycleCalculationInput {
     resumeDate?: string | Date | null;
     classrooms?: { id: string; name?: string; type?: string }[];
     batchSchedules?: { classroom_id: string; day_of_week: number; start_time?: string; end_time?: string }[];
-    attendance?: { id?: string; student_id?: string; classroom_id: string; date?: string; session_date?: string; status: string }[];
+    attendance?: { id?: string; student_id?: string; classroom_id: string; date?: string; session_date?: string; status: string; on_behalf_of_date?: string | null }[];
     overrides?: { id?: string; student_id?: string; target_classroom_id: string; override_date: string; missed_session_date?: string | null; credit_treatment?: string | null; reason?: string | null }[];
     leaveRequests?: { id?: string; student_id?: string; classroom_id?: string; class_date: string; status: string }[];
-    payments?: { payment_date: string; status?: string; classes_added?: number }[];
-    cancelledSessions?: { classroom_id?: string; date: string }[];
+    cancelledSessions?: { id?: string; classroom_id?: string; date: string; session_date?: string; reason?: string }[];
+    payments?: { payment_date: string; amount?: number; status?: string; classes_added?: number }[];
     today?: Date;
 }
 
@@ -780,15 +782,21 @@ export function evaluateStudentFeeCycle(
         }
     });
 
-    // Student attendance records inside this billing cycle
+    // Student attendance records
     const normalizedAttendance = attendance
         .filter(a => !a.student_id || a.student_id === studentId)
-        .map(a => ({
-            ...a,
-            student_id: studentId,
-            date: a.date || a.session_date || ''
-        }));
-    const cycleAttendance = normalizedAttendance.filter(a => a.date >= cycleStart && a.date < nextDueDate);
+        .map(a => {
+            const physicalDate = (a.date || a.session_date || '').split('T')[0];
+            const onBehalfOf = a.on_behalf_of_date ? a.on_behalf_of_date.split('T')[0] : null;
+            const effectiveDate = onBehalfOf || physicalDate;
+            return {
+                ...a,
+                student_id: studentId,
+                date: physicalDate,
+                on_behalf_of_date: onBehalfOf,
+                effectiveDate
+            };
+        });
 
     // Overrides for this student
     const studentOverrides = overrides.filter(o => !o.student_id || o.student_id === studentId);
@@ -804,22 +812,18 @@ export function evaluateStudentFeeCycle(
     let unexcusedMissed = 0;
     let excusedMissed = 0;
 
-    // Map regular session date -> attendance record
-    const regularAttendanceByDate = new Map<string, typeof cycleAttendance[0]>();
+    // Map of effectiveDate -> attendance record that satisfies this scheduled date
+    const attendanceByEffectiveDate = new Map<string, typeof normalizedAttendance[0]>();
+    // Map of physicalDate -> attendance record that was physically marked on this date
+    const attendanceByPhysicalDate = new Map<string, typeof normalizedAttendance[0]>();
 
-    cycleAttendance.forEach(a => {
+    normalizedAttendance.forEach(a => {
         if (isMakeupAttendance(a)) {
             // makeup attendance handled separately in makeup reconciliation
             return;
         }
-        regularAttendanceByDate.set(a.date, a);
-        if (a.status === 'present' || a.status === 'late') {
-            regularAttended++;
-        } else if (a.status === 'absent') {
-            unexcusedMissed++;
-        } else if (a.status === 'excused') {
-            excusedMissed++;
-        }
+        attendanceByPhysicalDate.set(a.date, a);
+        attendanceByEffectiveDate.set(a.effectiveDate, a);
     });
 
     // Approved leaves in cycle
@@ -862,8 +866,8 @@ export function evaluateStudentFeeCycle(
                 ? `${sched.start_time.slice(0, 5)} - ${sched.end_time?.slice(0, 5) || ''}`
                 : undefined;
 
-            const hasAttendance = regularAttendanceByDate.has(iterDateStr);
-            const attRecord = regularAttendanceByDate.get(iterDateStr);
+            const satisfyingAtt = attendanceByEffectiveDate.get(iterDateStr);
+            const physicalAtt = attendanceByPhysicalDate.get(iterDateStr);
             const isCancelled = cancelledDates.has(iterDateStr);
             const hasApprovedLeave = approvedLeaveDates.has(iterDateStr);
 
@@ -888,12 +892,20 @@ export function evaluateStudentFeeCycle(
                     isDiscrepancy: false,
                     notes: 'Session cancelled by academy/teacher.'
                 });
-            } else if (hasAttendance && attRecord) {
-                if (attRecord.status === 'present' || attRecord.status === 'late') {
-                    const isLate = attRecord.status === 'late';
+            } else if (satisfyingAtt) {
+                // Scheduled class satisfied by an attendance record (either on same date or on-behalf-of)
+                const isDifferentDate = satisfyingAtt.date !== iterDateStr;
+                const isLate = satisfyingAtt.status === 'late';
+                const [pYr, pMo, pDa] = satisfyingAtt.date.split('-').map(Number);
+                const physDisplay = formatPrettyDate(new Date(pYr, pMo - 1, pDa));
+
+                if (satisfyingAtt.status === 'present' || satisfyingAtt.status === 'late') {
+                    regularAttended++;
                     sessions.push({
                         id: `reg-${iterDateStr}-${classId}`,
                         date: iterDateStr,
+                        actualDate: satisfyingAtt.date,
+                        onBehalfOfDate: isDifferentDate ? iterDateStr : undefined,
                         displayDate,
                         dayName,
                         timeSlot,
@@ -901,18 +913,25 @@ export function evaluateStudentFeeCycle(
                         classroomName: className,
                         sessionType: 'regular',
                         status: 'attended',
-                        statusLabel: isLate ? '🕒 Attended (Late)' : '✅ Attended',
+                        statusLabel: isDifferentDate
+                            ? `✅ Attended (Satisfied by ${physDisplay} class)`
+                            : isLate ? '🕒 Attended (Late)' : '✅ Attended',
                         creditImpact: 'consumed',
                         creditImpactLabel: '1 class consumed',
                         isDiscrepancy: false,
-                        actionUrl: `/teacher-dashboard/attendance?date=${iterDateStr}&classId=${classId}`,
+                        actionUrl: `/teacher-dashboard/attendance?date=${satisfyingAtt.date}&classId=${classId}`,
                         actionLabel: 'View Attendance →',
-                        notes: isLate ? 'Marked late (counts as attended).' : 'Marked present.'
+                        notes: isDifferentDate
+                            ? `Satisfied by class physically taken on ${physDisplay} on behalf of this scheduled date.`
+                            : isLate ? 'Marked late (counts as attended).' : 'Marked present.'
                     });
-                } else if (attRecord.status === 'absent') {
+                } else if (satisfyingAtt.status === 'absent') {
+                    unexcusedMissed++;
                     sessions.push({
                         id: `reg-${iterDateStr}-${classId}`,
                         date: iterDateStr,
+                        actualDate: satisfyingAtt.date,
+                        onBehalfOfDate: isDifferentDate ? iterDateStr : undefined,
                         displayDate,
                         dayName,
                         timeSlot,
@@ -920,18 +939,25 @@ export function evaluateStudentFeeCycle(
                         classroomName: className,
                         sessionType: 'regular',
                         status: 'absent',
-                        statusLabel: '❌ Absent',
+                        statusLabel: isDifferentDate
+                            ? `❌ Absent (Satisfied by ${physDisplay} class)`
+                            : '❌ Absent',
                         creditImpact: 'consumed',
                         creditImpactLabel: '1 class consumed (unexcused)',
                         isDiscrepancy: false,
-                        actionUrl: `/teacher-dashboard/attendance?date=${iterDateStr}&classId=${classId}`,
+                        actionUrl: `/teacher-dashboard/attendance?date=${satisfyingAtt.date}&classId=${classId}`,
                         actionLabel: 'Review Attendance →',
-                        notes: 'Unexcused absence. Consumes 1 class credit per policy.'
+                        notes: isDifferentDate
+                            ? `Marked absent on class physically taken on ${physDisplay} on behalf of this scheduled date.`
+                            : 'Unexcused absence. Consumes 1 class credit per policy.'
                     });
-                } else if (attRecord.status === 'excused') {
+                } else if (satisfyingAtt.status === 'excused') {
+                    excusedMissed++;
                     sessions.push({
                         id: `reg-${iterDateStr}-${classId}`,
                         date: iterDateStr,
+                        actualDate: satisfyingAtt.date,
+                        onBehalfOfDate: isDifferentDate ? iterDateStr : undefined,
                         displayDate,
                         dayName,
                         timeSlot,
@@ -939,21 +965,47 @@ export function evaluateStudentFeeCycle(
                         classroomName: className,
                         sessionType: 'regular',
                         status: 'excused',
-                        statusLabel: '🟠 Excused',
+                        statusLabel: isDifferentDate
+                            ? `🟠 Excused (Satisfied by ${physDisplay} class)`
+                            : '🟠 Excused',
                         creditImpact: 'not_consumed',
                         creditImpactLabel: '0 classes consumed (makeup eligible)',
                         isDiscrepancy: false,
-                        actionUrl: `/teacher-dashboard/attendance?date=${iterDateStr}&classId=${classId}`,
+                        actionUrl: `/teacher-dashboard/attendance?date=${satisfyingAtt.date}&classId=${classId}`,
                         actionLabel: 'View Record →',
-                        notes: 'Absence marked as excused. Grants makeup eligibility.'
+                        notes: isDifferentDate
+                            ? `Marked excused on class physically taken on ${physDisplay} on behalf of this scheduled date.`
+                            : 'Absence marked as excused. Grants makeup eligibility.'
                     });
                 }
+            } else if (physicalAtt && physicalAtt.on_behalf_of_date && physicalAtt.on_behalf_of_date !== iterDateStr) {
+                // Physical attendance happened on this day, but taken on behalf of another scheduled class!
+                const [bYr, bMo, bDa] = physicalAtt.on_behalf_of_date.split('-').map(Number);
+                const behalfDisplay = formatPrettyDate(new Date(bYr, bMo - 1, bDa));
+                sessions.push({
+                    id: `reg-${iterDateStr}-${classId}`,
+                    date: iterDateStr,
+                    actualDate: iterDateStr,
+                    onBehalfOfDate: physicalAtt.on_behalf_of_date,
+                    displayDate,
+                    dayName,
+                    timeSlot,
+                    classroomId: classId,
+                    classroomName: className,
+                    sessionType: 'regular',
+                    status: 'attended',
+                    statusLabel: `✅ Attended (on behalf of ${behalfDisplay})`,
+                    creditImpact: 'not_consumed',
+                    creditImpactLabel: `0 classes consumed in current cycle (satisfies ${behalfDisplay})`,
+                    isDiscrepancy: false,
+                    actionUrl: `/teacher-dashboard/attendance?date=${iterDateStr}&classId=${classId}`,
+                    actionLabel: 'View Attendance →',
+                    notes: `Class physically taken on ${displayDate} on behalf of scheduled class on ${behalfDisplay}.`
+                });
             } else {
                 // No attendance record
                 if (hasApprovedLeave) {
-                    if (!regularAttendanceByDate.has(iterDateStr)) {
-                        excusedMissed++;
-                    }
+                    excusedMissed++;
                     sessions.push({
                         id: `reg-${iterDateStr}-${classId}`,
                         date: iterDateStr,
@@ -1051,9 +1103,9 @@ export function evaluateStudentFeeCycle(
 
     // 4. Makeup Reconciliation: Link each excused date to overrides and attendance
     const excusedDates = new Set<string>();
-    cycleAttendance.forEach(a => {
-        if (a.status === 'excused' && !isMakeupAttendance(a)) {
-            excusedDates.add(a.date);
+    sessions.forEach(s => {
+        if (s.status === 'excused' && s.sessionType === 'regular') {
+            excusedDates.add(s.date);
         }
     });
     approvedLeavesInCycle.forEach(l => {

@@ -481,17 +481,25 @@ export default function FeesManagementDashboard() {
                         const d = new Date();
                         d.setDate(d.getDate() - 45);
                         minDateStr = d.toISOString().split('T')[0];
+                    } else {
+                        const d = new Date(minDateStr);
+                        d.setDate(d.getDate() - 35);
+                        minDateStr = d.toISOString().split('T')[0];
                     }
                     if (!maxDateStr) {
                         const d = new Date();
                         d.setDate(d.getDate() + 45);
+                        maxDateStr = d.toISOString().split('T')[0];
+                    } else {
+                        const d = new Date(maxDateStr);
+                        d.setDate(d.getDate() + 35);
                         maxDateStr = d.toISOString().split('T')[0];
                     }
 
                     const [attRes, ovRes, lvsRes, schedRes] = await Promise.all([
                         supabaseAuth
                             .from('attendance')
-                            .select('student_id, classroom_id, date, status')
+                            .select('*')
                             .in('student_id', allStudentIds)
                             .gte('date', minDateStr)
                             .lte('date', maxDateStr),
@@ -1087,27 +1095,35 @@ export default function FeesManagementDashboard() {
                 student.join_date
             );
 
-            // Targeted single-student fetch scoped strictly to active billing period
+            // Targeted single-student fetch with ±35 days buffer to capture advance on-behalf-of classes
+            const startD = new Date(cycle.cycleStart);
+            startD.setDate(startD.getDate() - 35);
+            const extendedStart = startD.toISOString().split('T')[0];
+
+            const endD = new Date(cycle.nextDueDate);
+            endD.setDate(endD.getDate() + 35);
+            const extendedEnd = endD.toISOString().split('T')[0];
+
             const [attRes, ovRes, lvsRes, schedRes] = await Promise.all([
                 supabaseAuth
                     .from('attendance')
-                    .select('id, student_id, classroom_id, date, status')
+                    .select('*')
                     .eq('student_id', student.id)
-                    .gte('date', cycle.cycleStart)
-                    .lte('date', cycle.nextDueDate),
+                    .gte('date', extendedStart)
+                    .lte('date', extendedEnd),
                 supabaseAuth
                     .from('session_student_overrides')
                     .select('id, student_id, target_classroom_id, override_date, reason')
                     .eq('student_id', student.id)
-                    .gte('override_date', cycle.cycleStart)
-                    .lte('override_date', cycle.nextDueDate),
+                    .gte('override_date', extendedStart)
+                    .lte('override_date', extendedEnd),
                 supabaseAuth
                     .from('leave_requests')
                     .select('id, student_id, classroom_id, class_date, status')
                     .eq('student_id', student.id)
                     .eq('status', 'approved')
-                    .gte('class_date', cycle.cycleStart)
-                    .lte('class_date', cycle.nextDueDate),
+                    .gte('class_date', extendedStart)
+                    .lte('class_date', extendedEnd),
                 supabaseAuth
                     .from('batch_schedules')
                     .select('id, classroom_id, day_of_week, start_time, end_time')

@@ -6,13 +6,11 @@ import {
     Mic, 
     MicOff, 
     Pause, 
-    Play, 
     RotateCcw, 
     ShieldCheck, 
     AlertCircle, 
     Music2, 
-    Info,
-    Sparkles 
+    Info
 } from 'lucide-react';
 import { useSurToNotation } from '../../../hooks/useSurToNotation';
 import RootNoteSelector from '../tuner/RootNoteSelector';
@@ -76,14 +74,14 @@ export default function SurToNotationModal({ onClose }: SurToNotationModalProps)
                         <div className="text-left">
                             <div className="flex items-center gap-2">
                                 <h2 className="font-black text-sm sm:text-base text-slate-800">
-                                    Sur to Notation
+                                    Flute to Notes (Sur to Notation)
                                 </h2>
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/15 text-[#a15912] uppercase tracking-wider">
-                                    Hindustani Sargam
+                                    Live Sargam
                                 </span>
                             </div>
                             <p className="text-[11px] text-slate-500">
-                                Play a note or phrase and convert your Sur into Sargam notation.
+                                Play your flute — notes are created and written automatically in real time.
                             </p>
                         </div>
                     </div>
@@ -115,11 +113,21 @@ export default function SurToNotationModal({ onClose }: SurToNotationModalProps)
                         </div>
                     )}
 
-                    {/* Root Note (Sa) Tonic Selector */}
-                    <RootNoteSelector
-                        selectedSa={selectedSa}
-                        onSelectSa={setSelectedSa}
-                    />
+                    {/* Flute Root Note (Sa) Tonic Selector */}
+                    <div className="bg-white border border-slate-200/90 rounded-3xl p-4 shadow-xs text-left">
+                        <div className="mb-2">
+                            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                                Select Your Flute's Sa (Tonic)
+                            </span>
+                            <p className="text-[11px] text-slate-400">
+                                Match this to the key of your flute (e.g. C, C#, D, E Bass).
+                            </p>
+                        </div>
+                        <RootNoteSelector
+                            selectedSa={selectedSa}
+                            onSelectSa={setSelectedSa}
+                        />
+                    </div>
 
                     {/* Microphone Action Controls: Start / Pause / Stop / Clear */}
                     <div className="flex flex-wrap items-center gap-2.5">
@@ -127,10 +135,10 @@ export default function SurToNotationModal({ onClose }: SurToNotationModalProps)
                             <button
                                 type="button"
                                 onClick={start}
-                                className="flex-1 min-w-[140px] py-3 px-5 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-black text-xs sm:text-sm rounded-2xl shadow-xs transition-all flex items-center justify-center gap-2 active:scale-[0.99]"
+                                className="flex-1 min-w-[160px] py-3.5 px-6 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-950 font-black text-sm rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2.5 active:scale-[0.99]"
                             >
-                                <Mic className="w-4 h-4" />
-                                {status === 'paused' ? 'Resume Listening' : 'Start Listening'}
+                                <Mic className="w-5 h-5 text-slate-950" />
+                                {status === 'paused' ? 'Resume Listening' : 'Start Listening to Flute'}
                             </button>
                         ) : (
                             <button
@@ -159,28 +167,21 @@ export default function SurToNotationModal({ onClose }: SurToNotationModalProps)
                             onClick={clear}
                             disabled={!notationText.trim() && tokens.length === 0}
                             className="py-3 px-4 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed font-extrabold text-xs sm:text-sm rounded-2xl transition-all shadow-xs flex items-center justify-center gap-1.5 active:scale-[0.99]"
+                            title="Clear All Notes"
                         >
                             <RotateCcw className="w-4 h-4" />
                             Clear
                         </button>
                     </div>
 
-                    {/* Live Pitch Display */}
+                    {/* Live Flute Sound Note Display */}
                     <LivePitchDisplay
                         status={status}
                         selectedSa={selectedSa}
                         livePitch={livePitch}
                     />
 
-                    {/* Session Stats (Duration, Count, Mic Signal) */}
-                    <TranscriptionStats
-                        durationSeconds={durationSeconds}
-                        noteCount={tokens.length}
-                        status={status}
-                        inputVolume={livePitch?.inputVolume}
-                    />
-
-                    {/* Real-time Editable Notation Area */}
+                    {/* Real-time Created Notes Area (Sargam Textarea + Copy/Undo/Clear) */}
                     <NotationEditor
                         notationText={notationText}
                         onTextChange={setNotationText}
@@ -189,19 +190,27 @@ export default function SurToNotationModal({ onClose }: SurToNotationModalProps)
                         hasTokens={tokens.length > 0}
                     />
 
-                    {/* Friendly Advice & Limitations Notice */}
+                    {/* Session Stats (Duration, Notes Count, Mic Signal) */}
+                    <TranscriptionStats
+                        durationSeconds={durationSeconds}
+                        noteCount={tokens.length}
+                        status={status}
+                        inputVolume={livePitch?.inputVolume}
+                    />
+
+                    {/* Gentle Flute Advice */}
                     <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3.5 flex items-start gap-2.5 text-left text-xs text-slate-700">
                         <Info className="w-4 h-4 text-[#d46211] shrink-0 mt-0.5" />
                         <div className="leading-relaxed">
-                            <strong className="font-bold text-[#a15912] block">Tips for Best Results:</strong>
-                            Play one steady note at a time in a quiet room. Best suited for Indian flute (Bansuri), humming, or monophonic instruments. Polyphonic accompaniment or background music will reduce transcription accuracy.
+                            <strong className="font-bold text-[#a15912] block">How It Works:</strong>
+                            Play one steady note at a time on your flute. As you play each Sur, the app recognizes it and writes the note into the box automatically.
                         </div>
                     </div>
 
                     {/* Privacy Guarantee */}
                     <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 pt-1 pb-1">
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Microphone audio is processed on your device and is not uploaded.</span>
+                        <span>Microphone audio is processed entirely on your device and is not recorded or stored.</span>
                     </div>
 
                 </div>

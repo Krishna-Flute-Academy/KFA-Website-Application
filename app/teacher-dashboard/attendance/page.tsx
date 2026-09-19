@@ -178,6 +178,9 @@ export default function AttendancePage() {
     const [historyLoading, setHistoryLoading] = useState(false);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
 
+    // On-Behalf-Of batch state mapping batchId -> on_behalf_of_date
+    const [batchOnBehalfOfMap, setBatchOnBehalfOfMap] = useState<Record<string, string | null>>({});
+
     const formatLocalDateStr = useCallback((dateStr: string, includeYear = false, locale = 'en-IN', options?: Intl.DateTimeFormatOptions) => {
         if (!dateStr) return '';
         const cleanDate = dateStr.split('T')[0].split(' ')[0];
@@ -489,7 +492,7 @@ export default function AttendancePage() {
                     : Promise.resolve({ data: [] });
 
                 const attendancePromise = allBatchIds.length > 0
-                    ? supabaseAuth.from('attendance').select('classroom_id, status').in('classroom_id', allBatchIds).eq('date', selectedDate)
+                    ? supabaseAuth.from('attendance').select('*').in('classroom_id', allBatchIds).eq('date', selectedDate)
                     : Promise.resolve({ data: [] });
 
                 const [
@@ -517,7 +520,8 @@ export default function AttendancePage() {
                 });
 
                 const attendanceStatsMap = new Map<string, { present: number; absent: number; late: number; excused: number }>();
-                (attRows || []).forEach(r => {
+                const loadedOnBehalfMap: Record<string, string | null> = {};
+                (attRows || []).forEach((r: any) => {
                     if (!attendanceStatsMap.has(r.classroom_id)) {
                         attendanceStatsMap.set(r.classroom_id, { present: 0, absent: 0, late: 0, excused: 0 });
                     }
@@ -526,7 +530,13 @@ export default function AttendancePage() {
                     else if (r.status === 'absent') stats.absent++;
                     else if (r.status === 'late') stats.late++;
                     else if (r.status === 'excused') stats.excused++;
+
+                    if (r.on_behalf_of_date && !loadedOnBehalfMap[r.classroom_id]) {
+                        loadedOnBehalfMap[r.classroom_id] = r.on_behalf_of_date;
+                    }
                 });
+
+                setBatchOnBehalfOfMap(prev => ({ ...prev, ...loadedOnBehalfMap }));
 
                 const summaries: Record<string, { present: number; absent: number; late: number; excused: number; total: number }> = {};
 
@@ -663,21 +673,66 @@ export default function AttendancePage() {
             // 2. Always fetch fresh attendance data (never cached — must stay in sync with Classroom view)
             const { data: attendanceData } = await supabaseAuth
                 .from('attendance')
-                .select('student_id, status')
+                .select('*')
                 .eq('classroom_id', batchId)
                 .eq('date', selectedDate);
             
             const attendanceMap: Record<string, 'present' | 'absent' | 'late' | 'excused'> = {};
+            let existingOnBehalfOf: string | null = null;
             (attendanceData || []).forEach((row: any) => {
                 attendanceMap[row.student_id] = row.status;
+                if (row.on_behalf_of_date && !existingOnBehalfOf) {
+                    existingOnBehalfOf = row.on_behalf_of_date;
+                }
             });
 
             setBatchAttendanceMap(prev => ({ ...prev, [batchId]: attendanceMap }));
+            setBatchOnBehalfOfMap(prev => ({ ...prev, [batchId]: existingOnBehalfOf }));
 
         } catch (err) {
             console.error('Error expanding batch:', err);
         } finally {
             setBatchLoadingMap(prev => ({ ...prev, [batchId]: false }));
+        }
+    };
+
+    const getUpcomingScheduledDatesForBatch = useCallback((batchId: string, baseDateStr: string) => {
+        const schedules = allSchedules.filter(s => s.classroom_id === batchId);
+        const base = new Date(baseDateStr);
+        if (schedules.length === 0) {
+            const dates: string[] = [];
+            for (let i = 1; i <= 8; i++) {
+                const d = new Date(base);
+                d.setDate(base.getDate() + i * 7);
+                dates.push(d.toISOString().split('T')[0]);
+            }
+            return dates;
+        }
+
+        const dows = new Set(schedules.map(s => s.day_of_week));
+        const dates: string[] = [];
+        for (let i = 1; i <= 60; i++) {
+            const d = new Date(base);
+            d.setDate(base.getDate() + i);
+            if (dows.has(d.getDay())) {
+                dates.push(d.toISOString().split('T')[0]);
+                if (dates.length >= 8) break;
+            }
+        }
+        return dates;
+    }, [allSchedules]);
+
+    const handleSetBatchOnBehalfOf = async (batchId: string, targetDate: string | null) => {
+        setBatchOnBehalfOfMap(prev => ({ ...prev, [batchId]: targetDate }));
+
+        try {
+            await supabaseAuth
+                .from('attendance')
+                .update({ on_behalf_of_date: targetDate })
+                .eq('classroom_id', batchId)
+                .eq('date', selectedDate);
+        } catch (err) {
+            console.error('Error updating on_behalf_of_date for batch:', err);
         }
     };
 
@@ -947,6 +1002,7 @@ export default function AttendancePage() {
         });
 
         try {
+            const onBehalfDate = batchOnBehalfOfMap[batchId] || null;
             const { error } = await supabaseAuth
                 .from('attendance')
                 .upsert({
@@ -954,7 +1010,8 @@ export default function AttendancePage() {
                     classroom_id: batchId,
                     date: selectedDate,
                     status: (status as string).toLowerCase(),
-                    marked_by: teacherProfile.id
+                    marked_by: teacherProfile.id,
+                    on_behalf_of_date: onBehalfDate
                 }, { onConflict: 'student_id,classroom_id,date' });
 
             if (error) throw error;
@@ -2344,6 +2401,11 @@ export default function AttendancePage() {
                                                                 }`}>
                                                                     {batch.type === 'permanent' ? '👥 Classroom' : '⚡ Special Session'}
                                                                 </span>
+                                                                {batchOnBehalfOfMap[batch.id] && (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                                                        🗓️ Taken on behalf of {formatLocalDateStr(batchOnBehalfOfMap[batch.id]!)}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -2370,6 +2432,46 @@ export default function AttendancePage() {
                                                 {/* Accordion Content */}
                                                 {isExpanded && (
                                                     <div className="border-t border-slate-100 dark:border-slate-800 p-3.5 sm:p-4 bg-slate-50/50 dark:bg-slate-850/20">
+                                                        {/* Optional On-Behalf-Of Control */}
+                                                        <div className="mb-3.5 p-3 sm:p-3.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-800/80 flex flex-wrap items-center justify-between gap-2.5 text-xs shadow-xs">
+                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                <span className="text-lg shrink-0">🗓️</span>
+                                                                <div className="min-w-0">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                                                                            Take this class on behalf of another scheduled class?
+                                                                        </span>
+                                                                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300">
+                                                                            Class Accounting
+                                                                        </span>
+                                                                    </div>
+                                                                    {batchOnBehalfOfMap[batch.id] ? (
+                                                                        <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                                                            ✓ Today ({formatLocalDateStr(selectedDate)}) counts towards {formatLocalDateStr(batchOnBehalfOfMap[batch.id]!)}
+                                                                        </p>
+                                                                    ) : (
+                                                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                                            Default: Regular scheduled class for {formatLocalDateStr(selectedDate)}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <select
+                                                                    value={batchOnBehalfOfMap[batch.id] || ''}
+                                                                    onChange={(e) => handleSetBatchOnBehalfOf(batch.id, e.target.value || null)}
+                                                                    className="text-xs font-bold px-3 py-1.5 rounded-lg border-2 border-amber-400 dark:border-amber-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/50 outline-hidden cursor-pointer shadow-xs"
+                                                                >
+                                                                    <option value="">No (Regular Class)</option>
+                                                                    {getUpcomingScheduledDatesForBatch(batch.id, selectedDate).map(dStr => (
+                                                                        <option key={dStr} value={dStr}>
+                                                                            Yes, on behalf of {formatLocalDateStr(dStr, true)}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+
                                                         {isBatchLoading ? (
                                                             <div className="flex flex-col items-center justify-center py-6">
                                                                 <Loader2 className="w-5 h-5 animate-spin text-[#ecb613] mb-1.5" />

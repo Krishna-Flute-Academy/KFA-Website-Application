@@ -336,6 +336,16 @@ export default function FeeCycleLedgerModal({
                                                                         {sess.sessionType}
                                                                     </span>
                                                                 )}
+                                                                {sess.actualDate && sess.actualDate !== sess.date && (
+                                                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                                                        Satisfied by {sess.actualDate}
+                                                                    </span>
+                                                                )}
+                                                                {sess.onBehalfOfDate && sess.onBehalfOfDate !== sess.date && (
+                                                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-sm bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                                                        On behalf of {sess.onBehalfOfDate}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                             {sess.notes && (
                                                                 <p className="text-[10px] text-slate-400 mt-0.5 truncate">

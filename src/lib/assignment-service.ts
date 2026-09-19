@@ -4,6 +4,8 @@
  * status calculation, and recipient display formatting.
  */
 
+import { matchesSearchTokens } from './search-utils';
+
 export interface RecipientInfo {
     id: string;
     name: string;
@@ -406,3 +408,98 @@ export function resolveEffectiveAssignmentsForStudent(
     // Sort by latest created/assigned
     return effectiveList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 }
+
+/**
+ * Checks if an assignment applies to a specific student in a classroom context.
+ * 
+ * Rules:
+ * 1. If studentId is 'all' or empty, it applies to everyone in the classroom.
+ * 2. If target_type !== 'individual' (e.g. 'all'), it applies to all enrolled students of the classroom.
+ * 3. If target_type === 'individual', it applies only if the student is explicitly in assignment_students.
+ */
+export function isAssignmentApplicableToStudent(assignment: any, studentId: string | null | undefined): boolean {
+    if (!studentId || studentId === 'all') return true;
+    
+    // Whole-class / all-student assignments apply to any student enrolled in the classroom
+    if (assignment.target_type !== 'individual') {
+        return true;
+    }
+
+    // Individual assignment: must match an enrolled student in assignment_students
+    if (Array.isArray(assignment.assignment_students)) {
+        return assignment.assignment_students.some(
+            (as: any) => as.student_id === studentId || as.id === studentId
+        );
+    }
+
+    return false;
+}
+
+/**
+ * Checks if an assignment's assigned date (created_at) falls within the specified date range [fromDate, toDate] (inclusive).
+ * Dates are compared in YYYY-MM-DD format.
+ */
+export function isAssignmentInDateRange(
+    assignment: any,
+    fromDate?: string | null,
+    toDate?: string | null
+): boolean {
+    if (!fromDate && !toDate) return true;
+
+    // Use created_at (or assigned_date / date) as the primary date representing when the assignment was assigned
+    const rawDate = assignment?.assigned_date || assignment?.created_at || assignment?.date;
+    const assignedDate = rawDate ? String(rawDate).slice(0, 10) : null;
+    if (!assignedDate) return false;
+
+    if (fromDate && assignedDate < fromDate) return false;
+    if (toDate && assignedDate > toDate) return false;
+    return true;
+}
+
+/**
+ * Filters assignments for a classroom based on student, date range, and optional search text.
+ */
+export function filterClassroomAssignments(
+    assignments: any[],
+    options: {
+        studentId?: string | null;
+        fromDate?: string | null;
+        toDate?: string | null;
+        searchQuery?: string | null;
+    }
+): any[] {
+    const { studentId = 'all', fromDate = '', toDate = '', searchQuery = '' } = options;
+
+    return (assignments || []).filter(asg => {
+        // Exclude automatic system-created topic duplicates if any
+        if (asg.inventory_ref_type && asg.title === asg.inventory_ref_title) {
+            return false;
+        }
+
+        // Filter 1: Student applicability
+        if (!isAssignmentApplicableToStudent(asg, studentId)) {
+            return false;
+        }
+
+        // Filter 2: Date range (inclusive)
+        if (!isAssignmentInDateRange(asg, fromDate, toDate)) {
+            return false;
+        }
+
+        // Optional search query
+        if (searchQuery && searchQuery.trim()) {
+            const studentNames = (asg.assignment_students || []).map((s: any) => s.student_name).filter(Boolean);
+            if (!matchesSearchTokens([
+                asg.title,
+                asg.description,
+                asg.inventory_ref_title,
+                ...studentNames
+            ], searchQuery)) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+}
+

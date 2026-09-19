@@ -40,7 +40,7 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                         : Promise.resolve({ data: [] }),
                     supabaseAuth.from('session_student_overrides').select('*').eq('student_id', profile.id),
                     supabaseAuth.from('leave_requests').select('*').eq('student_id', profile.id),
-                    supabaseAuth.from('attendance').select('id, date, status, classroom_id').eq('student_id', profile.id)
+                    supabaseAuth.from('attendance').select('*').eq('student_id', profile.id)
                 ]);
 
                 if (!isMounted) return;

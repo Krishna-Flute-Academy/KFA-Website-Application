@@ -23,6 +23,7 @@ import AutoLinkText from '../../../../src/components/common/AutoLinkText';
 import { getCurriculumMediaInfo } from '../../../../src/lib/curriculum-media';
 import { fetchEffectiveClassroomParticipants } from '../../../../src/lib/classroom-participants';
 import { isStudentOperationallyActive } from '../../../../src/lib/student-lifecycle';
+import { matchesSearchTokens, getSearchTokens, normalizeSearchText } from '../../../../src/lib/search-utils';
 
 import dynamic from 'next/dynamic';
 import TaskCreateDialog from '../../../../src/components/teacher-dashboard/tasks/TaskCreateDialog';
@@ -97,6 +98,7 @@ interface EnrolledStudent {
     id: string; // classroom_students ID
     student_id: string; // real user ID
     name: string;
+    email?: string;
     profile_pic_url: string | null;
     joined_at: string;
     mock_score: number;
@@ -955,6 +957,7 @@ export default function ClassroomDashboardPage({
     const openAllocationDrawer = (type: 'level' | 'chapter' | 'topic', item: any) => {
         setAllocationTargetLesson(item);
         setAllocationTargetItemType(type);
+        setAllocationSearchQuery('');
         const targetType = 'individual';
         setAllocationTargetType(targetType);
 
@@ -1626,19 +1629,19 @@ export default function ClassroomDashboardPage({
                                 id,
                                 student_id,
                                 override_date,
-                                users!student_id(name, profile_pic_url, level, status)
+                                users!student_id(name, email, profile_pic_url, level, status)
                               `).eq('target_classroom_id', classroomId).eq('override_date', tempClassData.class_date)
                             : supabaseAuth.from('session_student_overrides').select(`
                                 id,
                                 student_id,
                                 override_date,
-                                users!student_id(name, profile_pic_url, level, status)
+                                users!student_id(name, email, profile_pic_url, level, status)
                               `).eq('target_classroom_id', classroomId))
                         : supabaseAuth.from('classroom_students').select(`
                             id,
                             student_id,
                             joined_at,
-                            users!student_id(name, profile_pic_url, level, status)
+                            users!student_id(name, email, profile_pic_url, level, status)
                           `).eq('classroom_id', classroomId),
                     roomData.type === 'temporary' && tempClassData?.class_date
                         ? supabaseAuth.from('session_student_overrides').select(`
@@ -1646,20 +1649,20 @@ export default function ClassroomDashboardPage({
                             student_id,
                             override_date,
                             reason,
-                            users!student_id(name, profile_pic_url, level, status)
+                            users!student_id(name, email, profile_pic_url, level, status)
                           `).eq('target_classroom_id', classroomId).eq('override_date', tempClassData.class_date).order('override_date', { ascending: true })
                         : supabaseAuth.from('session_student_overrides').select(`
                             id,
                             student_id,
                             override_date,
                             reason,
-                            users!student_id(name, profile_pic_url, level, status)
+                            users!student_id(name, email, profile_pic_url, level, status)
                           `).eq('target_classroom_id', classroomId).order('override_date', { ascending: true }),
                     (roomData.type === 'temporary' && tempClassData?.id)
                         ? supabaseAuth.from('temporary_class_students').select(`
                             id,
                             student_id,
-                            users!student_id(name, profile_pic_url, level, status)
+                            users!student_id(name, email, profile_pic_url, level, status)
                           `).eq('temporary_class_id', tempClassData.id)
                         : Promise.resolve({ data: [] as any[] }),
                     supabaseAuth.from('batch_schedules').select('*').eq('classroom_id', classroomId).order('day_of_week', { ascending: true }).order('start_time', { ascending: true }),
@@ -1731,6 +1734,7 @@ export default function ClassroomDashboardPage({
                         id: r.id,
                         student_id: r.student_id,
                         name: r.users?.name || 'Unknown',
+                        email: r.users?.email || '',
                         profile_pic_url: r.users?.profile_pic_url || null,
                         level: formattedLevel,
                         joined_at: r.joined_at,
@@ -3295,11 +3299,8 @@ export default function ClassroomDashboardPage({
         !!(a.inventory_ref_type && a.title === a.inventory_ref_title);
 
     const filteredAssignments = useMemo(() => {
-        const nonAutoAssignments = assignments.filter(a => !isAutoCurriculum(a));
-        if (assignmentFilter === 'all') return nonAutoAssignments;
-        if (assignmentFilter === 'all_students') return nonAutoAssignments.filter(a => a.target_type === 'all');
-        return nonAutoAssignments.filter(a => a.target_type === 'individual');
-    }, [assignments, assignmentFilter]);
+        return assignments.filter(a => !isAutoCurriculum(a));
+    }, [assignments]);
 
     const relevantCurriculumStudents = useMemo(() => {
         if (classroom?.type === 'temporary') {
@@ -3468,6 +3469,7 @@ export default function ClassroomDashboardPage({
         const activeRoster = relevantStudents.map(s => ({
             student_id: s.student_id,
             name: s.name || 'Student',
+            email: s.email || (s as any).users?.email || '',
             profile_pic_url: s.profile_pic_url || null
         }));
 
@@ -3573,6 +3575,7 @@ export default function ClassroomDashboardPage({
             return {
                 studentId,
                 name: student.name || 'Student',
+                email: student.email || '',
                 profilePic: student.profile_pic_url,
                 status,
                 isSpotlighted
@@ -3757,7 +3760,7 @@ export default function ClassroomDashboardPage({
     }, [curriculumTab, selectedStudentForCurriculum, studentProgress, courseLessons, courseChapters, getClassSummary]);
 
     const visibleCurriculum = useMemo(() => {
-        const query = curriculumSearchQuery.toLowerCase().trim();
+        const hasSearch = getSearchTokens(curriculumSearchQuery).length > 0;
         const categoriesMap: Record<string, {
             categoryName: string;
             categoryOrder: number;
@@ -3784,8 +3787,8 @@ export default function ClassroomDashboardPage({
             const modAlloc = allocatedInventoryItems.find(a => (a.module_id && a.module_id === mod.id) || (a.inventory_ref_type === 'module' && a.inventory_ref_id === mod.id));
 
             const { categoryName, categoryOrder } = getCategoryInfo(mod);
-            const isCategoryMatch = query ? categoryName.toLowerCase().includes(query) : false;
-            const isModuleMatch = query ? mod.title.toLowerCase().includes(query) : false;
+            const isCategoryMatch = hasSearch ? matchesSearchTokens([categoryName], curriculumSearchQuery) : false;
+            const isModuleMatch = hasSearch ? matchesSearchTokens([mod.title, mod.description, categoryName], curriculumSearchQuery) : false;
 
             const modChapters = courseChapters.filter(c => c.module_id === mod.id);
             const chapterNodes: any[] = [];
@@ -3793,11 +3796,14 @@ export default function ClassroomDashboardPage({
             modChapters.forEach(chap => {
                 const chapAlloc = allocatedInventoryItems.find(a => (a.chapter_id && a.chapter_id === chap.id) || (a.inventory_ref_type === 'chapter' && a.inventory_ref_id === chap.id));
 
-                const isChapterMatch = query ? (
-                    chap.title.toLowerCase().includes(query) ||
-                    `ch${chap.chapter_number}`.includes(query) ||
-                    `chapter ${chap.chapter_number}`.includes(query)
-                ) : false;
+                const isChapterMatch = hasSearch ? matchesSearchTokens([
+                    chap.title,
+                    chap.description,
+                    `ch${chap.chapter_number}`,
+                    `chapter ${chap.chapter_number}`,
+                    mod.title,
+                    categoryName
+                ], curriculumSearchQuery) : false;
 
                 const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
                 const lessonNodes: any[] = [];
@@ -3828,13 +3834,16 @@ export default function ClassroomDashboardPage({
                     const isLessonAllocated = !!lessonAlloc || !!chapAlloc || !!modAlloc || hasRelevantProgress || hasRelevantSpotlight;
 
                     if (isLessonAllocated) {
-                        const isLessonMatch = query ? (
-                            lesson.title.toLowerCase().includes(query) ||
-                            (lesson.description || '').toLowerCase().includes(query) ||
-                            `topic ${lesson.lesson_number}`.includes(query)
-                        ) : false;
+                        const isLessonMatch = hasSearch ? matchesSearchTokens([
+                            lesson.title,
+                            lesson.description,
+                            `topic ${lesson.lesson_number}`,
+                            chap.title,
+                            mod.title,
+                            categoryName
+                        ], curriculumSearchQuery) : false;
 
-                        const matchesSearch = !query || isCategoryMatch || isModuleMatch || isChapterMatch || isLessonMatch;
+                        const matchesSearch = !hasSearch || isCategoryMatch || isModuleMatch || isChapterMatch || isLessonMatch;
 
                         if (matchesSearch) {
                             lessonNodes.push({
@@ -3848,7 +3857,7 @@ export default function ClassroomDashboardPage({
 
                 const isChapterVisible = lessonNodes.length > 0 || !!chapAlloc;
 
-                if (isChapterVisible && (!query || isCategoryMatch || isModuleMatch || isChapterMatch || lessonNodes.length > 0)) {
+                if (isChapterVisible && (!hasSearch || isCategoryMatch || isModuleMatch || isChapterMatch || lessonNodes.length > 0)) {
                     chapterNodes.push({
                         ...chap,
                         allocationId: chapAlloc ? chapAlloc.id : (modAlloc ? modAlloc.id : null),
@@ -3860,7 +3869,7 @@ export default function ClassroomDashboardPage({
 
             const isModuleVisible = chapterNodes.length > 0 || !!modAlloc;
 
-            if (isModuleVisible && (!query || isCategoryMatch || isModuleMatch || chapterNodes.length > 0)) {
+            if (isModuleVisible && (!hasSearch || isCategoryMatch || isModuleMatch || chapterNodes.length > 0)) {
                 if (!categoriesMap[categoryName]) {
                     categoriesMap[categoryName] = {
                         categoryName,
@@ -6030,7 +6039,7 @@ export default function ClassroomDashboardPage({
                                 </button>
                             </div>
 
-                            <div className="p-5 border-b border-slate-200 dark:border-slate-800 space-y-4">
+                            <div className="p-5 border-b border-slate-200 dark:border-slate-800 space-y-3">
                                 <div className="relative">
                                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 size-4" />
                                     <input
@@ -6038,32 +6047,126 @@ export default function ClassroomDashboardPage({
                                         value={inventorySearchQuery}
                                         onChange={(e) => setInventorySearchQuery(e.target.value)}
                                         placeholder="Search levels, chapters, or lessons..."
-                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-xl text-xs font-semibold focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-slate-100 transition-all"
+                                        className="w-full pl-10 pr-10 py-2.5 bg-slate-100 dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-xl text-xs font-semibold focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-slate-100 transition-all placeholder:text-slate-400"
                                     />
+                                    {inventorySearchQuery && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setInventorySearchQuery('')}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                            title="Clear search"
+                                        >
+                                            <X className="size-3" />
+                                        </button>
+                                    )}
                                 </div>
+                                {getSearchTokens(inventorySearchQuery).length > 0 && (
+                                    <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 px-1">
+                                        <span id="inventory-search-results-count">
+                                            {(() => {
+                                                let totalMatches = 0;
+                                                courseModules.forEach(m => {
+                                                    const cat = parseModuleCategory(m).category;
+                                                    const mMatch = matchesSearchTokens([m.title, m.description, cat], inventorySearchQuery);
+                                                    const chaps = courseChapters.filter(c => c.module_id === m.id);
+                                                    const chapMatches = chaps.filter(c => {
+                                                        const cMatch = matchesSearchTokens([c.title, c.description, cat, m.title], inventorySearchQuery);
+                                                        const lMatch = courseLessons.filter(l => l.chapter_id === c.id).some(l => {
+                                                            const media = getCurriculumMediaInfo(l);
+                                                            const mediaStr = [l.material_type, media.isVideo ? 'video' : '', media.isAudio ? 'audio' : '', media.isPdf ? 'pdf sheet music' : ''].filter(Boolean).join(' ');
+                                                            return matchesSearchTokens([l.title, l.description, `topic ${l.lesson_number}`, mediaStr, c.title, m.title, cat], inventorySearchQuery);
+                                                        });
+                                                        return cMatch || lMatch;
+                                                    });
+                                                    if (mMatch || chapMatches.length > 0) totalMatches++;
+                                                });
+                                                return `${totalMatches} ${totalMatches === 1 ? 'module match' : 'module matches'} found`;
+                                            })()}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setInventorySearchQuery('')}
+                                            className="text-amber-600 dark:text-amber-400 hover:underline cursor-pointer text-[11px]"
+                                        >
+                                            Clear search
+                                        </button>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-5 space-y-6 text-left custom-scrollbar">
                                 {(() => {
                                     const sortedCategories = getImporterCategories();
+                                    const hasActiveSearch = getSearchTokens(inventorySearchQuery).length > 0;
                                     let totalRenderedModules = 0;
 
                                     const renderedCategories = sortedCategories.map(category => {
-                                        const filteredModules = courseModules
-                                            .filter(m => parseModuleCategory(m).category === category)
-                                            .filter(m => {
-                                                const query = inventorySearchQuery.toLowerCase();
-                                                if (!query) return true;
-                                                if (m.title.toLowerCase().includes(query)) return true;
-                                                const modChaps = courseChapters.filter(c => c.module_id === m.id);
-                                                const hasMatchingChap = modChaps.some(c => c.title.toLowerCase().includes(query));
-                                                if (hasMatchingChap) return true;
-                                                const chapIds = new Set(modChaps.map(c => c.id));
-                                                return courseLessons.filter(l => chapIds.has(l.chapter_id)).some(l => l.title.toLowerCase().includes(query));
-                                            });
+                                        const modulesInCategory = courseModules.filter(m => parseModuleCategory(m).category === category);
 
-                                        if (filteredModules.length === 0) return null;
-                                        totalRenderedModules += filteredModules.length;
+                                        const processedModules = modulesInCategory.map(mod => {
+                                            const modMatchesDirect = hasActiveSearch
+                                                ? matchesSearchTokens([mod.title, mod.description, category], inventorySearchQuery)
+                                                : true;
+
+                                            const allModChapters = courseChapters.filter(c => c.module_id === mod.id);
+
+                                            const processedChapters = allModChapters.map(chap => {
+                                                const chapMatchesDirect = hasActiveSearch
+                                                    ? matchesSearchTokens([chap.title, chap.description, `chapter ${chap.chapter_number}`, `ch ${chap.chapter_number}`, category, mod.title], inventorySearchQuery)
+                                                    : true;
+
+                                                const allChapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+
+                                                const matchingLessons = allChapLessons.filter(lesson => {
+                                                    if (!hasActiveSearch) return true;
+                                                    if (modMatchesDirect || chapMatchesDirect) return true;
+                                                    const lessonMedia = getCurriculumMediaInfo(lesson);
+                                                    const mediaStr = [
+                                                        lesson.material_type,
+                                                        lessonMedia.isVideo ? 'video' : '',
+                                                        lessonMedia.isAudio ? 'audio' : '',
+                                                        lessonMedia.isPdf ? 'pdf sheet music' : ''
+                                                    ].filter(Boolean).join(' ');
+
+                                                    return matchesSearchTokens([
+                                                        lesson.title,
+                                                        lesson.description,
+                                                        `topic ${lesson.lesson_number}`,
+                                                        mediaStr,
+                                                        chap.title,
+                                                        mod.title,
+                                                        category
+                                                    ], inventorySearchQuery);
+                                                });
+
+                                                const hasMatchingLessons = matchingLessons.length > 0;
+                                                const isChapVisible = !hasActiveSearch || chapMatchesDirect || hasMatchingLessons;
+
+                                                return {
+                                                    ...chap,
+                                                    chapMatchesDirect,
+                                                    visibleLessons: hasActiveSearch && !modMatchesDirect && !chapMatchesDirect
+                                                        ? matchingLessons
+                                                        : allChapLessons,
+                                                    hasMatchingLessons,
+                                                    isChapVisible
+                                                };
+                                            }).filter(c => c.isChapVisible);
+
+                                            const hasMatchingChapters = processedChapters.length > 0;
+                                            const isModVisible = !hasActiveSearch || modMatchesDirect || hasMatchingChapters;
+
+                                            return {
+                                                ...mod,
+                                                modMatchesDirect,
+                                                visibleChapters: processedChapters,
+                                                hasMatchingChapters,
+                                                isModVisible
+                                            };
+                                        }).filter(m => m.isModVisible);
+
+                                        if (processedModules.length === 0) return null;
+                                        totalRenderedModules += processedModules.length;
 
                                         return (
                                             <div key={category} className="space-y-3">
@@ -6073,14 +6176,17 @@ export default function ClassroomDashboardPage({
                                                         {category}
                                                     </h6>
                                                     <span className="text-[9px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.2 rounded-md">
-                                                        {filteredModules.length} Modules
+                                                        {processedModules.length} {processedModules.length === 1 ? 'Module' : 'Modules'}
                                                     </span>
                                                 </div>
 
                                                 <div className="space-y-3">
-                                                    {filteredModules.map(mod => {
-                                                        const isExpanded = !!expandedInventoryModules[mod.id];
-                                                        const modChapters = courseChapters.filter(c => c.module_id === mod.id);
+                                                    {processedModules.map(mod => {
+                                                        const isAutoExpanded = hasActiveSearch && (mod.hasMatchingChapters || mod.modMatchesDirect);
+                                                        const isExpanded = isAutoExpanded
+                                                            ? (expandedInventoryModules[mod.id] !== false)
+                                                            : !!expandedInventoryModules[mod.id];
+
                                                         const isImporting = importingItemId === mod.id;
                                                         const isAllocated = isInventoryItemAllocatedToCurrentContext('module', mod.id);
 
@@ -6097,7 +6203,7 @@ export default function ClassroomDashboardPage({
                                                                         <div className="min-w-0 flex-1">
                                                                             <h5 className="text-xs font-black text-slate-800 dark:text-slate-100 leading-tight truncate">{mod.title}</h5>
                                                                             <p className="text-[9px] text-slate-455 dark:text-slate-555 font-bold uppercase mt-1 tracking-wider font-mono">
-                                                                                {modChapters.length} CHAPTERS • {category}
+                                                                                {mod.visibleChapters.length} CHAPTERS • {category}
                                                                             </p>
                                                                         </div>
                                                                     </div>
@@ -6136,13 +6242,12 @@ export default function ClassroomDashboardPage({
 
                                                                 {isExpanded && (
                                                                     <div className="p-4 bg-white dark:bg-slate-950/20 border-t border-slate-200 dark:border-slate-800 space-y-4">
-                                                                        {modChapters.length === 0 ? (
+                                                                        {mod.visibleChapters.length === 0 ? (
                                                                             <p className="text-xs text-slate-400 italic text-center py-2">No chapters defined.</p>
                                                                         ) : (
-                                                                            modChapters.map(chap => {
+                                                                            mod.visibleChapters.map(chap => {
                                                                                 const isChapImporting = importingItemId === chap.id;
                                                                                 const isChapAllocated = isInventoryItemAllocatedToCurrentContext('chapter', chap.id, { moduleId: mod.id });
-                                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
 
                                                                                 return (
                                                                                     <div key={chap.id} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-805 bg-slate-50/[0.1] dark:bg-slate-900/5 space-y-3">
@@ -6172,9 +6277,9 @@ export default function ClassroomDashboardPage({
                                                                                             </button>
                                                                                         </div>
 
-                                                                                        {chapLessons.length > 0 && (
+                                                                                        {chap.visibleLessons.length > 0 && (
                                                                                             <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
-                                                                                                {chapLessons.map(lesson => {
+                                                                                                {chap.visibleLessons.map(lesson => {
                                                                                                     const isLessonImporting = importingItemId === lesson.id;
                                                                                                     const isLessonAllocated = isInventoryItemAllocatedToCurrentContext('lesson', lesson.id, { moduleId: mod.id, chapterId: chap.id });
                                                                                                     const lessonMedia = getCurriculumMediaInfo(lesson);
@@ -6234,7 +6339,28 @@ export default function ClassroomDashboardPage({
                                     });
 
                                     if (totalRenderedModules === 0) {
-                                        return <p className="text-xs text-slate-400 italic text-center py-8">No learning materials found.</p>;
+                                        return (
+                                            <div className="py-12 px-4 text-center">
+                                                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 mx-auto mb-3">
+                                                    <Search className="size-6 text-amber-500" />
+                                                </div>
+                                                <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-100">No matching items found</h4>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">
+                                                    {hasActiveSearch 
+                                                        ? `We couldn't find any levels, chapters, or lessons matching "${inventorySearchQuery}".`
+                                                        : 'No learning materials found in inventory.'}
+                                                </p>
+                                                {hasActiveSearch && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setInventorySearchQuery('')}
+                                                        className="mt-4 px-4 py-2 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm"
+                                                    >
+                                                        Clear Search
+                                                    </button>
+                                                )}
+                                            </div>
+                                        );
                                     }
 
                                     return renderedCategories;
@@ -6441,57 +6567,138 @@ export default function ClassroomDashboardPage({
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
-                                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono">Select Students</span>
-                                        <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1 bg-slate-50/50 dark:bg-slate-900/10 custom-scrollbar">
-                                            {allocationTargetLesson && getStudentStatuses(allocationTargetItemType, allocationTargetLesson.id).map(student => {
-                                                const isChecked = allocationSelectedStudents.includes(student.studentId);
-                                                return (
-                                                    <label 
-                                                        key={student.studentId}
-                                                        className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-100/60 dark:hover:bg-slate-800/40 cursor-pointer transition-all select-none"
-                                                    >
-                                                        <div className="flex items-center gap-2.5">
-                                                            <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-300 dark:border-slate-700">
-                                                                {student.profilePic ? (
-                                                                    <img src={student.profilePic} alt={student.name || 'Student'} className="w-full h-full object-cover" />
-                                                                ) : (
-                                                                    <span className="text-[10px] font-black text-slate-500">{(student.name || 'S').charAt(0)}</span>
-                                                                )}
-                                                            </div>
-                                                            <div className="flex flex-col text-left">
-                                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-350">{student.name}</span>
-                                                                <span className={`text-[9px] font-black uppercase mt-0.5 flex items-center gap-1 ${
-                                                                    student.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' :
-                                                                    student.status === 'in_progress' ? 'text-amber-600 dark:text-amber-400' :
-                                                                    student.status === 'locked' ? 'text-slate-505 dark:text-slate-400' :
-                                                                    'text-slate-400 dark:text-slate-500'
-                                                                }`}>
-                                                                    <span className={`w-1.5 h-1.5 rounded-full ${
-                                                                        student.status === 'completed' ? 'bg-emerald-500' :
-                                                                        student.status === 'in_progress' ? 'bg-amber-500' :
-                                                                        student.status === 'locked' ? 'bg-slate-400' :
-                                                                        'bg-slate-300'
-                                                                    }`} />
-                                                                    {student.status.replace('_', ' ')}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                        <input 
-                                                            type="checkbox"
-                                                            checked={isChecked}
-                                                            onChange={() => {
-                                                                if (isChecked) {
-                                                                    setAllocationSelectedStudents(prev => prev.filter(id => id !== student.studentId));
-                                                                } else {
-                                                                    setAllocationSelectedStudents(prev => [...prev, student.studentId]);
-                                                                }
-                                                            }}
-                                                            className="rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500 h-4.5 w-4.5 cursor-pointer accent-[#ecb613]"
-                                                        />
-                                                    </label>
-                                                );
-                                            })}
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono">Select Students</span>
+                                            <span className="text-[10px] font-bold text-slate-400">
+                                                {allocationSelectedStudents.length} selected
+                                            </span>
                                         </div>
+
+                                        {/* Search input for students */}
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-3.5" />
+                                            <input
+                                                type="text"
+                                                value={allocationSearchQuery}
+                                                onChange={(e) => setAllocationSearchQuery(e.target.value)}
+                                                placeholder="Search students by name, email, or status..."
+                                                className="w-full pl-8.5 pr-8 py-2 bg-slate-100 dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-xl text-xs font-semibold focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-slate-100 transition-all placeholder:text-slate-400"
+                                            />
+                                            {allocationSearchQuery && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAllocationSearchQuery('')}
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                                    title="Clear student search"
+                                                >
+                                                    <X className="size-2.5" />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Student audience list with search filter */}
+                                        {(() => {
+                                            const rawAudienceStudents = allocationTargetLesson
+                                                ? getStudentStatuses(allocationTargetItemType, allocationTargetLesson.id)
+                                                : [];
+
+                                            const filteredAudienceStudents = rawAudienceStudents.filter(student => {
+                                                return matchesSearchTokens([
+                                                    student.name,
+                                                    student.email,
+                                                    student.status,
+                                                    student.status ? student.status.replace('_', ' ') : ''
+                                                ], allocationSearchQuery);
+                                            });
+
+                                            const hasActiveStudentSearch = getSearchTokens(allocationSearchQuery).length > 0;
+
+                                            return (
+                                                <>
+                                                    {hasActiveStudentSearch && (
+                                                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400 px-1">
+                                                            <span>{filteredAudienceStudents.length} of {rawAudienceStudents.length} students found</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setAllocationSearchQuery('')}
+                                                                className="text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                                                            >
+                                                                Clear
+                                                            </button>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1 bg-slate-50/50 dark:bg-slate-900/10 custom-scrollbar">
+                                                        {filteredAudienceStudents.length === 0 ? (
+                                                            <div className="py-6 text-center text-slate-400 text-xs">
+                                                                <Search className="size-4 mx-auto mb-1 opacity-50 text-amber-500" />
+                                                                <p className="font-bold text-slate-600 dark:text-slate-300">No matching students found</p>
+                                                                <p className="text-[10px] text-slate-400 mt-0.5">Try searching by a different name, email, or status</p>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setAllocationSearchQuery('')}
+                                                                    className="mt-2 text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                                                                >
+                                                                    Clear search
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            filteredAudienceStudents.map(student => {
+                                                                const isChecked = allocationSelectedStudents.includes(student.studentId);
+                                                                return (
+                                                                    <label 
+                                                                        key={student.studentId}
+                                                                        className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-100/60 dark:hover:bg-slate-800/40 cursor-pointer transition-all select-none"
+                                                                    >
+                                                                        <div className="flex items-center gap-2.5">
+                                                                            <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-300 dark:border-slate-700">
+                                                                                {student.profilePic ? (
+                                                                                    <img src={student.profilePic} alt={student.name || 'Student'} className="w-full h-full object-cover" />
+                                                                                ) : (
+                                                                                    <span className="text-[10px] font-black text-slate-500">{(student.name || 'S').charAt(0)}</span>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="flex flex-col text-left">
+                                                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-350">{student.name}</span>
+                                                                                {student.email && (
+                                                                                    <span className="text-[10px] text-slate-400 truncate max-w-[180px]">{student.email}</span>
+                                                                                )}
+                                                                                <span className={`text-[9px] font-black uppercase mt-0.5 flex items-center gap-1 ${
+                                                                                    student.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' :
+                                                                                    student.status === 'in_progress' ? 'text-amber-600 dark:text-amber-400' :
+                                                                                    student.status === 'locked' ? 'text-slate-505 dark:text-slate-400' :
+                                                                                    'text-slate-400 dark:text-slate-500'
+                                                                                }`}>
+                                                                                    <span className={`w-1.5 h-1.5 rounded-full ${
+                                                                                        student.status === 'completed' ? 'bg-emerald-500' :
+                                                                                        student.status === 'in_progress' ? 'bg-amber-500' :
+                                                                                        student.status === 'locked' ? 'bg-slate-400' :
+                                                                                        'bg-slate-300'
+                                                                                    }`} />
+                                                                                    {student.status.replace('_', ' ')}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <input 
+                                                                            type="checkbox"
+                                                                            checked={isChecked}
+                                                                            onChange={() => {
+                                                                                if (isChecked) {
+                                                                                    setAllocationSelectedStudents(prev => prev.filter(id => id !== student.studentId));
+                                                                                } else {
+                                                                                    setAllocationSelectedStudents(prev => [...prev, student.studentId]);
+                                                                                }
+                                                                            }}
+                                                                            className="rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500 h-4.5 w-4.5 cursor-pointer accent-[#ecb613]"
+                                                                        />
+                                                                    </label>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 )}
 

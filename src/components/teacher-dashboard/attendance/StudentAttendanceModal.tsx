@@ -59,6 +59,7 @@ interface AttendanceRecord {
     classroom_name: string;
     is_temporary?: boolean;
     sessionType: 'regular' | 'special' | 'guest_makeup';
+    on_behalf_of_date?: string | null;
     makeupDetails?: {
         isMakeupAttended?: boolean;
         makeupForDate?: string;
@@ -302,7 +303,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
             // 6. Fetch Attendance Records in the Selected Date Range
             const { data: attendanceData, error: attErr } = await supabaseAuth
                 .from('attendance')
-                .select('id, date, status, classroom_id')
+                .select('*')
                 .eq('student_id', studentId)
                 .gte('date', fromDate)
                 .lte('date', toDate)
@@ -316,7 +317,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
             if (overrideDates.length > 0) {
                 const { data: ovAtt } = await supabaseAuth
                     .from('attendance')
-                    .select('date, status, classroom_id')
+                    .select('*')
                     .eq('student_id', studentId)
                     .in('date', overrideDates);
 
@@ -384,11 +385,12 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                 records.push({
                     id: att.id,
                     date: cleanDate,
-                    status: att.status as any,
+                    status: att.status,
                     classroom_id: att.classroom_id,
                     classroom_name: cName,
                     is_temporary: isTemp,
                     sessionType,
+                    on_behalf_of_date: att.on_behalf_of_date || null,
                     makeupDetails
                 });
             });
@@ -773,6 +775,12 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                                                 </span>
                                             </div>
 
+                                            {record.on_behalf_of_date && (
+                                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                                                    🗓️ Taken on behalf of {formatLocalDateStr(record.on_behalf_of_date, true)}
+                                                </p>
+                                            )}
+
                                             {/* Makeup Relationship Details */}
                                             {record.makeupDetails?.isMakeupAttended && record.makeupDetails.makeupForDate && (
                                                 <p className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">
@@ -863,7 +871,14 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                                                         ) : (record.status === 'absent' || record.status === 'excused') ? (
                                                             <span className="text-slate-400 italic">No makeup scheduled</span>
                                                         ) : (
-                                                            <span className="text-slate-400">Regular attendance</span>
+                                                            <div>
+                                                                <span className="text-slate-400">Regular attendance</span>
+                                                                {record.on_behalf_of_date && (
+                                                                    <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">
+                                                                        🗓️ Taken on behalf of {formatLocalDateStr(record.on_behalf_of_date, true)}
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </td>
                                                 </tr>

@@ -31,6 +31,7 @@ export class PitchStabilizer {
     private frequencyBuffer: number[] = [];
     private currentCandidate: StabilizerCandidate | null = null;
     private lastSoundTimeMs: number = 0;
+    private consecutiveSilenceFrames: number = 0;
     private lastCommittedToken: SwaraNotationToken | null = null;
 
     /**
@@ -40,7 +41,17 @@ export class PitchStabilizer {
         this.frequencyBuffer = [];
         this.currentCandidate = null;
         this.lastSoundTimeMs = 0;
+        this.consecutiveSilenceFrames = 0;
         this.lastCommittedToken = null;
+    }
+
+    /**
+     * Resets active candidate to immediately prime the stabilizer for the next note.
+     */
+    public resetCandidate(): void {
+        this.currentCandidate = null;
+        this.frequencyBuffer = [];
+        this.consecutiveSilenceFrames = 0;
     }
 
     /**
@@ -81,9 +92,11 @@ export class PitchStabilizer {
         const isSilent = rms < SUR_NOTATION_CONFIG.rmsGate || rawFrequency <= 0 || clarity < SUR_NOTATION_CONFIG.minClarity;
         
         if (isSilent) {
-            const silenceElapsed = nowMs - this.lastSoundTimeMs;
-            if (this.lastSoundTimeMs > 0 && silenceElapsed >= SUR_NOTATION_CONFIG.releaseDurationMs) {
-                // Sufficient pause between notes -> clear active candidate so next attack writes immediately
+            this.consecutiveSilenceFrames += 1;
+            const silenceElapsed = this.lastSoundTimeMs > 0 ? (nowMs - this.lastSoundTimeMs) : 0;
+            // When sound is silent for >= 2 frames (~25-35ms) or silenceDuration >= releaseDurationMs:
+            // Clear active candidate so the next note (repeated or new) triggers immediately without getting stuck!
+            if (this.consecutiveSilenceFrames >= 2 || (this.lastSoundTimeMs > 0 && silenceElapsed >= SUR_NOTATION_CONFIG.releaseDurationMs)) {
                 this.currentCandidate = null;
                 this.frequencyBuffer = [];
             }
@@ -95,6 +108,7 @@ export class PitchStabilizer {
             };
         }
 
+        this.consecutiveSilenceFrames = 0;
         this.lastSoundTimeMs = nowMs;
 
         // 2. Fast Median Smoothing

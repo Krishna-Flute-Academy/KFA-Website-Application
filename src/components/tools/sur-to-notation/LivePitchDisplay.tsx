@@ -37,8 +37,8 @@ export default function LivePitchDisplay({
         centsText = `${sign}${livePitch.cents} cents`;
         confidenceLabel = livePitch.confidence === 'stable' ? 'Stable' : 'Detecting...';
     } else if (isListening) {
-        displaySwara = 'SA';
-        confidenceLabel = 'Listening...';
+        displaySwara = '—';
+        confidenceLabel = 'Awaiting flute note...';
     }
 
     return (

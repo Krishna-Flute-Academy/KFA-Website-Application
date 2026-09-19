@@ -168,3 +168,66 @@ test('PitchStabilizer: repeated articulated notes (S S S) emit consecutive token
 
   assert.deepEqual(tokens, ['S', 'S', 'S'], `Expected ['S', 'S', 'S'], got: ${JSON.stringify(tokens)}`);
 });
+
+test('PitchStabilizer: fast 20ms tongue break emits repeated notes cleanly', () => {
+  const stabilizer = new PitchStabilizer();
+  let now = 1000;
+  const tokens = [];
+
+  const playNote = (freq, durationMs) => {
+    const end = now + durationMs;
+    while (now < end) {
+      const res = stabilizer.processFrame(freq, 0.08, 0.95, 'C', now);
+      if (res.emittedToken) {
+        tokens.push(res.emittedToken.formattedToken);
+      }
+      now += 16;
+    }
+  };
+
+  const playQuickTongue = (gapMs) => {
+    const end = now + gapMs;
+    while (now < end) {
+      stabilizer.processFrame(0, 0.002, 0.1, 'C', now);
+      now += 16;
+    }
+  };
+
+  playNote(261.63, 150);
+  playQuickTongue(20);
+  playNote(261.63, 150);
+  playQuickTongue(20);
+  playNote(261.63, 150);
+
+  assert.deepEqual(tokens, ['S', 'S', 'S'], `Expected ['S', 'S', 'S'] with fast tongue breaks, got: ${JSON.stringify(tokens)}`);
+});
+
+test('PitchStabilizer: pure legato scale emits all 8 swaras without needing silence', () => {
+  const stabilizer = new PitchStabilizer();
+  let now = 1000;
+  const tokens = [];
+
+  const scale = [
+    { freq: 261.63, expected: 'S' },
+    { freq: 293.66, expected: 'R' },
+    { freq: 329.63, expected: 'G' },
+    { freq: 349.23, expected: 'm' },
+    { freq: 392.00, expected: 'P' },
+    { freq: 440.00, expected: 'D' },
+    { freq: 493.88, expected: 'N' },
+    { freq: 523.25, expected: "S'" }
+  ];
+
+  for (const { freq } of scale) {
+    const end = now + 180;
+    while (now < end) {
+      const res = stabilizer.processFrame(freq, 0.08, 0.95, 'C', now);
+      if (res.emittedToken) {
+        tokens.push(res.emittedToken.formattedToken);
+      }
+      now += 16;
+    }
+  }
+
+  assert.deepEqual(tokens, ['S', 'R', 'G', 'm', 'P', 'D', 'N', "S'"], `Expected all 8 notes in legato scale, got: ${JSON.stringify(tokens)}`);
+});

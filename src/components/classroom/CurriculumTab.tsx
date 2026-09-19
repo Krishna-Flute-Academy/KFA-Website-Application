@@ -356,11 +356,21 @@ export default function CurriculumTab({
                                             type="button"
                                             onClick={() => setCurriculumSearchQuery('')}
                                             className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-405 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                            title="Clear search"
                                         >
                                             <X className="size-2.5" />
                                         </button>
                                     )}
                                 </div>
+
+                                {curriculumSearchQuery.trim() && (
+                                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 self-center hidden sm:inline whitespace-nowrap">
+                                        {(() => {
+                                            const modCount = visibleCurriculum.reduce((acc, cat) => acc + (cat.modules ? cat.modules.length : 0), 0);
+                                            return `${modCount} ${modCount === 1 ? 'module found' : 'modules found'}`;
+                                        })()}
+                                    </span>
+                                )}
 
                                 {/* Right: Expand/Collapse controls */}
                                 <div className="flex items-center gap-2 self-end md:self-auto">
