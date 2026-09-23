@@ -40,7 +40,12 @@ import {
     Database,
     Zap,
     Download,
-    Mic
+    Mic,
+    ChevronsDown,
+    ChevronsUp,
+    Search,
+    Layers,
+    Compass
 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
@@ -82,6 +87,9 @@ export default function InventoryLibrary() {
     const [currentView, setCurrentView] = useState<'landing' | 'dashboard'>('landing');
     const [selectedModuleId, setSelectedModuleId] = useState<string>('a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d');
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+    const [levelSearchQuery, setLevelSearchQuery] = useState('');
+    const [accordionMode, setAccordionMode] = useState(false);
+    const [highlightedChapterId, setHighlightedChapterId] = useState<string | null>(null);
     const [draggedChapterId, setDraggedChapterId] = useState<string | null>(null);
     const [draggedLessonId, setDraggedLessonId] = useState<string | null>(null);
     const [dragOverChapterId, setDragOverChapterId] = useState<string | null>(null);
@@ -398,21 +406,60 @@ export default function InventoryLibrary() {
         setSelectedModuleId(moduleId);
         const moduleChaps = getModuleChapters(moduleId);
         
-        // Auto-expand all chapters by default to reduce click count
+        // Professional default: open only the first chapter so admin gets a neat overview instead of an endless wall
         const newExpanded: Record<string, boolean> = {};
-        moduleChaps.forEach(c => {
-            newExpanded[c.id] = true;
-        });
+        if (moduleChaps.length > 0) {
+            newExpanded[moduleChaps[0].id] = true;
+        }
         setExpandedChapters(newExpanded);
+        setLevelSearchQuery('');
         setCurrentView('dashboard');
     };
 
     // Toggle Chapter Accordion
     const toggleChapterExpand = (chapterId: string) => {
-        setExpandedChapters(prev => ({
-            ...prev,
-            [chapterId]: !prev[chapterId]
-        }));
+        setExpandedChapters(prev => {
+            const nextState = !prev[chapterId];
+            if (accordionMode) {
+                return nextState ? { [chapterId]: true } : {};
+            }
+            return {
+                ...prev,
+                [chapterId]: nextState
+            };
+        });
+    };
+
+    // Bulk Expand / Collapse
+    const expandAllChapters = () => {
+        const moduleChaps = getModuleChapters(selectedModuleId);
+        const newExpanded: Record<string, boolean> = {};
+        moduleChaps.forEach(c => {
+            newExpanded[c.id] = true;
+        });
+        setExpandedChapters(newExpanded);
+    };
+
+    const collapseAllChapters = () => {
+        setExpandedChapters({});
+    };
+
+    // Quick jump to a specific chapter with highlight flash & smooth scroll
+    const jumpToChapter = (chapterId: string) => {
+        setExpandedChapters(prev => {
+            if (accordionMode) {
+                return { [chapterId]: true };
+            }
+            return { ...prev, [chapterId]: true };
+        });
+        setHighlightedChapterId(chapterId);
+        setTimeout(() => {
+            const element = document.getElementById(`chapter-card-${chapterId}`);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 50);
+        setTimeout(() => setHighlightedChapterId(null), 2500);
     };
 
     const reorderChapter = async (sourceId: string, targetId: string) => {
@@ -1617,6 +1664,62 @@ export default function InventoryLibrary() {
     })();
     const moduleChapters = getModuleChapters(selectedModuleId);
 
+    // In-Level Search Filter Computations
+    const levelSearchLower = levelSearchQuery.trim().toLowerCase();
+    const hasLevelSearch = levelSearchLower.length > 0;
+
+    const filteredModuleChapters = useMemo(() => {
+        if (!hasLevelSearch) return moduleChapters;
+        return moduleChapters.filter(chap => {
+            const chapTitleMatch = (chap.title || '').toLowerCase().includes(levelSearchLower);
+            const chapDescMatch = (chap.description || '').toLowerCase().includes(levelSearchLower);
+            if (chapTitleMatch || chapDescMatch) return true;
+            const chapLessons = getChapterLessons(chap.id);
+            return chapLessons.some(l => 
+                (l.title || '').toLowerCase().includes(levelSearchLower) ||
+                (l.description || '').toLowerCase().includes(levelSearchLower) ||
+                (l.file_name || '').toLowerCase().includes(levelSearchLower) ||
+                (l.bullet_points || []).some(bp => bp.toLowerCase().includes(levelSearchLower))
+            );
+        });
+    }, [moduleChapters, hasLevelSearch, levelSearchLower, lessons]);
+
+    const getFilteredChapterLessons = (chapterId: string, chap: CourseChapter) => {
+        const allLessons = getChapterLessons(chapterId);
+        if (!hasLevelSearch) return allLessons;
+        const chapMatches = (chap.title || '').toLowerCase().includes(levelSearchLower) ||
+                            (chap.description || '').toLowerCase().includes(levelSearchLower);
+        if (chapMatches) return allLessons;
+        return allLessons.filter(l => 
+            (l.title || '').toLowerCase().includes(levelSearchLower) ||
+            (l.description || '').toLowerCase().includes(levelSearchLower) ||
+            (l.file_name || '').toLowerCase().includes(levelSearchLower) ||
+            (l.bullet_points || []).some(bp => bp.toLowerCase().includes(levelSearchLower))
+        );
+    };
+
+    const isChapterExpanded = (chapId: string) => {
+        if (hasLevelSearch) {
+            // When filtering in level, expand matching chapters by default unless explicitly collapsed
+            return expandedChapters[chapId] !== false;
+        }
+        return !!expandedChapters[chapId];
+    };
+
+    const openChaptersCount = useMemo(() => {
+        return moduleChapters.filter(c => isChapterExpanded(c.id)).length;
+    }, [moduleChapters, expandedChapters, hasLevelSearch]);
+
+    const totalLevelMatchingTopics = useMemo(() => {
+        if (!hasLevelSearch) return 0;
+        return activeModuleLessons.filter(l => 
+            (l.title || '').toLowerCase().includes(levelSearchLower) ||
+            (l.description || '').toLowerCase().includes(levelSearchLower) ||
+            (l.file_name || '').toLowerCase().includes(levelSearchLower) ||
+            (l.bullet_points || []).some(bp => bp.toLowerCase().includes(levelSearchLower))
+        ).length;
+    }, [hasLevelSearch, activeModuleLessons, levelSearchLower]);
+
     const searchLower = searchQuery.trim().toLowerCase();
     const hasSearch = searchLower.length > 0;
 
@@ -1701,14 +1804,35 @@ export default function InventoryLibrary() {
             
             <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 <TeacherHeader 
-                    title="Curriculum & Inventory Manager" 
+                    title={currentView === 'dashboard' && activeModule ? `${activeModule.title.split(':')[0]} • Inventory` : "Curriculum & Inventory"} 
                     avatarUrl={teacherProfile?.profile_pic_url}
                     userName={teacherProfile?.name}
-                    searchQuery={searchQuery}
-                    onSearchChange={setSearchQuery}
-                    placeholder="Search levels, chapters, topics or files..."
+                    searchQuery={currentView === 'dashboard' ? levelSearchQuery : searchQuery}
+                    onSearchChange={(q) => {
+                        if (currentView === 'dashboard') {
+                            setLevelSearchQuery(q);
+                        } else {
+                            setSearchQuery(q);
+                        }
+                    }}
+                    placeholder={currentView === 'dashboard' && activeModule ? `Filter chapters & topics in ${activeModule.title.split(':')[0]}...` : "Search levels, chapters, topics or files..."}
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 >
+                    {/* Switch to Global Search button when inside level */}
+                    {currentView === 'dashboard' && (
+                        <button
+                            onClick={() => {
+                                setSearchQuery(levelSearchQuery || '');
+                                setLevelSearchQuery('');
+                            }}
+                            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/20 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all shrink-0"
+                            title="Search across all Academy levels"
+                        >
+                            <Globe className="size-3.5" />
+                            <span>Search All Levels</span>
+                        </button>
+                    )}
+
                     {/* Premium Recycle Bin Button */}
                     <button
                         onClick={() => setShowTrashModal(true)}
@@ -1741,7 +1865,7 @@ export default function InventoryLibrary() {
                         <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest animate-pulse">Loading Academy Curriculum...</p>
                     </div>
                 ) : (
-                    <div className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-5 md:p-6 lg:p-8 space-y-6 min-w-0">
                         
                         {/* ==================== VIEW S: SEARCH RESULTS SCREEN ==================== */}
                         {hasSearch && (
@@ -1846,6 +1970,7 @@ export default function InventoryLibrary() {
                                                                         <button
                                                                             onClick={() => {
                                                                                 if (chap && mod) {
+                                                                                    setSearchQuery('');
                                                                                     setSelectedModuleId(mod.id);
                                                                                     const moduleChaps = getModuleChapters(mod.id);
                                                                                     const newExpanded: Record<string, boolean> = {};
@@ -1855,6 +1980,7 @@ export default function InventoryLibrary() {
                                                                                     setExpandedChapters(newExpanded);
                                                                                     setCurrentView('dashboard');
                                                                                     setSelectedLessonPreview(lesson);
+                                                                                    jumpToChapter(chap.id);
                                                                                 }
                                                                             }}
                                                                             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold rounded-lg text-[10px] tracking-wider uppercase transition-all"
@@ -1882,6 +2008,7 @@ export default function InventoryLibrary() {
                                                                 key={chap.id}
                                                                 onClick={() => {
                                                                     if (mod) {
+                                                                        setSearchQuery('');
                                                                         setSelectedModuleId(mod.id);
                                                                         const moduleChaps = getModuleChapters(mod.id);
                                                                         const newExpanded: Record<string, boolean> = {};
@@ -1890,6 +2017,7 @@ export default function InventoryLibrary() {
                                                                         });
                                                                         setExpandedChapters(newExpanded);
                                                                         setCurrentView('dashboard');
+                                                                        jumpToChapter(chap.id);
                                                                     }
                                                                 }}
                                                                 className="rounded-2xl p-5 border border-slate-250 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer bg-white dark:bg-slate-900 flex flex-col justify-between text-left"
@@ -1933,6 +2061,7 @@ export default function InventoryLibrary() {
                                                             <div 
                                                                 key={mod.id}
                                                                 onClick={() => {
+                                                                    setSearchQuery('');
                                                                     handleSelectModule(mod.id);
                                                                 }}
                                                                 className="rounded-2xl p-5 border border-slate-250 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer bg-white dark:bg-slate-900 flex flex-col justify-between text-left"
@@ -2085,10 +2214,10 @@ export default function InventoryLibrary() {
 
                         {/* ==================== VIEW B: CURRICULUM WORKSPACE SCREEN ==================== */}
                         {!hasSearch && currentView === 'dashboard' && (
-                            <div className="flex flex-col xl:flex-row gap-8 items-start animate-fadeIn">
+                            <div className="flex flex-col 2xl:flex-row gap-6 lg:gap-8 items-start animate-fadeIn w-full min-w-0 max-w-full">
                                 
-                                {/* Left/Middle 2/3 Column: Chapter Collapsible accordions stack & Module Header info */}
-                                <div className="flex-1 w-full space-y-6">
+                                {/* Left/Middle Column: Chapter Collapsible accordions stack & Module Header info */}
+                                <div className="flex-1 w-full min-w-0 max-w-full space-y-6">
                                     
                                     {/* Breadcrumb Navigation button */}
                                     <div className="flex items-center select-none">
@@ -2126,11 +2255,152 @@ export default function InventoryLibrary() {
                                         </div>
                                     )}
 
+                                    {/* In-Level Filter & Bulk Accordion Navigation Bar */}
+                                    <div className="bg-white dark:bg-slate-900 border border-slate-200/85 dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xs space-y-3.5 select-none w-full min-w-0 max-w-full overflow-hidden">
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 min-w-0">
+                                            {/* In-Level Search Filter Input */}
+                                            <div className="relative flex-1 min-w-0">
+                                                <Search className="size-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                                <input 
+                                                    type="text"
+                                                    value={levelSearchQuery}
+                                                    onChange={(e) => setLevelSearchQuery(e.target.value)}
+                                                    placeholder={`Filter in ${activeModule ? activeModule.title.split(':')[0] : 'this Level'}...`}
+                                                    className="w-full bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-8 py-2 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium"
+                                                />
+                                                {levelSearchQuery && (
+                                                    <button 
+                                                        onClick={() => setLevelSearchQuery('')}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-all"
+                                                        title="Clear filter"
+                                                    >
+                                                        <X className="size-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                            
+                                            {/* Bulk Controls & Mode Toggles */}
+                                            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
+                                                <button
+                                                    onClick={expandAllChapters}
+                                                    className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold transition-all shadow-xs active:scale-95 whitespace-nowrap"
+                                                    title="Expand all chapters"
+                                                >
+                                                    <ChevronsDown className="size-3.5 text-amber-500 shrink-0" />
+                                                    <span>Expand All</span>
+                                                </button>
+                                                <button
+                                                    onClick={collapseAllChapters}
+                                                    className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold transition-all shadow-xs active:scale-95 whitespace-nowrap"
+                                                    title="Collapse all chapters"
+                                                >
+                                                    <ChevronsUp className="size-3.5 text-amber-500 shrink-0" />
+                                                    <span>Collapse All</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => setAccordionMode(prev => !prev)}
+                                                    className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] font-bold border transition-all shadow-xs active:scale-95 whitespace-nowrap ${
+                                                        accordionMode 
+                                                            ? 'bg-amber-500/15 border-amber-500/30 text-amber-700 dark:text-amber-400 font-extrabold' 
+                                                            : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                    }`}
+                                                    title="Single Chapter Focus mode: opening one chapter collapses others"
+                                                >
+                                                    <Layers className="size-3.5 shrink-0" />
+                                                    <span>{accordionMode ? 'Single Focus (On)' : 'Single Focus'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Quick Jump Chapter Pills Bar (Table of Contents) */}
+                                        {moduleChapters.length > 0 && (
+                                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 w-full min-w-0 max-w-full overflow-hidden">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 font-mono">
+                                                        <Compass className="size-3.5 text-amber-500 shrink-0" />
+                                                        <span>Quick Jump to Chapter ({moduleChapters.length}):</span>
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-slate-400 font-mono">
+                                                        {openChaptersCount} of {moduleChapters.length} expanded
+                                                    </span>
+                                                </div>
+                                                
+                                                {/* Horizontal Scrollable Pills */}
+                                                <div className="flex items-center gap-2 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800 w-full min-w-0">
+                                                    {moduleChapters.map((chap) => {
+                                                        const isOpen = isChapterExpanded(chap.id);
+                                                        const chapCount = getChapterLessons(chap.id).length;
+                                                        const isHighlighted = highlightedChapterId === chap.id;
+                                                        const cleanTitle = chap.title.replace(/^\s*Chapter\s*[-:]?\s*\d+\s*[-:]?\s*/i, '').trim();
+
+                                                        return (
+                                                            <button
+                                                                key={chap.id}
+                                                                onClick={() => jumpToChapter(chap.id)}
+                                                                className={`group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border shrink-0 ${
+                                                                    isHighlighted
+                                                                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md ring-2 ring-amber-400/50 scale-105'
+                                                                        : isOpen 
+                                                                            ? 'bg-amber-500/10 border-amber-500/35 text-amber-700 dark:text-amber-300 shadow-xs' 
+                                                                            : 'bg-slate-100/80 hover:bg-slate-200/80 dark:bg-slate-800/80 dark:hover:bg-slate-800 border-slate-200/60 dark:border-slate-800 text-slate-600 dark:text-slate-300'
+                                                                }`}
+                                                                title={`Jump to Chapter ${chap.chapter_number}: ${chap.title}`}
+                                                            >
+                                                                <span className="font-mono text-[10px] uppercase opacity-75">Ch {chap.chapter_number}</span>
+                                                                <span className="max-w-[130px] truncate">{cleanTitle}</span>
+                                                                <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full ${
+                                                                    isHighlighted 
+                                                                        ? 'bg-slate-950 text-white font-black' 
+                                                                        : isOpen 
+                                                                            ? 'bg-amber-500 text-slate-950 font-black' 
+                                                                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                                                                }`}>
+                                                                    {chapCount}
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* In-Level Search Filter active banner */}
+                                        {hasLevelSearch && (
+                                            <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-amber-500/10 border border-amber-500/25 rounded-2xl text-xs text-amber-900 dark:text-amber-200">
+                                                <div className="flex items-center gap-2">
+                                                    <Search className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                                                    <span>
+                                                        Showing results for <strong>&quot;{levelSearchQuery}&quot;</strong> — Found <strong>{totalLevelMatchingTopics}</strong> topic(s) across <strong>{filteredModuleChapters.length}</strong> chapter(s)
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <button
+                                                        onClick={() => {
+                                                            setSearchQuery(levelSearchQuery);
+                                                            setLevelSearchQuery('');
+                                                        }}
+                                                        className="text-[11px] font-black text-amber-700 dark:text-amber-300 hover:underline uppercase tracking-wider"
+                                                    >
+                                                        Search Entire Academy →
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setLevelSearchQuery('')}
+                                                        className="text-[11px] font-black text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 uppercase tracking-wider"
+                                                    >
+                                                        Clear Filter
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
                                     {/* Section bar with quick Add Chapter button */}
                                     <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 select-none">
                                         <div className="flex items-center gap-2">
                                             <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
-                                            <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-700 dark:text-slate-300">Collapsible Chapter curriculum</h2>
+                                            <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-700 dark:text-slate-300">
+                                                Chapter Curriculum ({filteredModuleChapters.length})
+                                            </h2>
                                             {isSavingSequence && <span className="text-[9px] font-bold text-amber-600 animate-pulse">Saving order…</span>}
                                         </div>
                                         <button 
@@ -2144,15 +2414,59 @@ export default function InventoryLibrary() {
 
                                     {/* Collapsible Accordion Chapter stack */}
                                     <div className="space-y-4">
-                                        {moduleChapters.length === 0 ? (
-                                            <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl text-slate-400">
-                                                <Sparkles className="size-10 text-amber-500 stroke-[1.2] mx-auto mb-2 opacity-50" />
-                                                <p className="text-xs font-semibold">No chapters found for this Level.</p>
-                                            </div>
+                                        {filteredModuleChapters.length === 0 ? (
+                                            hasLevelSearch ? (
+                                                <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl text-slate-400 space-y-3">
+                                                    <HelpCircle className="size-10 text-amber-500 stroke-[1.2] mx-auto opacity-60" />
+                                                    <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                                                        No chapters or topics in this Level match &quot;{levelSearchQuery}&quot;
+                                                    </h3>
+                                                    <p className="text-xs text-slate-400 max-w-md mx-auto">
+                                                        Try searching across all levels in the academy or clear your filter to view all curriculum materials.
+                                                    </p>
+                                                    <div className="flex items-center justify-center gap-3 pt-2">
+                                                        <button
+                                                            onClick={() => setLevelSearchQuery('')}
+                                                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all"
+                                                        >
+                                                            Clear Filter
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setSearchQuery(levelSearchQuery);
+                                                                setLevelSearchQuery('');
+                                                            }}
+                                                            className="px-4 py-2 bg-[#ecb613] hover:bg-amber-500 text-slate-950 text-xs font-black rounded-xl transition-all shadow-md shadow-[#ecb613]/20"
+                                                        >
+                                                            Search Entire Academy
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl text-slate-400">
+                                                    <Sparkles className="size-10 text-amber-500 stroke-[1.2] mx-auto mb-2 opacity-50" />
+                                                    <p className="text-xs font-semibold">No chapters found for this Level.</p>
+                                                </div>
+                                            )
                                         ) : (
-                                            moduleChapters.map((chap, idx) => {
-                                                const expanded = !!expandedChapters[chap.id];
+                                            filteredModuleChapters.map((chap) => {
+                                                const expanded = isChapterExpanded(chap.id);
                                                 const chapLessons = getChapterLessons(chap.id);
+                                                const filteredChapLessons = getFilteredChapterLessons(chap.id, chap);
+                                                const isHighlighted = highlightedChapterId === chap.id;
+
+                                                const audioCount = chapLessons.filter(l => {
+                                                    const m = getCurriculumMediaInfo(l);
+                                                    return m.mediaType === 'audio' || l.material_type === 'audio';
+                                                }).length;
+                                                const videoCount = chapLessons.filter(l => {
+                                                    const m = getCurriculumMediaInfo(l);
+                                                    return m.mediaType === 'video' || l.material_type === 'video';
+                                                }).length;
+                                                const docCount = chapLessons.filter(l => {
+                                                    const m = getCurriculumMediaInfo(l);
+                                                    return m.mediaType === 'pdf' || l.material_type === 'pdf' || l.material_type === 'file';
+                                                }).length;
                                                 
                                                 return (
                                                     <div 
@@ -2180,39 +2494,68 @@ export default function InventoryLibrary() {
                                                             setDraggedLessonId(null);
                                                             setDragOverChapterId(null);
                                                         }}
-                                                        className={`rounded-3xl border bg-white dark:bg-slate-900 overflow-hidden shadow-xs transition-all duration-200 ${dragOverChapterId === chap.id ? 'border-amber-500 ring-2 ring-amber-500/25 translate-y-1' : 'border-slate-200/85 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-750'} ${draggedChapterId === chap.id ? 'opacity-50' : ''}`}
+                                                        id={`chapter-card-${chap.id}`}
+                                                        className={`rounded-3xl border bg-white dark:bg-slate-900 overflow-hidden shadow-xs transition-all duration-300 ${
+                                                            isHighlighted
+                                                                ? 'border-amber-400 ring-4 ring-amber-400/40 shadow-xl scale-[1.01]'
+                                                                : dragOverChapterId === chap.id 
+                                                                    ? 'border-amber-500 ring-2 ring-amber-500/25 translate-y-1' 
+                                                                    : 'border-slate-200/85 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-750'
+                                                        } ${draggedChapterId === chap.id ? 'opacity-50' : ''}`}
                                                     >
                                                         {/* Chapter Accordion Header bar */}
                                                         <div 
                                                             onClick={() => toggleChapterExpand(chap.id)}
-                                                            className="px-6 py-5 bg-slate-50/50 dark:bg-slate-950/20 hover:bg-slate-50 dark:hover:bg-slate-950/30 flex items-center justify-between gap-4 cursor-pointer select-none transition-all"
+                                                            className="px-5 sm:px-6 py-4 sm:py-5 bg-slate-50/50 dark:bg-slate-950/20 hover:bg-slate-50 dark:hover:bg-slate-950/40 flex items-center justify-between gap-4 cursor-pointer select-none transition-all"
                                                         >
-                                                            <div className="flex items-center gap-4 text-left">
+                                                            <div className="flex items-center gap-3 sm:gap-4 text-left min-w-0">
                                                                 <div
-                                                                    draggable={!isSavingSequence}
+                                                                    draggable={!isSavingSequence && !hasLevelSearch}
                                                                     onDragStart={(event) => { event.stopPropagation(); setDraggedChapterId(chap.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', chap.id); }}
                                                                     onDragEnd={() => { setDraggedChapterId(null); setDragOverChapterId(null); }}
                                                                     onClick={(event) => event.stopPropagation()}
-                                                                    className="-mr-2 cursor-grab active:cursor-grabbing rounded-lg p-2 text-slate-400 hover:bg-amber-500/10 hover:text-amber-600"
-                                                                    title="Drag to change chapter sequence"
+                                                                    className={`-mr-2 cursor-grab active:cursor-grabbing rounded-lg p-2 text-slate-400 hover:bg-amber-500/10 hover:text-amber-600 ${hasLevelSearch ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                                                    title={hasLevelSearch ? 'Clear search to reorder chapters' : 'Drag to change chapter sequence'}
                                                                 >
                                                                     <GripVertical className="size-5" />
                                                                 </div>
                                                                 <div className="w-10 h-10 rounded-xl bg-[#ecb613]/10 border border-[#ecb613]/25 flex items-center justify-center shrink-0">
                                                                     <span className="font-extrabold text-xs font-mono text-[#d97706] dark:text-[#ecb613]">Ch{chap.chapter_number}</span>
                                                                 </div>
-                                                                <div>
-                                                                    <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest leading-none font-mono mb-1.5 block">
-                                                                        {chapLessons.length} {chapLessons.length === 1 ? 'TOPIC' : 'TOPICS'} AVAILABLE
-                                                                    </span>
-                                                                    <h3 className="font-extrabold text-sm md:text-base text-slate-900 dark:text-white leading-tight">
+                                                                <div className="min-w-0">
+                                                                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                                                                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest leading-none font-mono">
+                                                                            {chapLessons.length} {chapLessons.length === 1 ? 'TOPIC' : 'TOPICS'}
+                                                                        </span>
+                                                                        {hasLevelSearch && filteredChapLessons.length !== chapLessons.length && (
+                                                                            <span className="text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded-full uppercase font-mono">
+                                                                                {filteredChapLessons.length} MATCHING
+                                                                            </span>
+                                                                        )}
+                                                                        {audioCount > 0 && (
+                                                                            <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-md font-mono flex items-center gap-0.5">
+                                                                                <Music className="size-2.5" /> {audioCount}
+                                                                            </span>
+                                                                        )}
+                                                                        {videoCount > 0 && (
+                                                                            <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-md font-mono flex items-center gap-0.5">
+                                                                                <Video className="size-2.5" /> {videoCount}
+                                                                            </span>
+                                                                        )}
+                                                                        {docCount > 0 && (
+                                                                            <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded-md font-mono flex items-center gap-0.5">
+                                                                                <FileText className="size-2.5" /> {docCount}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <h3 className="font-extrabold text-sm md:text-base text-slate-900 dark:text-white leading-tight truncate">
                                                                         {chap.title}
                                                                     </h3>
                                                                 </div>
                                                             </div>
  
                                                             {/* Chapter Actions and chevron */}
-                                                            <div className="flex items-center gap-4 shrink-0">
+                                                            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                                                                 <div className="flex items-center gap-1">
                                                                     <button 
                                                                         onClick={(e) => openChapterModal(chap, e)}
@@ -2229,8 +2572,8 @@ export default function InventoryLibrary() {
                                                                         <Trash2 className="size-4" />
                                                                     </button>
                                                                 </div>
-                                                                <div className="text-slate-400">
-                                                                    {expanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5" />}
+                                                                <div className={`p-1 text-slate-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}>
+                                                                    <ChevronDown className="size-5" />
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -2255,7 +2598,7 @@ export default function InventoryLibrary() {
                                                                 {/* Action bar inside chapter to add new topics instantly */}
                                                                 <div className="flex items-center justify-between select-none">
                                                                     <div className="text-[10px] font-bold font-mono text-slate-400 uppercase tracking-wider">
-                                                                        TOPICS LIST ({chapLessons.length})
+                                                                        TOPICS LIST ({filteredChapLessons.length}{hasLevelSearch && filteredChapLessons.length !== chapLessons.length ? ` of ${chapLessons.length}` : ''})
                                                                     </div>
                                                                     <div className="flex items-center gap-2">
                                                                         <button
@@ -2277,17 +2620,25 @@ export default function InventoryLibrary() {
                                                                 </div>
 
                                                                 {/* Chapter topics simple cards rendering */}
-                                                                {chapLessons.length === 0 ? (
-                                                                    <div className="py-8 text-center text-slate-400 border border-slate-100 dark:border-slate-800 rounded-2xl">
+                                                                {filteredChapLessons.length === 0 ? (
+                                                                    <div className="py-8 text-center text-slate-400 border border-slate-100 dark:border-slate-800 rounded-2xl space-y-1">
                                                                         <HelpCircle className="size-8 stroke-[1.2] mx-auto mb-2 opacity-50" />
-                                                                        <p className="text-xs font-semibold">No materials created yet for this chapter.</p>
+                                                                        <p className="text-xs font-semibold">
+                                                                            {hasLevelSearch ? `No topics in this chapter match "${levelSearchQuery}".` : 'No materials created yet for this chapter.'}
+                                                                        </p>
                                                                     </div>
                                                                 ) : (
-                                                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-left">
-                                                                        {chapLessons.map(lesson => {
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4 text-left">
+                                                                        {filteredChapLessons.map(lesson => {
                                                                             const isLinkClickable = !!lesson.link_url;
                                                                             const hasAttachment = !!lesson.material_url;
                                                                             const mediaInfo = getCurriculumMediaInfo(lesson);
+                                                                            const isTopicMatch = hasLevelSearch && (
+                                                                                (lesson.title || '').toLowerCase().includes(levelSearchLower) ||
+                                                                                (lesson.description || '').toLowerCase().includes(levelSearchLower) ||
+                                                                                (lesson.file_name || '').toLowerCase().includes(levelSearchLower) ||
+                                                                                (lesson.bullet_points || []).some(bp => bp.toLowerCase().includes(levelSearchLower))
+                                                                            );
                                                                             
                                                                             return (
                                                                                 <div 
@@ -2303,7 +2654,11 @@ export default function InventoryLibrary() {
                                                                                         setDraggedLessonId(null);
                                                                                     }}
                                                                                     onClick={() => setSelectedLessonPreview(lesson)}
-                                                                                    className={`rounded-2xl p-5 border flex flex-col justify-between h-44 relative bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-850 hover:border-amber-400/60 dark:hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer ${draggedLessonId === lesson.id ? 'opacity-50' : ''}`}
+                                                                                    className={`rounded-2xl p-4 sm:p-5 border flex flex-col justify-between min-h-[10.5rem] h-auto relative bg-white dark:bg-slate-900 transition-all cursor-pointer ${
+                                                                                        isTopicMatch 
+                                                                                            ? 'border-amber-400 dark:border-amber-500/80 bg-amber-500/[0.03] ring-1 ring-amber-400/40 shadow-sm' 
+                                                                                            : 'border-slate-200/80 dark:border-slate-850 hover:border-amber-400/60 dark:hover:border-amber-500/50 hover:shadow-md'
+                                                                                    } ${draggedLessonId === lesson.id ? 'opacity-50' : ''}`}
                                                                                 >
                                                                                     {/* Card Upper Title & actions */}
                                                                                     <div className="space-y-1.5">
@@ -2313,6 +2668,11 @@ export default function InventoryLibrary() {
                                                                                                 <span className="text-[10px] font-extrabold text-[#d97706] dark:text-amber-400 uppercase tracking-widest font-mono">
                                                                                                     Topic {lesson.lesson_number}
                                                                                                 </span>
+                                                                                                {isTopicMatch && (
+                                                                                                    <span className="text-[8px] font-black bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded-full uppercase tracking-wider font-mono">
+                                                                                                        MATCH
+                                                                                                    </span>
+                                                                                                )}
                                                                                             </div>
                                                                                             
                                                                                             <div className="flex items-center gap-1 shrink-0 relative z-20">
@@ -2399,8 +2759,8 @@ export default function InventoryLibrary() {
 
                                 </div>
 
-                                {/* Right 1/3 Column: 3 High-fidelity visual Quick Access widgets */}
-                                <div className="w-full xl:w-[340px] shrink-0 space-y-6 select-none">
+                                {/* Right Column (on 2xl+) or Bottom Dashboard Row (below 2xl): 3 High-fidelity visual Quick Access widgets */}
+                                <div className="w-full 2xl:w-[320px] 2xl:shrink-0 space-y-4 select-none min-w-0">
                                     
                                     {/* Chapter metrics bar header */}
                                     <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
@@ -2408,116 +2768,118 @@ export default function InventoryLibrary() {
                                         <h3 className="font-extrabold text-[10px] tracking-widest uppercase text-slate-400">Quick Access Tools</h3>
                                     </div>
 
-                                    {/* WIDGET A: STUDENT PROGRESS TRACKER (Animated SVG circular progress wheel) */}
-                                    <div className="rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
-                                        <div className="space-y-1">
-                                            <span className={`text-[9px] font-black border px-2.5 py-1 rounded-full uppercase tracking-wider leading-none ${
-                                                hasDbStats 
-                                                    ? 'bg-amber-500/15 border-amber-500/20 text-amber-600 dark:text-amber-400' 
-                                                    : 'bg-emerald-500/15 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                                            }`}>
-                                                {hasDbStats ? 'Live Database Progress' : 'Simulated Progress'}
-                                            </span>
-                                            <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Active Class Completion</h4>
-                                        </div>
-
-                                        <div className="flex items-center justify-between gap-4 my-3">
-                                            {/* Beautiful Circular Progress Wheel */}
-                                            <div className="relative w-20 h-20 flex items-center justify-center shrink-0">
-                                                <svg className="w-20 h-20 transform -rotate-90">
-                                                    <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="6" fill="transparent" />
-                                                    <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-[#ecb613]" strokeWidth="6" fill="transparent"
-                                                            strokeDasharray={2 * Math.PI * 32}
-                                                            strokeDashoffset={2 * Math.PI * 32 * (1 - (completionRate / 100))} />
-                                                </svg>
-                                                <div className="absolute font-black text-sm text-slate-900 dark:text-white leading-none font-mono">{completionRate}%</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 2xl:grid-cols-1 gap-4">
+                                        {/* WIDGET A: STUDENT PROGRESS TRACKER (Animated SVG circular progress wheel) */}
+                                        <div className="rounded-3xl p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
+                                            <div className="space-y-1">
+                                                <span className={`text-[9px] font-black border px-2.5 py-1 rounded-full uppercase tracking-wider leading-none ${
+                                                    hasDbStats 
+                                                        ? 'bg-amber-500/15 border-amber-500/20 text-amber-600 dark:text-amber-400' 
+                                                        : 'bg-emerald-500/15 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                                }`}>
+                                                    {hasDbStats ? 'Live Database Progress' : 'Simulated Progress'}
+                                                </span>
+                                                <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Active Class Completion</h4>
                                             </div>
-                                            <div className="text-left space-y-1">
-                                                <div className="text-[10px] text-slate-400 font-bold uppercase font-mono">Completion Rate</div>
-                                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-medium">
-                                                    Students have mastered {masteredCount} out of {activeModuleLessons.length} sequential curriculum requirements.
-                                                </p>
-                                            </div>
-                                        </div>
 
-                                        <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono">
-                                            <span>ACTIVE STUDENTS: {finalActiveStudentsCount}</span>
-                                            <span className="text-[#ecb613]">VIEW CLASS</span>
-                                        </div>
-                                    </div>
-
-                                    {/* WIDGET B: RESOURCE BACKUP SINKER */}
-                                    <div className="rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
-                                        <div className="space-y-1">
-                                            <span className="text-[9px] font-black bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 px-2.5 py-1 rounded-full uppercase tracking-wider leading-none">Cloud Backup Status</span>
-                                            <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Supabase Sync Engine</h4>
-                                        </div>
-
-                                        <div className="my-2 space-y-2.5">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/10 shrink-0">
-                                                    <RefreshCw className={`size-4 text-blue-500 ${isSyncing ? 'animate-spin' : ''}`} />
+                                            <div className="flex items-center justify-between gap-4 my-3">
+                                                {/* Beautiful Circular Progress Wheel */}
+                                                <div className="relative w-20 h-20 flex items-center justify-center shrink-0">
+                                                    <svg className="w-20 h-20 transform -rotate-90">
+                                                        <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="6" fill="transparent" />
+                                                        <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-[#ecb613]" strokeWidth="6" fill="transparent"
+                                                                strokeDasharray={2 * Math.PI * 32}
+                                                                strokeDashoffset={2 * Math.PI * 32 * (1 - (completionRate / 100))} />
+                                                    </svg>
+                                                    <div className="absolute font-black text-sm text-slate-900 dark:text-white leading-none font-mono">{completionRate}%</div>
                                                 </div>
-                                                <div>
-                                                    <div className="text-[10px] font-bold text-slate-400 font-mono leading-none">{lastSyncedText}</div>
-                                                    <div className="text-[9px] font-semibold text-slate-400 mt-0.5">{lessons.length} Active curriculum nodes active</div>
+                                                <div className="text-left space-y-1">
+                                                    <div className="text-[10px] text-slate-400 font-bold uppercase font-mono">Completion Rate</div>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-medium">
+                                                        Students have mastered {masteredCount} out of {activeModuleLessons.length} sequential curriculum requirements.
+                                                    </p>
                                                 </div>
                                             </div>
-                                            
-                                            <button 
-                                                onClick={triggerBackupSync}
-                                                disabled={isSyncing}
-                                                className="w-full py-2.5 px-4 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-white font-extrabold rounded-xl border border-slate-200 dark:border-slate-750 transition-all active:scale-98 flex items-center justify-center gap-2 text-xs leading-none"
-                                            >
-                                                {isSyncing ? (
-                                                    <>
-                                                        <Loader2 className="size-3.5 animate-spin" />
-                                                        <span>Syncing Storage...</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <RefreshCw className="size-3.5" />
-                                                        <span>Sync to Cloud Database</span>
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
 
-                                        <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono leading-none">
-                                            <span>DB SIZE: {estimatedDbSize}</span>
-                                            <span className="text-emerald-500 uppercase font-black tracking-wide leading-none">SECURE</span>
-                                        </div>
-                                    </div>
-
-                                    {/* WIDGET C: QUICK STATS */}
-                                    <div className="rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
-                                        <div className="space-y-1">
-                                            <span className="text-[9px] font-black bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 px-2.5 py-1 rounded-full uppercase tracking-wider leading-none">Numerical Summaries</span>
-                                            <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Active Level stats</h4>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-3 my-2 text-left">
-                                            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
-                                                <div className="text-lg font-black font-mono leading-none">{String(modules.length).padStart(2, '0')}</div>
-                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Levels</div>
-                                            </div>
-                                            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
-                                                <div className="text-lg font-black font-mono leading-none">{String(chapters.length).padStart(2, '0')}</div>
-                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Chapters</div>
-                                            </div>
-                                            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
-                                                <div className="text-lg font-black font-mono leading-none">{String(lessons.length).padStart(2, '0')}</div>
-                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Topics</div>
-                                            </div>
-                                            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
-                                                <div className="text-lg font-black font-mono text-emerald-500 leading-none">Active</div>
-                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Status</div>
+                                            <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono">
+                                                <span>ACTIVE STUDENTS: {finalActiveStudentsCount}</span>
+                                                <span className="text-[#ecb613]">VIEW CLASS</span>
                                             </div>
                                         </div>
 
-                                        <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono leading-none">
-                                            <span>TEACHER: MAESTRO</span>
-                                            <span className="text-[#ecb613] uppercase font-black tracking-wide leading-none">ADMIN</span>
+                                        {/* WIDGET B: RESOURCE BACKUP SINKER */}
+                                        <div className="rounded-3xl p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
+                                            <div className="space-y-1">
+                                                <span className="text-[9px] font-black bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 px-2.5 py-1 rounded-full uppercase tracking-wider leading-none">Cloud Backup Status</span>
+                                                <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Supabase Sync Engine</h4>
+                                            </div>
+
+                                            <div className="my-2 space-y-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/10 shrink-0">
+                                                        <RefreshCw className={`size-4 text-blue-500 ${isSyncing ? 'animate-spin' : ''}`} />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-bold text-slate-400 font-mono leading-none">{lastSyncedText}</div>
+                                                        <div className="text-[9px] font-semibold text-slate-400 mt-0.5">{lessons.length} Active curriculum nodes active</div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <button 
+                                                    onClick={triggerBackupSync}
+                                                    disabled={isSyncing}
+                                                    className="w-full py-2.5 px-4 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-white font-extrabold rounded-xl border border-slate-200 dark:border-slate-750 transition-all active:scale-98 flex items-center justify-center gap-2 text-xs leading-none"
+                                                >
+                                                    {isSyncing ? (
+                                                        <>
+                                                            <Loader2 className="size-3.5 animate-spin" />
+                                                            <span>Syncing Storage...</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <RefreshCw className="size-3.5" />
+                                                            <span>Sync to Cloud Database</span>
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+
+                                            <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono leading-none">
+                                                <span>DB SIZE: {estimatedDbSize}</span>
+                                                <span className="text-emerald-500 uppercase font-black tracking-wide leading-none">SECURE</span>
+                                            </div>
+                                        </div>
+
+                                        {/* WIDGET C: QUICK STATS */}
+                                        <div className="rounded-3xl p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
+                                            <div className="space-y-1">
+                                                <span className="text-[9px] font-black bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 px-2.5 py-1 rounded-full uppercase tracking-wider leading-none">Numerical Summaries</span>
+                                                <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Active Level stats</h4>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-3 my-2 text-left">
+                                                <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
+                                                    <div className="text-lg font-black font-mono leading-none">{String(modules.length).padStart(2, '0')}</div>
+                                                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Levels</div>
+                                                </div>
+                                                <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
+                                                    <div className="text-lg font-black font-mono leading-none">{String(chapters.length).padStart(2, '0')}</div>
+                                                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Chapters</div>
+                                                </div>
+                                                <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
+                                                    <div className="text-lg font-black font-mono leading-none">{String(lessons.length).padStart(2, '0')}</div>
+                                                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Topics</div>
+                                                </div>
+                                                <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
+                                                    <div className="text-lg font-black font-mono text-emerald-500 leading-none">Active</div>
+                                                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Status</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono leading-none">
+                                                <span>TEACHER: MAESTRO</span>
+                                                <span className="text-[#ecb613] uppercase font-black tracking-wide leading-none">ADMIN</span>
+                                            </div>
                                         </div>
                                     </div>
 
