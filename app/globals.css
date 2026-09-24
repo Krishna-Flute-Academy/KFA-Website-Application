@@ -249,17 +249,55 @@ body {
 .tutorial-content pre,
 .prose-tutorial pre {
     background-color: #0f172a !important;
-    color: #f8fafc !important;
+    color: #ffffff !important;
     padding: 0.65rem 0.85rem !important;
     border-radius: 0.65rem !important;
     font-size: 0.8rem !important;
     overflow-x: auto !important;
     margin-top: 0.45rem !important;
     margin-bottom: 0.45rem !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
 }
 
-.tutorial-content code,
-.prose-tutorial code {
+/* Any code or text inside pre blocks must be white with transparent background */
+.tutorial-content pre *,
+.prose-tutorial pre *,
+.tutorial-content pre code,
+.prose-tutorial pre code {
+    color: #ffffff !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+    font-size: inherit !important;
+    font-family: inherit !important;
+    line-height: inherit !important;
+    border: none !important;
+}
+
+.tutorial-content pre::-webkit-scrollbar,
+.prose-tutorial pre::-webkit-scrollbar {
+    height: 5px;
+}
+
+.tutorial-content pre::-webkit-scrollbar-track,
+.prose-tutorial pre::-webkit-scrollbar-track {
+    background: #1e293b;
+    border-radius: 4px;
+}
+
+.tutorial-content pre::-webkit-scrollbar-thumb,
+.prose-tutorial pre::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 4px;
+}
+
+.tutorial-content pre::-webkit-scrollbar-thumb:hover,
+.prose-tutorial pre::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+/* Inline code (outside pre) */
+.tutorial-content :not(pre) > code,
+.prose-tutorial :not(pre) > code {
     background-color: rgba(124, 94, 63, 0.1) !important;
     color: #7C5E3F !important;
     padding: 0.12rem 0.3rem !important;
@@ -267,7 +305,7 @@ body {
     font-size: 0.825rem !important;
 }
 
-:is(.dark .tutorial-content code, .dark .prose-tutorial code) {
+:is(.dark .tutorial-content :not(pre) > code, .dark .prose-tutorial :not(pre) > code) {
     background-color: rgba(251, 191, 36, 0.15) !important;
     color: #fde68a !important;
 }

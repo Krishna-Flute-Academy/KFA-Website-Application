@@ -76,7 +76,7 @@ export const DEFAULT_HOW_TO_GUIDES: HowToGuide[] = [
             {
                 key: 'youtube',
                 title: 'YouTube — Unlisted Video',
-                shortTitle: 'YouTube Unlisted',
+                shortTitle: 'YouTube',
                 description: 'Fastest method. Upload to YouTube, set to Unlisted, and paste the video link.',
                 badge: 'Recommended',
                 iconName: 'youtube',
@@ -118,7 +118,7 @@ export const DEFAULT_HOW_TO_GUIDES: HowToGuide[] = [
             {
                 key: 'portal-upload',
                 title: 'Upload from Portal (Google Drive Picker)',
-                shortTitle: 'Upload from Portal',
+                shortTitle: 'Upload Video',
                 description: 'Select your recording file directly through the portal submission modal using the Google Drive Picker.',
                 badge: 'Access Required',
                 iconName: 'upload',

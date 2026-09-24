@@ -265,12 +265,12 @@ export default function HowToGuideViewer({
                                             }`}
                                         >
                                             <div>
-                                                <div className="flex items-center justify-between gap-1 mb-1">
-                                                    <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                                                <div className="flex items-start justify-between gap-1.5 flex-wrap mb-1.5 min-w-0">
+                                                    <span className="text-xs font-black text-slate-900 dark:text-white leading-tight">
                                                         {method.shortTitle || method.title}
                                                     </span>
                                                     {method.badge && (
-                                                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
+                                                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 mt-0.5 ${
                                                             method.requiresTeacherAccess 
                                                                 ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300' 
                                                                 : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
