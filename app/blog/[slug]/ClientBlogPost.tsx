@@ -87,7 +87,7 @@ export default function ClientBlogPost({ post: initialPost }: ClientBlogPostProp
     const displayContent = processedContent || post?.content || '';
 
     return (
-        <div className="min-h-screen py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-blue-50/50 pt-28">
+        <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-blue-50/50">
             <ReadingProgressBar />
 
             <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-10 lg:items-start">

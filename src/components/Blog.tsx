@@ -265,13 +265,10 @@ export const Blog: React.FC<BlogProps> = ({ initialPostId, onBack }) => {
         return (
             <div className="max-w-7xl mx-auto">
 
-                <div className="mb-8">
-                    <Link
-                        href="/"
-                        className="inline-flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all shadow-md active:scale-95"
-                    >
-                        <Home className="w-5 h-5" /> <span>Back to Home</span>
-                    </Link>
+                <div className="mb-6 flex items-center gap-2 text-xs sm:text-sm text-slate-500">
+                    <Link href="/" className="hover:text-blue-900 transition-colors">Home</Link>
+                    <span>/</span>
+                    <span className="text-slate-800 font-semibold">Blog</span>
                 </div>
 
                 <div className="text-center mb-10 animate-in fade-in duration-700">
@@ -393,7 +390,7 @@ export const Blog: React.FC<BlogProps> = ({ initialPostId, onBack }) => {
     };
 
     return (
-        <div className="min-h-screen py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-blue-50/50 pt-28">
+        <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-blue-50/50">
             {renderContent()}
         </div>
     );

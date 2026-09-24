@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { ChevronLeft, ImageIcon, Play, ExternalLink } from 'lucide-react';
 import { supabase, GalleryItem } from '../lib/supabase';
+import PublicNavbar from './PublicNavbar';
 
 interface GalleryFullProps {
-    onBack: () => void;
+    onBack?: () => void;
 }
 
 export const GalleryFull: React.FC<GalleryFullProps> = ({ onBack }) => {
@@ -75,12 +77,13 @@ export const GalleryFull: React.FC<GalleryFullProps> = ({ onBack }) => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-7xl mx-auto">
+        <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
+            <PublicNavbar activePath="/#gallery" />
+            <div className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8 w-full flex-1">
                 {/* Header */}
-                <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
+                <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
                     <button
-                        onClick={onBack}
+                        onClick={onBack || (() => { if (typeof window !== 'undefined') window.location.href = '/'; })}
                         className="flex items-center gap-2 text-blue-600 font-bold hover:text-blue-800 transition-colors self-start md:self-auto"
                     >
                         <ChevronLeft size={24} /> Back to Home

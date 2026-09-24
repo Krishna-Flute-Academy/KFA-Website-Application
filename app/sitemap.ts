@@ -7,6 +7,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Base static routes
   const routes = [
     '',
+    '/courses',
+    '/courses/beginner-bansuri',
+    '/courses/intermediate-bansuri',
+    '/courses/advanced-bansuri',
+    '/courses/kids-bansuri',
+    '/gallery',
     '/blog',
     '/community',
     '/login',
@@ -15,7 +21,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     url: `${baseUrl}${route}`,
     lastModified: new Date(),
     changeFrequency: 'weekly' as const,
-    priority: route === '' ? 1 : 0.8,
+    priority: route === '' ? 1 : route.startsWith('/courses') ? 0.9 : 0.8,
   }));
 
   let communityRoutes: any[] = [];

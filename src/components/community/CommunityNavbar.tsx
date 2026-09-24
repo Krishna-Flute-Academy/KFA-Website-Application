@@ -137,7 +137,7 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
                             Discussions
                         </Link>
                         <Link 
-                            href="/#courses" 
+                            href="/courses" 
                             className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
                         >
                             Courses

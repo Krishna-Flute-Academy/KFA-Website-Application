@@ -2,11 +2,12 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import {
     Music, Download, Users, Award, Phone, Mail, MapPin, Star,
     SignalLow, SignalMedium, SignalHigh, BookOpen, Heart, Sparkles,
     Facebook, Instagram, Youtube, MessageSquare, ChevronRight, Menu, X,
-    Lock, ExternalLink, Share2, User, Play
+    Lock, ExternalLink, Share2, User, Play, ArrowRight
 } from 'lucide-react';
 
 // Use dynamic imports for client components to ensure they only load on the client
@@ -430,7 +431,7 @@ Hello Krishna Flute Academy, I have an inquiry!
                             <div className="hidden md:flex items-center space-x-6 lg:space-x-8">
                                 <button onClick={() => scrollToSection('about')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">About</button>
                                 <button onClick={() => scrollToSection('founder')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Founder</button>
-                                <button onClick={() => scrollToSection('courses')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Courses</button>
+                                <Link href="/courses" className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Courses</Link>
                                 <button onClick={() => { setCurrentView('gallery'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Gallery</button>
                                 <a href="/blog/" className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Blog</a>
                                 <a href="/community" className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium font-semibold">Community</a>
@@ -501,7 +502,7 @@ Hello Krishna Flute Academy, I have an inquiry!
                                 <div className="space-y-6">
                                     <button onClick={() => { scrollToSection('about'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">About</button>
                                     <button onClick={() => { scrollToSection('founder'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Founder</button>
-                                    <button onClick={() => { scrollToSection('courses'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Courses</button>
+                                    <Link href="/courses" onClick={() => setMobileMenuOpen(false)} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Courses</Link>
                                     <button onClick={() => { setCurrentView('gallery'); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Gallery</button>
                                     <a href="/blog/" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Blog</a>
                                     <a href="/community" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Community</a>
@@ -795,59 +796,75 @@ Hello Krishna Flute Academy, I have an inquiry!
                         {[
                             {
                                 title: "Beginner",
+                                subtitle: "Start Your Bansuri Journey",
                                 description: "Perfect for your first steps into flute music",
-                                features: ["Introduction to the Flute", "Breath Control & Blowing Techniques", "Fundamentals of Swaras", "Taan Practice (Basic)"],
+                                features: ["First Sound & Breath", "Swaras & Fingering", "Alankars & Rhythm", "Simple Songs"],
                                 icon: <SignalLow className="w-8 h-8" />,
-                                color: "from-blue-400 to-blue-600"
+                                color: "from-blue-500 to-blue-700",
+                                href: "/courses/beginner-bansuri",
+                                cta: "View Course →"
                             },
                             {
                                 title: "Intermediate",
+                                subtitle: "Develop Technique & Expression",
                                 description: "Build your foundation with advanced techniques",
-                                features: ["Advanced Taan Practice", "Introduction to Komal Swaras", "Introduction to Raagas", "Mastering Advanced Playing Techniques"],
+                                features: ["Komal & Tivra Swaras", "Meend, Kan & Murki", "Raga & Taal", "Songs & Compositions"],
                                 icon: <SignalMedium className="w-8 h-8" />,
-                                color: "from-yellow-400 to-yellow-600"
+                                color: "from-amber-500 to-amber-600",
+                                href: "/courses/intermediate-bansuri",
+                                cta: "View Course →"
                             },
                             {
                                 title: "Advanced",
+                                subtitle: "Develop as a Performer",
                                 description: "Master intricate compositions and professional techniques",
-                                features: ["Complex ragas", "Taan & meend", "Concert preparation", "Teaching methodology"],
+                                features: ["Advanced Ragas", "Alaap & Taan", "Improvisation & Layakari", "Performance Preparation"],
                                 icon: <SignalHigh className="w-8 h-8" />,
-                                color: "from-blue-500 to-yellow-500"
+                                color: "from-blue-600 to-indigo-800",
+                                href: "/courses/advanced-bansuri",
+                                cta: "View Course →"
                             },
                             {
                                 title: "Kids Program",
-                                description: "Fun lessons designed for young learners",
-                                features: ["Playful learning", "Simple songs", "Rhythm games", "Creative expression"],
+                                subtitle: "Discover Music Through Bansuri",
+                                description: "Fun, encouraging lessons designed for young learners",
+                                features: ["Sound & Rhythm", "Easy Swaras", "Simple Melodies", "Creative Activities"],
                                 icon: <Heart className="w-8 h-8" />,
-                                color: "from-yellow-300 to-blue-500"
+                                color: "from-amber-400 to-blue-600",
+                                href: "/courses/kids-bansuri",
+                                cta: "Explore Kids Program →"
                             }
                         ].map((course, index) => (
-                            <div
+                            <Link
                                 key={index}
-                                className={`flex flex-col h-full bg-white rounded-2xl shadow-xl overflow-hidden transform hover:scale-105 transition-all duration-500 hover:shadow-2xl ${visibleSections['courses'] ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}
+                                href={course.href}
+                                className={`flex flex-col h-full bg-white rounded-2xl shadow-xl overflow-hidden transform hover:-translate-y-2 transition-all duration-300 hover:shadow-2xl cursor-pointer group border border-slate-100 ${visibleSections['courses'] ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}
                                 style={{ transitionDelay: `${index * 150}ms` }}
                             >
                                 <div className={`bg-gradient-to-r ${course.color} p-6 text-white`}>
-                                    <div className="flex items-center justify-center mb-4">
+                                    <div className="flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                                         {course.icon}
                                     </div>
                                     <h3 className="text-xl font-bold text-center">{course.title}</h3>
+                                    <p className="text-xs text-white/90 text-center font-medium mt-1">{course.subtitle}</p>
                                 </div>
-                                <div className="p-6 flex-grow">
-                                    <p className="text-blue-800 mb-6 leading-relaxed text-sm md:text-base">{course.description}</p>
-                                    <ul className="space-y-2 mb-6">
-                                        {course.features.map((feature, idx) => (
-                                            <li key={idx} className="flex items-center space-x-2 text-blue-700">
-                                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                                <span className="text-xs md:text-sm">{feature}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
+                                <div className="p-6 flex-grow flex flex-col justify-between">
+                                    <div>
+                                        <p className="text-slate-600 mb-5 leading-relaxed text-xs sm:text-sm">{course.description}</p>
+                                        <ul className="space-y-2.5 mb-6">
+                                            {course.features.map((feature, idx) => (
+                                                <li key={idx} className="flex items-center space-x-2 text-slate-700">
+                                                    <div className="w-1.5 h-1.5 bg-blue-600 rounded-full flex-shrink-0"></div>
+                                                    <span className="text-xs sm:text-sm font-medium">{feature}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-blue-900 font-bold text-xs sm:text-sm group-hover:text-amber-600 transition-colors">
+                                        <span>{course.cta}</span>
+                                    </div>
                                 </div>
-
-
-                            </div>
-
+                            </Link>
                         ))}
                     </div>
 
