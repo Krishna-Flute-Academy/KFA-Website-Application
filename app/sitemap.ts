@@ -8,6 +8,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const routes = [
     '',
     '/blog',
+    '/community',
     '/login',
     '/signup',
   ].map((route) => ({
@@ -16,6 +17,27 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'weekly' as const,
     priority: route === '' ? 1 : 0.8,
   }));
+
+  let communityRoutes: any[] = [];
+  try {
+    // Dynamically import supabaseAuth to query public community discussions
+    const { supabaseAuth } = await import('../src/lib/supabase-auth');
+    const { data: communityPosts } = await supabaseAuth
+      .from('community_posts')
+      .select('slug, updated_at, created_at')
+      .eq('visibility', 'public');
+
+    if (communityPosts) {
+      communityRoutes = communityPosts.map((post) => ({
+        url: `${baseUrl}/community/discussion/${post.slug}`,
+        lastModified: new Date(post.updated_at || post.created_at || new Date()),
+        changeFrequency: 'weekly' as const,
+        priority: 0.7,
+      }));
+    }
+  } catch (error) {
+    // Non-blocking
+  }
 
   try {
     // Fetch all active blog posts
@@ -31,11 +53,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         changeFrequency: 'monthly' as const,
         priority: 0.7,
       }));
-      return [...routes, ...postRoutes];
+      return [...routes, ...postRoutes, ...communityRoutes];
     }
   } catch (error) {
     console.error('Error generating sitemap for blog posts:', error);
   }
 
-  return routes;
+  return [...routes, ...communityRoutes];
 }

@@ -433,6 +433,7 @@ Hello Krishna Flute Academy, I have an inquiry!
                                 <button onClick={() => scrollToSection('courses')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Courses</button>
                                 <button onClick={() => { setCurrentView('gallery'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Gallery</button>
                                 <a href="/blog/" className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Blog</a>
+                                <a href="/community" className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium font-semibold">Community</a>
                                 <button onClick={() => scrollToSection('contact')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Contact</button>
                             </div>
 
@@ -503,6 +504,7 @@ Hello Krishna Flute Academy, I have an inquiry!
                                     <button onClick={() => { scrollToSection('courses'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Courses</button>
                                     <button onClick={() => { setCurrentView('gallery'); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Gallery</button>
                                     <a href="/blog/" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Blog</a>
+                                    <a href="/community" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Community</a>
                                     <button onClick={() => { scrollToSection('contact'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Contact</button>
                                     <a href={getDashboardLink()} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>{getAuthButtonLabel()}</a>
                                     {userSession && (

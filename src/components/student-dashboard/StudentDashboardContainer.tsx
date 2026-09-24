@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import {
     Loader2, BookOpen, Calendar, Mail, FileText, CheckCircle,
@@ -658,8 +659,24 @@ export default function StudentDashboardContainer() {
             ]);
 
             const user = userRes.data;
-            if (!user || user.role === 'teacher') { router.push('/'); return; }
-            if (user.role === 'pending') { router.push('/pending-approval'); return; }
+            if (!user) {
+                // User is not in public.users (e.g. external Community Member)
+                router.push('/community');
+                return;
+            }
+            const normalizedRole = user.role?.toLowerCase();
+            if (normalizedRole === 'teacher' || normalizedRole === 'admin') {
+                router.push('/teacher-dashboard');
+                return;
+            }
+            if (normalizedRole === 'pending') {
+                router.push('/pending-approval');
+                return;
+            }
+            if (normalizedRole !== 'student' && normalizedRole !== 'mentor') {
+                router.push('/community');
+                return;
+            }
             setProfile(user);
 
             const isNameIncomplete = !user.name || user.name.trim().toLowerCase() === 'new student';
@@ -3073,6 +3090,23 @@ export default function StudentDashboardContainer() {
                             );
                         })}
                     </nav>
+
+                    {/* KFA Community Link */}
+                    <div className="px-4 py-2 border-t border-slate-150">
+                        <Link
+                            href="/community"
+                            target="_blank"
+                            className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-amber-500/10 text-amber-900 font-bold text-xs hover:bg-amber-500/20 transition-all border border-amber-300/40"
+                        >
+                            <span className="flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-amber-600" />
+                                <span>KFA Community</span>
+                            </span>
+                            <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-200/60 text-amber-900">
+                                Forum
+                            </span>
+                        </Link>
+                    </div>
 
                     {/* Logout Button Footer */}
                     <div className="p-4 border-t border-slate-150">

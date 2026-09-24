@@ -337,10 +337,16 @@ export default function TeacherDashboardContainer() {
                 .from('users')
                 .select('id, name, email, phone, role, profile_pic_url')
                 .eq('id', userId)
-                .single();
+                .maybeSingle();
 
-            if (!profile || profile.role === 'student') {
-                router.push('/');
+            if (!profile || !['teacher', 'admin'].includes(profile.role?.toLowerCase() || '')) {
+                if (profile?.role === 'student' || profile?.role === 'mentor') {
+                    router.push('/student-dashboard');
+                } else if (profile?.role === 'pending') {
+                    router.push('/pending-approval');
+                } else {
+                    router.push('/community');
+                }
                 return;
             }
 

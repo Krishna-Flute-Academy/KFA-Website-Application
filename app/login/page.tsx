@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { supabaseAuth } from '../../src/lib/supabase-auth';
+import { getSafeRedirectUrl } from '../../src/lib/community';
 
 function LoginContent() {
     const router = useRouter();
@@ -12,6 +13,7 @@ function LoginContent() {
     const loginType = searchParams.get('type') || 'student';
     const isTeacher = loginType === 'teacher';
     const justRegistered = searchParams.get('registered') === '1';
+    const redirectParam = searchParams.get('redirect') || searchParams.get('returnUrl') || searchParams.get('next');
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -24,10 +26,11 @@ function LoginContent() {
     const handleGoogleSignIn = async () => {
         setGoogleLoading(true);
         setError(null);
+        const nextUrl = redirectParam ? `?next=${encodeURIComponent(getSafeRedirectUrl(redirectParam, '/community'))}` : '';
         const { error: oauthError } = await supabaseAuth.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: `${window.location.origin}/auth/callback`,
+                redirectTo: `${window.location.origin}/auth/callback${nextUrl}`,
                 queryParams: {
                     prompt: 'select_account',
                 },
@@ -68,8 +71,9 @@ function LoginContent() {
             }
 
             // SECURITY: Do NOT read role from user_metadata — it is user-editable.
-            // Always use the role from public.users as the single source of truth.
+            // Always use the role from public.users as the single source of truth for Academy roles.
             let userRole: string | null = null;
+            let hasAcademyUserRow = false;
 
             if (data.user) {
                 const { data: userData } = await supabaseAuth
@@ -77,21 +81,31 @@ function LoginContent() {
                     .select('role')
                     .eq('id', data.user.id)
                     .maybeSingle();
-                if (userData?.role) userRole = userData.role;
+                if (userData) {
+                    hasAcademyUserRow = true;
+                    if (userData.role) userRole = userData.role;
+                }
             }
 
             const normalizedRole = userRole?.toString().toLowerCase();
 
-            if (normalizedRole === 'admin') {
-                localStorage.setItem('kfa-user-role', normalizedRole);
-                router.push('/teacher-dashboard');
-            } else if (normalizedRole === 'teacher') {
-                localStorage.setItem('kfa-user-role', normalizedRole);
-                router.push('/teacher-dashboard');
-            } else if (normalizedRole === 'student') {
-                router.push('/student-dashboard');
+            if (hasAcademyUserRow) {
+                // User has an academy row in public.users
+                if (normalizedRole === 'admin' || normalizedRole === 'teacher') {
+                    localStorage.setItem('kfa-user-role', normalizedRole);
+                    const dest = redirectParam ? getSafeRedirectUrl(redirectParam, '/teacher-dashboard') : '/teacher-dashboard';
+                    router.push(dest);
+                } else if (normalizedRole === 'student' || normalizedRole === 'mentor') {
+                    const dest = redirectParam ? getSafeRedirectUrl(redirectParam, '/student-dashboard') : '/student-dashboard';
+                    router.push(dest);
+                } else {
+                    router.push('/pending-approval');
+                }
             } else {
-                router.push('/pending-approval');
+                // External Community Member (no public.users row).
+                // NEVER route to /pending-approval or /student-dashboard!
+                const safeDest = getSafeRedirectUrl(redirectParam, '/community');
+                router.push(safeDest);
             }
         } catch (err: any) {
             console.error('Login error:', err);
@@ -256,12 +270,23 @@ function LoginContent() {
                         </form>
 
                         {/* Footer */}
-                        <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
-                            Don&apos;t have an account?{' '}
-                            <Link className="font-bold text-[#a15912] hover:underline" href="/signup">
-                                Create Account
-                            </Link>
-                        </p>
+                        <div className="mt-6 space-y-2 text-center text-sm text-slate-600 dark:text-slate-400">
+                            <p>
+                                Don&apos;t have an account?{' '}
+                                <Link className="font-bold text-[#a15912] hover:underline" href="/signup">
+                                    Create Student Account
+                                </Link>
+                            </p>
+                            <p className="text-xs text-slate-500 pt-1 border-t border-slate-200/80 dark:border-slate-800">
+                                Looking for the Flute Forum?{' '}
+                                <Link 
+                                    className="font-bold text-amber-700 dark:text-amber-400 hover:underline" 
+                                    href={`/community/join${redirectParam ? `?redirect=${encodeURIComponent(getSafeRedirectUrl(redirectParam, '/community'))}` : ''}`}
+                                >
+                                    Join KFA Community (Free)
+                                </Link>
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>

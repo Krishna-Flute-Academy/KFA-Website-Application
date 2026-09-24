@@ -531,7 +531,8 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         ...(userRole === 'admin' ? [{ name: 'Fees', icon: 'payments', href: `${basePath}/fees` }] : []),
         { name: 'Messages', icon: 'chat_bubble', href: `${basePath}/messages` },
         ...(userRole === 'admin' ? [{ name: 'Role Allocation', icon: 'manage_accounts', href: `${basePath}/role-allocation` }] : []),
-        ...(userRole === 'admin' ? [{ name: 'Login Sessions', icon: 'history', href: `${basePath}/sessions` }] : []),
+        ...(userRole === 'admin' ? [{ name: 'Community Admin', icon: 'forum', href: `${basePath}/community` }] : []),
+        { name: 'KFA Community', icon: 'groups', href: '/community' },
         { name: 'Academy Policies', icon: 'policy', href: `${basePath}/policies` },
         { name: 'Profile Settings', icon: 'settings', href: `${basePath}/settings` },
     ];

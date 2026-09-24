@@ -43,12 +43,54 @@ export default function AuthCallbackPage() {
             const googleEmail = session.user.email || '';
             setUserName(googleName);
 
+            const getSafeNext = (param: string | null, fallback: string = '/community'): string => {
+                if (!param) return fallback;
+                const trimmed = param.trim();
+                if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\') && !trimmed.includes('\\')) {
+                    return trimmed;
+                }
+                return fallback;
+            };
+
+            // Community Member check: never create a public.users row for community accounts
+            const isCommunityAccount = session.user.user_metadata?.account_type === 'community';
+            if (isCommunityAccount) {
+                try {
+                    await supabaseAuth
+                        .from('community_profiles')
+                        .upsert({
+                            id: userId,
+                            display_name: googleName || googleEmail.split('@')[0] || 'Community Member',
+                            avatar_url: session.user.user_metadata?.picture || session.user.user_metadata?.avatar_url || null,
+                        }, { onConflict: 'id' });
+                } catch (e) {
+                    console.warn('[AuthCallback] Community profile upsert note:', e);
+                }
+
+                router.push(getSafeNext(nextParam, '/community'));
+                return;
+            }
+
             // Check if user exists in the public.users table
             let { data: existingUser } = await supabaseAuth
                 .from('users')
                 .select('id, role, status, name')
                 .eq('id', userId)
                 .maybeSingle();
+
+            if (!existingUser) {
+                // Check if user already exists as a Community Member in community_profiles
+                const { data: commProfile } = await supabaseAuth
+                    .from('community_profiles')
+                    .select('id')
+                    .eq('id', userId)
+                    .maybeSingle();
+
+                if (commProfile) {
+                    router.push(getSafeNext(nextParam, '/community'));
+                    return;
+                }
+            }
 
             // Self-healing merge check for pre-registered teacher or admin profiles
             const isPendingOrNull = !existingUser || existingUser.role === 'pending' || existingUser.role === 'student';
