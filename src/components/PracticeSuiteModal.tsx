@@ -1,6 +1,8 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Volume2, Play, Square, X, Sliders, Trash2, HelpCircle, Music, Compass, Minimize2, Maximize2 } from 'lucide-react';
+import { useAuthNavigation } from '../lib/auth-navigation';
+import StudentAccessModal from './tools/StudentAccessModal';
 
 // ── TANPURA CONSTANTS ───────────────────────────────────────────────────────
 const SHRU_PITCHES = [
@@ -383,15 +385,28 @@ function Ripple({ id }: { id: number }) {
     );
 }
 
-export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }: { onClose: () => void; defaultTab?: 'metronome' | 'tanpura' | 'drums' | 'combosetup' }) {
+export default function PracticeSuiteModal({
+    onClose,
+    defaultTab = 'metronome',
+    isComboMode
+}: {
+    onClose: () => void;
+    defaultTab?: 'metronome' | 'tanpura' | 'drums' | 'combosetup';
+    isComboMode?: boolean;
+}) {
+    const isCombo = isComboMode !== undefined ? isComboMode : defaultTab === 'combosetup';
+
     // ── GENERAL STATES ──────────────────────────────────────────────────────
     const [activeTool, setActiveTool] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>(() => {
-        if (defaultTab === 'combosetup') return 'combosetup';
-        if (defaultTab === 'drums') return 'drums';
-        if (defaultTab === 'tanpura') return 'tanpura';
-        return 'metronome';
+        if (!isCombo) {
+            if (defaultTab === 'drums') return 'drums';
+            if (defaultTab === 'tanpura') return 'tanpura';
+            return 'metronome';
+        }
+        return defaultTab;
     });
     const activeRhythmTab = activeTool === 'drums' ? 'drums' : 'metronome';
+    const { hasStudentAccess } = useAuthNavigation();
     const [isMinimized, setIsMinimized] = useState(false);
     const [bpm, setBpm] = useState(105);
 
@@ -571,6 +586,29 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     
     const tanpuraVolumeRef = useRef(tanpuraVolume);
     useEffect(() => { tanpuraVolumeRef.current = tanpuraVolume; }, [tanpuraVolume]);
+
+    // ── CROSSFADE LOOP ENGINE REFS & STOP TANPURA ───────────────────────────
+    const droneActiveRef = useRef(false);
+    const droneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const droneNodesRef = useRef<{ src: AudioBufferSourceNode; gain: GainNode }[]>([]);
+
+    const stopTanpuraNodes = useCallback(() => {
+        droneActiveRef.current = false;
+        if (droneTimerRef.current) { clearTimeout(droneTimerRef.current); droneTimerRef.current = null; }
+        const ctx = audioCtxRef.current;
+        droneNodesRef.current.forEach(({ src, gain }) => {
+            try {
+                if (ctx) {
+                    gain.gain.cancelScheduledValues(ctx.currentTime);
+                    gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+                }
+                setTimeout(() => { try { src.stop(); } catch (_) {} }, 900);
+            } catch (_) {}
+        });
+        droneNodesRef.current = [];
+        activeTanpuraNodesRef.current = []; // keep compat with synth fallback
+    }, []);
 
     // ── METRONOME STATES ────────────────────────────────────────────────────
     const [isMetronomePlaying, setIsMetronomePlaying] = useState(false);
@@ -875,6 +913,12 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     // Handle Tabla Play state changes
     useEffect(() => {
         if (isTablaPlaying) {
+            if (!isCombo) {
+                setIsMetronomePlaying(false);
+                setIsDrumsPlaying(false);
+                stopTanpuraNodes();
+                setIsTanpuraPlaying(false);
+            }
             const ctx = getCtx();
             if (ctx.state !== 'running') ctx.resume();
             tablaMatraIndexRef.current = 0;
@@ -887,7 +931,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
             setCurrentTaalMatra(-1);
         }
         return () => { if (tablaSchedulerRef.current) clearTimeout(tablaSchedulerRef.current); };
-    }, [isTablaPlaying, tablaScheduler]);
+    }, [isTablaPlaying, tablaScheduler, isCombo, stopTanpuraNodes]);
 
     // Restart scheduler when taal or laya changes while playing
     const restartTablaIfPlaying = useCallback(() => {
@@ -978,31 +1022,6 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
         return { osc1, osc2, gainNode };
     }, []);
 
-    // ── CROSSFADE LOOP ENGINE ────────────────────────────────────────────────
-    // Instead of source.loop (causes click at boundary), we schedule overlapping
-    // copies of the buffer with gain envelopes that cross-fade seamlessly.
-    const droneActiveRef = useRef(false);
-    const droneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const droneNodesRef = useRef<{ src: AudioBufferSourceNode; gain: GainNode }[]>([]);
-
-    const stopTanpuraNodes = useCallback(() => {
-        droneActiveRef.current = false;
-        if (droneTimerRef.current) { clearTimeout(droneTimerRef.current); droneTimerRef.current = null; }
-        const ctx = audioCtxRef.current;
-        droneNodesRef.current.forEach(({ src, gain }) => {
-            try {
-                if (ctx) {
-                    gain.gain.cancelScheduledValues(ctx.currentTime);
-                    gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
-                    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
-                }
-                setTimeout(() => { try { src.stop(); } catch (_) {} }, 900);
-            } catch (_) {}
-        });
-        droneNodesRef.current = [];
-        activeTanpuraNodesRef.current = []; // keep compat with synth fallback
-    }, []);
-
     // Schedule one buffer chunk starting at `startTime`, then queue the next.
     const scheduleDroneChunk = useCallback((
         ctx: AudioContext,
@@ -1049,6 +1068,12 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     // bypassing the React stale-closure problem with selectedPitch state.
     const startTanpura = useCallback(async (pitchOverride?: typeof SHRU_PITCHES[0]) => {
         try {
+            if (!isCombo) {
+                setIsMetronomePlaying(false);
+                setIsDrumsPlaying(false);
+                setIsTablaPlaying(false);
+                tablaIsPlayingRef.current = false;
+            }
             const ctx = getCtx();
             // Resume FIRST — this is the user-gesture unlock that mobile requires
             if (ctx.state !== 'running') await ctx.resume();
@@ -1085,7 +1110,17 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
         } catch (err) {
             console.error('Failed to start Tanpura:', err);
         }
-    }, [selectedPitch, selectedTuningMode, startTanpuraNode, scheduleDroneChunk]);
+    }, [selectedPitch, selectedTuningMode, startTanpuraNode, scheduleDroneChunk, isCombo]);
+
+    // Enforce audio exclusivity for standalone individual tools when Tanpura starts
+    useEffect(() => {
+        if (!isCombo && isTanpuraPlaying) {
+            setIsMetronomePlaying(false);
+            setIsDrumsPlaying(false);
+            setIsTablaPlaying(false);
+            tablaIsPlayingRef.current = false;
+        }
+    }, [isTanpuraPlaying, isCombo]);
 
     // Handle Tanpura Volume Real-Time Adjustments
     useEffect(() => {
@@ -1169,7 +1204,13 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     // Handle Metronome Play state changes
     useEffect(() => {
         if (isMetronomePlaying) {
-            if (activeTool !== 'combosetup') {
+            if (!isCombo) {
+                setIsDrumsPlaying(false);
+                setIsTablaPlaying(false);
+                tablaIsPlayingRef.current = false;
+                stopTanpuraNodes();
+                setIsTanpuraPlaying(false);
+            } else if (activeTool !== 'combosetup') {
                 setIsDrumsPlaying(false);
             }
 
@@ -1189,7 +1230,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
             setCurrentMetronomeBeat(-1);
         }
         return () => { if (metronomeTimerRef.current) clearTimeout(metronomeTimerRef.current); };
-    }, [isMetronomePlaying, metronomeTick, activeTool]); // eslint-disable-line
+    }, [isMetronomePlaying, metronomeTick, activeTool, isCombo, stopTanpuraNodes]); // eslint-disable-line
 
 
     // ── DRUMS AUDIO ENGINES ─────────────────────────────────────────────────
@@ -1322,7 +1363,13 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     // Handle Drums Play state changes
     useEffect(() => {
         if (isDrumsPlaying) {
-            if (activeTool !== 'combosetup') {
+            if (!isCombo) {
+                setIsMetronomePlaying(false);
+                setIsTablaPlaying(false);
+                tablaIsPlayingRef.current = false;
+                stopTanpuraNodes();
+                setIsTanpuraPlaying(false);
+            } else if (activeTool !== 'combosetup') {
                 setIsMetronomePlaying(false);
             }
 
@@ -1341,7 +1388,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
             setCurrentDrumsStep(-1);
         }
         return () => { if (drumsTimerRef.current) clearTimeout(drumsTimerRef.current); };
-    }, [isDrumsPlaying, drumsTick, activeTool]); // eslint-disable-line
+    }, [isDrumsPlaying, drumsTick, activeTool, isCombo, stopTanpuraNodes]); // eslint-disable-line
 
 
     // ── INTERACTIONS ────────────────────────────────────────────────────────
@@ -1514,10 +1561,21 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     // Sync defaultTab changes to activeTool & auto-unminimize when user clicks a tool from UI
     useEffect(() => {
         if (defaultTab) {
-            setActiveTool(defaultTab);
+            setActiveTool(!isCombo ? (defaultTab === 'combosetup' ? 'metronome' : defaultTab) : defaultTab);
             setIsMinimized(false);
         }
-    }, [defaultTab]);
+    }, [defaultTab, isCombo]);
+
+    // Security check: Guard student-exclusive tools from unauthorized direct access
+    if (!hasStudentAccess && (activeTool === 'drums' || activeTool === 'combosetup' || defaultTab === 'drums' || defaultTab === 'combosetup')) {
+        return (
+            <StudentAccessModal
+                isOpen={true}
+                toolName={activeTool === 'drums' || defaultTab === 'drums' ? 'Rhythm Machine' : 'Combo Session Mixer'}
+                onClose={handleClose}
+            />
+        );
+    }
 
     if (isMinimized) {
         return (
@@ -1534,32 +1592,34 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         <span className="material-symbols-outlined text-white/40 text-sm cursor-grab shrink-0">drag_indicator</span>
                         <div className="w-2 h-2 rounded-full bg-[#d46211] animate-pulse shrink-0" />
                         <span className="font-extrabold text-[10px] tracking-tight text-amber-500 uppercase font-mono truncate">
-                            {activeTool === 'tanpura' ? 'KFA Tanpura' : activeTool === 'metronome' ? 'KFA Metronome' : activeTool === 'drums' ? 'KFA Drums' : 'KFA Combo'}
+                            {isCombo ? 'KFA Combo Session' : (activeTool === 'tanpura' ? 'KFA Tanpura' : activeTool === 'metronome' ? 'KFA Metronome' : activeTool === 'drums' ? 'KFA Drums' : 'KFA Practice')}
                         </span>
                     </div>
 
-                    {/* Quick Tab Switcher */}
-                    <div className="flex items-center gap-0.5 bg-white/5 p-0.5 rounded-lg border border-white/5 shrink-0">
-                        {([
-                            { id: 'metronome', label: 'Metronome', icon: '♩' },
-                            { id: 'tanpura',   label: 'Tanpura',   icon: '♪' },
-                            { id: 'drums',     label: 'Drums',     icon: '⬡' },
-                            { id: 'combosetup',label: 'Combo',     icon: '⊞' },
-                        ] as const).map(tab => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTool(tab.id)}
-                                title={tab.label}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
-                                    activeTool === tab.id
-                                        ? 'bg-[#d46211] text-white shadow-xs'
-                                        : 'text-white/40 hover:text-white hover:bg-white/10'
-                                }`}
-                            >
-                                {tab.icon}
-                            </button>
-                        ))}
-                    </div>
+                    {/* Quick Tab Switcher (Visible ONLY in Combo Session Mode) */}
+                    {isCombo && (
+                        <div className="flex items-center gap-0.5 bg-white/5 p-0.5 rounded-lg border border-white/5 shrink-0">
+                            {([
+                                { id: 'combosetup',label: 'Combo',     icon: '⊞' },
+                                { id: 'metronome', label: 'Metronome', icon: '♩' },
+                                { id: 'tanpura',   label: 'Tanpura',   icon: '♪' },
+                                { id: 'drums',     label: 'Drums',     icon: '⬡' },
+                            ] as const).map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTool(tab.id)}
+                                    title={tab.label}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                        activeTool === tab.id
+                                            ? 'bg-[#d46211] text-white shadow-xs'
+                                            : 'text-white/40 hover:text-white hover:bg-white/10'
+                                    }`}
+                                >
+                                    {tab.icon}
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
                     <div className="flex items-center gap-1 shrink-0">
                         <button 
@@ -1837,16 +1897,20 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         </div>
                         <div>
                             <h2 className="text-white font-extrabold text-xs sm:text-sm tracking-tight animate-in fade-in duration-300 leading-tight">
-                                {activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : activeTool === 'drums' ? 'Drum Beats Sequencer' : 'Combo Session Mixer'}
+                                {isCombo 
+                                    ? (activeTool === 'combosetup' ? 'Combo Session Mixer' : `Combo Session • ${activeTool === 'tanpura' ? 'Tanpura Settings' : activeTool === 'metronome' ? 'Metronome Settings' : 'Drum Beats Settings'}`)
+                                    : (activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : activeTool === 'drums' ? 'Drum Beats Sequencer' : 'Practice Tool')
+                                }
                             </h2>
                             <p className="text-[#d46211]/60 text-[10px] sm:text-xs animate-in fade-in duration-300 truncate max-w-[240px] sm:max-w-none">
-                                {activeTool === 'tanpura' 
-                                    ? 'Indian classical tuning & shruti drone' 
-                                    : activeTool === 'metronome' 
-                                        ? 'Keep perfect time with speed adjustments' 
-                                        : activeTool === 'drums'
-                                            ? 'Interactive step sequencer for flute play-along grooves'
-                                            : 'Control multiple practice tools simultaneously'}
+                                {isCombo
+                                    ? 'Control merged Tanpura drone, metronome & drum rhythm accompaniment simultaneously'
+                                    : (activeTool === 'tanpura' 
+                                        ? 'Indian classical tuning & shruti drone' 
+                                        : activeTool === 'metronome' 
+                                            ? 'Keep perfect time with speed adjustments' 
+                                            : 'Interactive step sequencer for flute play-along grooves')
+                                }
                             </p>
                         </div>
                     </div>
@@ -1876,28 +1940,30 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                     </div>
                 </div>
 
-                {/* ── TAB NAV ── */}
-                <div className="flex items-center gap-1 px-4 pt-2.5 border-b border-white/5 bg-black/20">
-                    {([
-                        { id: 'tanpura',   label: 'Tanpura',   icon: '♪' },
-                        { id: 'metronome', label: 'Metronome', icon: '♩' },
-                        { id: 'drums',     label: 'Drum Beats',icon: '⬡' },
-                        { id: 'combosetup',label: 'Combo',     icon: '⊞' },
-                    ] as const).map(tab => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTool(tab.id)}
-                            className={`px-2.5 py-1.5 text-[10px] sm:text-[11px] font-extrabold tracking-wide rounded-t-md transition-all flex items-center gap-1 border-b-2 cursor-pointer ${
-                                activeTool === tab.id
-                                    ? 'text-[#d46211] border-[#d46211] bg-[#d46211]/5'
-                                    : 'text-white/35 border-transparent hover:text-white/60 hover:border-white/20'
-                            }`}
-                        >
-                            <span className="text-xs">{tab.icon}</span>
-                            <span className="hidden sm:inline">{tab.label}</span>
-                        </button>
-                    ))}
-                </div>
+                {/* ── TAB NAV (Visible ONLY in Combo Session Mode) ── */}
+                {isCombo && (
+                    <div className="flex items-center gap-1 px-4 pt-2.5 border-b border-white/5 bg-black/20">
+                        {([
+                            { id: 'combosetup',label: 'Combo Mixer', icon: '⊞' },
+                            { id: 'tanpura',   label: 'Tanpura',   icon: '♪' },
+                            { id: 'metronome', label: 'Metronome', icon: '♩' },
+                            { id: 'drums',     label: 'Drum Beats',icon: '⬡' },
+                        ] as const).map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTool(tab.id)}
+                                className={`px-2.5 py-1.5 text-[10px] sm:text-[11px] font-extrabold tracking-wide rounded-t-md transition-all flex items-center gap-1 border-b-2 cursor-pointer ${
+                                    activeTool === tab.id
+                                        ? 'text-[#d46211] border-[#d46211] bg-[#d46211]/5'
+                                        : 'text-white/35 border-transparent hover:text-white/60 hover:border-white/20'
+                                }`}
+                            >
+                                <span className="text-xs">{tab.icon}</span>
+                                <span className="hidden sm:inline">{tab.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
 
                 {/* Dashboard body layout */}
                 <div className="flex-1 flex flex-col overflow-hidden bg-black/10">

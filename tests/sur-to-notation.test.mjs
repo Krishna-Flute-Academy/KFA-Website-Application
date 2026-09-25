@@ -231,3 +231,30 @@ test('PitchStabilizer: pure legato scale emits all 8 swaras without needing sile
 
   assert.deepEqual(tokens, ['S', 'R', 'G', 'm', 'P', 'D', 'N', "S'"], `Expected all 8 notes in legato scale, got: ${JSON.stringify(tokens)}`);
 });
+
+test('Student Dashboard Tools Section: LibraryTab contains Flute to Notes (Sur to Notation) card and callback', () => {
+  const libraryTabSource = readFileSync(path.resolve(__dirname, '../src/components/student-dashboard/LibraryTab.tsx'), 'utf8');
+
+  assert.ok(libraryTabSource.includes('Flute to Notes (Sur to Notation)'), 'LibraryTab must include Flute to Notes (Sur to Notation) tool');
+  assert.ok(libraryTabSource.includes('onOpenSurToNotation'), 'LibraryTab must accept and trigger onOpenSurToNotation callback');
+  assert.ok(libraryTabSource.includes('Open Flute to Notes'), 'LibraryTab must have an action button to open Flute to Notes');
+  assert.ok(libraryTabSource.includes('Sparkles'), 'LibraryTab must display the Sparkles icon for Flute to Notes');
+});
+
+test('Student Dashboard Overview: OverviewTab includes Flute to Notes in Riyaz & Practice Tools grid', () => {
+  const overviewTabSource = readFileSync(path.resolve(__dirname, '../src/components/student-dashboard/OverviewTab.tsx'), 'utf8');
+
+  assert.ok(overviewTabSource.includes('Flute to Notes'), 'OverviewTab must include Flute to Notes in practice grid');
+  assert.ok(overviewTabSource.includes('onOpenSurToNotation'), 'OverviewTab must connect to onOpenSurToNotation callback');
+  assert.ok(overviewTabSource.includes('Sur to Notation'), 'OverviewTab must display Sur to Notation subtext');
+});
+
+test('Student Dashboard Container: wires up SurToNotationModal, analytics and quick jump routing', () => {
+  const containerSource = readFileSync(path.resolve(__dirname, '../src/components/student-dashboard/StudentDashboardContainer.tsx'), 'utf8');
+
+  assert.ok(containerSource.includes('SurToNotationModal'), 'StudentDashboardContainer must import and render SurToNotationModal');
+  assert.ok(containerSource.includes('handleOpenSurToNotation'), 'StudentDashboardContainer must have handleOpenSurToNotation handler');
+  assert.ok(containerSource.includes("trackToolEvent('sur_to_notation_open'"), 'handleOpenSurToNotation must track analytics event');
+  assert.ok(containerSource.includes("fullText.includes('sur to notation')"), 'Quick jump handler must recognize sur to notation keywords');
+});
+

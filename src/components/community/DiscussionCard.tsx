@@ -6,7 +6,7 @@ import {
     MessageSquare, Eye, ThumbsUp, CheckCircle, 
     Pin, Lock, Share2, Sparkles, GraduationCap 
 } from 'lucide-react';
-import { CommunityPost, toggleCommunityReaction } from '../../lib/community';
+import { CommunityPost, toggleCommunityReaction, isContentEdited } from '../../lib/community';
 import { htmlToPlainText, truncatePlainText } from '../../lib/text-utils';
 
 interface DiscussionCardProps {
@@ -207,6 +207,14 @@ export default function DiscussionCard({ post, currentUserId, onUpvoteToggle }: 
                     <span className="text-[11px] text-slate-500 dark:text-slate-400">
                         {formatRelativeTime(post.created_at)}
                     </span>
+                    {isContentEdited(post.created_at, post.updated_at) && (
+                        <span 
+                            className="text-[11px] text-slate-400 dark:text-slate-500 font-normal"
+                            title={`Edited ${formatRelativeTime(post.updated_at)}`}
+                        >
+                            · Edited
+                        </span>
+                    )}
                 </div>
 
                 {/* Metrics & Upvote Button */}

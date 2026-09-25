@@ -12,6 +12,7 @@ import {
     MessageCircle 
 } from 'lucide-react';
 import { supabaseAuth } from '../lib/supabase-auth';
+import { useAuthNavigation } from '../lib/auth-navigation';
 
 interface Props {
     activePath?: string;
@@ -19,41 +20,12 @@ interface Props {
 
 export default function PublicNavbar({ activePath = '/courses' }: Props) {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [userSession, setUserSession] = useState<any>(null);
-    const [userRole, setUserRole] = useState<string | null>(null);
+    const { label: authLabel, href: authHref, isAuthenticated } = useAuthNavigation();
 
     const socialLinks = {
         facebook: 'https://www.facebook.com/krishnafluteacademy/',
         instagram: 'https://www.instagram.com/krishnafluteacademy?igsh=MWw0NjZsNms2czN1aw==',
         youtube: 'https://www.youtube.com/@krishnafluteacademy'
-    };
-
-    useEffect(() => {
-        const checkAuth = async () => {
-            try {
-                const { data: { session } } = await supabaseAuth.auth.getSession();
-                setUserSession(session);
-                if (session?.user) {
-                    const { data } = await supabaseAuth
-                        .from('users')
-                        .select('role')
-                        .eq('id', session.user.id)
-                        .maybeSingle();
-                    if (data?.role) setUserRole(data.role);
-                }
-            } catch (err) {
-                // Non-blocking
-            }
-        };
-        checkAuth();
-    }, []);
-
-    const getDashboardLink = () => {
-        if (!userSession) return '/login';
-        const role = userRole?.toLowerCase();
-        if (role === 'admin' || role === 'teacher') return '/teacher-dashboard';
-        if (role === 'pending') return '/pending-approval';
-        return '/student-dashboard';
     };
 
     return (
@@ -62,7 +34,7 @@ export default function PublicNavbar({ activePath = '/courses' }: Props) {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center h-16 sm:h-20">
                         {/* Logo + Academy Name */}
-                        <Link href="/" className="flex items-center space-x-2 sm:space-x-3 shrink-0 group">
+                        <Link href="/" className="flex items-center space-x-2 sm:space-x-3 shrink-0 mr-3 xl:mr-6 group">
                             <img
                                 src="/image.png"
                                 alt="Krishna Flute Academy Logo"
@@ -73,98 +45,98 @@ export default function PublicNavbar({ activePath = '/courses' }: Props) {
                             </span>
                         </Link>
 
-                        {/* Desktop Navigation Links */}
-                        <div className="hidden md:flex items-center space-x-6 lg:space-x-8">
-                            <Link 
-                                href="/#about" 
-                                className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium"
-                            >
-                                About
-                            </Link>
-                            <Link 
-                                href="/#founder" 
-                                className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium"
-                            >
-                                Founder
-                            </Link>
+                        {/* Desktop Navigation Links (Cleanly spaced for lg+ screens) */}
+                        <div className="hidden lg:flex items-center space-x-3 xl:space-x-6 shrink-0">
                             <Link 
                                 href="/courses" 
-                                className={`text-sm lg:text-base font-medium transition-colors ${activePath.startsWith('/courses') ? 'text-blue-950 font-bold border-b-2 border-amber-500 pb-0.5' : 'text-blue-700 hover:text-blue-900'}`}
+                                className={`text-xs xl:text-sm font-semibold transition-colors whitespace-nowrap ${activePath.startsWith('/courses') ? 'text-blue-950 font-bold border-b-2 border-amber-500 pb-0.5' : 'text-blue-700 hover:text-blue-900'}`}
                             >
                                 Courses
                             </Link>
                             <Link 
+                                href="/practice-tools" 
+                                className={`text-xs xl:text-sm font-semibold transition-colors whitespace-nowrap ${activePath.startsWith('/practice-tools') ? 'text-blue-950 font-bold border-b-2 border-amber-500 pb-0.5' : 'text-blue-700 hover:text-blue-900'}`}
+                            >
+                                Practice Tools
+                            </Link>
+                            <Link 
+                                href="/community" 
+                                className={`text-xs xl:text-sm font-semibold transition-colors whitespace-nowrap ${activePath.startsWith('/community') ? 'text-blue-950 font-bold border-b-2 border-amber-500 pb-0.5' : 'text-blue-700 hover:text-blue-900'}`}
+                            >
+                                Community
+                            </Link>
+                            <Link 
+                                href="/#about" 
+                                className="text-blue-700 hover:text-blue-900 transition-colors text-xs xl:text-sm font-semibold whitespace-nowrap"
+                            >
+                                About
+                            </Link>
+                            <Link 
                                 href="/gallery" 
-                                className={`text-sm lg:text-base font-medium transition-colors ${activePath.startsWith('/gallery') ? 'text-blue-950 font-bold border-b-2 border-amber-500 pb-0.5' : 'text-blue-700 hover:text-blue-900'}`}
+                                className={`text-xs xl:text-sm font-semibold transition-colors whitespace-nowrap ${activePath.startsWith('/gallery') ? 'text-blue-950 font-bold border-b-2 border-amber-500 pb-0.5' : 'text-blue-700 hover:text-blue-900'}`}
                             >
                                 Gallery
                             </Link>
                             <Link 
                                 href="/blog/" 
-                                className={`text-sm lg:text-base font-medium transition-colors ${activePath.startsWith('/blog') ? 'text-blue-950 font-bold border-b-2 border-amber-500 pb-0.5' : 'text-blue-700 hover:text-blue-900'}`}
+                                className={`text-xs xl:text-sm font-semibold transition-colors whitespace-nowrap ${activePath.startsWith('/blog') ? 'text-blue-950 font-bold border-b-2 border-amber-500 pb-0.5' : 'text-blue-700 hover:text-blue-900'}`}
                             >
                                 Blog
                             </Link>
                             <Link 
-                                href="/community" 
-                                className={`text-sm lg:text-base font-medium transition-colors ${activePath.startsWith('/community') ? 'text-blue-950 font-bold border-b-2 border-amber-500 pb-0.5' : 'text-blue-700 hover:text-blue-900'}`}
-                            >
-                                Community
-                            </Link>
-                            <Link 
                                 href="/#contact" 
-                                className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium"
+                                className="text-blue-700 hover:text-blue-900 transition-colors text-xs xl:text-sm font-semibold whitespace-nowrap"
                             >
                                 Contact
                             </Link>
                         </div>
 
                         {/* Social Icons + Auth Button */}
-                        <div className="flex items-center justify-end shrink-0">
-                            <div className="hidden sm:flex items-center space-x-2.5 mr-4">
+                        <div className="flex items-center justify-end shrink-0 ml-2">
+                            <div className="hidden xl:flex items-center space-x-2 mr-3">
                                 <a 
                                     href={socialLinks.facebook} 
                                     target="_blank" 
                                     rel="noopener noreferrer" 
-                                    className="w-8 h-8 md:w-9 md:h-9 bg-blue-600 rounded-full flex items-center justify-center hover:bg-blue-700 transition-all duration-300 transform hover:scale-110 shadow-xs"
+                                    className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center hover:bg-blue-700 transition-all duration-300 transform hover:scale-110 shadow-xs"
                                     aria-label="Facebook"
                                 >
-                                    <Facebook className="w-4 h-4 text-white" />
+                                    <Facebook className="w-3.5 h-3.5 text-white" />
                                 </a>
                                 <a 
                                     href={socialLinks.instagram} 
                                     target="_blank" 
                                     rel="noopener noreferrer" 
-                                    className="w-8 h-8 md:w-9 md:h-9 bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 rounded-full flex items-center justify-center hover:shadow-lg transition-all duration-300 transform hover:scale-110 shadow-xs"
+                                    className="w-8 h-8 bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 rounded-full flex items-center justify-center hover:shadow-lg transition-all duration-300 transform hover:scale-110 shadow-xs"
                                     aria-label="Instagram"
                                 >
-                                    <Instagram className="w-4 h-4 text-white" />
+                                    <Instagram className="w-3.5 h-3.5 text-white" />
                                 </a>
                                 <a 
                                     href={socialLinks.youtube} 
                                     target="_blank" 
                                     rel="noopener noreferrer" 
-                                    className="w-8 h-8 md:w-9 md:h-9 bg-red-600 rounded-full flex items-center justify-center hover:bg-red-700 transition-all duration-300 transform hover:scale-110 shadow-xs"
+                                    className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center hover:bg-red-700 transition-all duration-300 transform hover:scale-110 shadow-xs"
                                     aria-label="YouTube"
                                 >
-                                    <Youtube className="w-4 h-4 text-white" />
+                                    <Youtube className="w-3.5 h-3.5 text-white" />
                                 </a>
                             </div>
 
                             {/* Login / Dashboard Link */}
                             <div className="flex items-center">
                                 <Link 
-                                    href={getDashboardLink()} 
-                                    className="flex items-center justify-center space-x-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-[#a15912] text-white rounded-full font-bold text-xs sm:text-sm transition-all duration-300 shadow-md hover:bg-[#8a4b0f] hover:scale-105 whitespace-nowrap"
+                                    href={authHref} 
+                                    className="flex items-center justify-center space-x-1.5 px-3.5 py-1.5 sm:px-4 sm:py-2 bg-[#a15912] text-white rounded-full font-bold text-xs sm:text-sm transition-all duration-300 shadow-md hover:bg-[#8a4b0f] hover:scale-105 whitespace-nowrap"
                                 >
                                     <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                    <span>{userSession ? 'Dashboard' : 'Login'}</span>
+                                    <span>{authLabel}</span>
                                 </Link>
                             </div>
 
                             {/* Mobile Hamburger Toggle Button */}
                             <button
-                                className="md:hidden p-2 ml-2 rounded-lg hover:bg-slate-100 transition-colors text-blue-900"
+                                className="lg:hidden p-2 ml-2 rounded-lg hover:bg-slate-100 transition-colors text-blue-900"
                                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                                 aria-label="Toggle Menu"
                             >
@@ -227,6 +199,13 @@ export default function PublicNavbar({ activePath = '/courses' }: Props) {
                                     Courses (All Levels)
                                 </Link>
                                 <Link 
+                                    href="/practice-tools" 
+                                    onClick={() => setMobileMenuOpen(false)}
+                                    className={`block text-base font-semibold transition-colors py-1.5 ${activePath.startsWith('/practice-tools') ? 'text-amber-600 font-bold' : 'text-blue-900 hover:text-amber-600'}`}
+                                >
+                                    Practice Tools
+                                </Link>
+                                <Link 
                                     href="/gallery" 
                                     onClick={() => setMobileMenuOpen(false)}
                                     className={`block text-base font-semibold transition-colors py-1.5 ${activePath.startsWith('/gallery') ? 'text-amber-600 font-bold' : 'text-blue-900 hover:text-amber-600'}`}
@@ -255,12 +234,27 @@ export default function PublicNavbar({ activePath = '/courses' }: Props) {
                                     Contact
                                 </Link>
                                 <Link 
-                                    href={getDashboardLink()} 
+                                    href={authHref} 
                                     onClick={() => setMobileMenuOpen(false)}
                                     className="block text-base font-semibold text-amber-700 hover:text-amber-800 transition-colors py-1.5"
                                 >
-                                    {userSession ? 'Student / Teacher Dashboard' : 'Student Login'}
+                                    {authLabel}
                                 </Link>
+                                {isAuthenticated && (
+                                    <button
+                                        onClick={async () => {
+                                            await supabaseAuth.auth.signOut();
+                                            if (typeof window !== 'undefined') {
+                                                localStorage.removeItem('kfa-user-role');
+                                            }
+                                            setMobileMenuOpen(false);
+                                            window.location.reload();
+                                        }}
+                                        className="block w-full text-left text-base font-semibold text-red-600 hover:text-red-700 transition-colors py-1.5"
+                                    >
+                                        Logout
+                                    </button>
+                                )}
                             </div>
                         </div>
 

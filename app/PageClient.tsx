@@ -7,16 +7,20 @@ import {
     Music, Download, Users, Award, Phone, Mail, MapPin, Star,
     SignalLow, SignalMedium, SignalHigh, BookOpen, Heart, Sparkles,
     Facebook, Instagram, Youtube, MessageSquare, ChevronRight, Menu, X,
-    Lock, ExternalLink, Share2, User, Play, ArrowRight
+    Lock, ExternalLink, Share2, User, Play, ArrowRight, GraduationCap
 } from 'lucide-react';
 
 // Use dynamic imports for client components to ensure they only load on the client
 const Blog = dynamic(() => import('../src/components/Blog').then(module => module.Blog), { ssr: false });
 const BlogAdmin = dynamic(() => import('../src/components/BlogAdmin').then(module => module.BlogAdmin), { ssr: false });
 const GalleryFull = dynamic(() => import('../src/components/GalleryFull').then(module => module.GalleryFull), { ssr: false });
+const FluteTunerModal = dynamic(() => import('../src/components/tools/tuner/FluteTunerModal'), { ssr: false });
+const PracticeSuiteModal = dynamic(() => import('../src/components/PracticeSuiteModal'), { ssr: false });
+const SurToNotationModal = dynamic(() => import('../src/components/tools/sur-to-notation/SurToNotationModal'), { ssr: false });
 
 import { supabase, BlogPost, GalleryItem } from '../src/lib/supabase';
 import { supabaseAuth } from '../src/lib/supabase-auth';
+import { getAuthNavigation } from '../src/lib/auth-navigation';
 import { Carousel } from 'react-responsive-carousel';
 import "react-responsive-carousel/lib/styles/carousel.min.css";
 import { useSearchParams } from 'next/navigation';
@@ -164,10 +168,18 @@ export function PageClient({
                         .maybeSingle();
                     if (userData?.role) {
                         setUserRole(userData.role);
+                        if (typeof window !== 'undefined') {
+                            localStorage.setItem('kfa-user-role', userData.role.toLowerCase());
+                        }
                     } else {
                         // SECURITY: Never fall back to user_metadata — it is user-editable.
                         // Default to 'pending' so unverified users can't claim elevated roles.
                         setUserRole('pending');
+                    }
+                } else {
+                    setUserRole(null);
+                    if (typeof window !== 'undefined') {
+                        localStorage.removeItem('kfa-user-role');
                     }
                 }
             } catch (err) {
@@ -188,6 +200,9 @@ export function PageClient({
                         .maybeSingle();
                     if (data?.role) {
                         setUserRole(data.role);
+                        if (typeof window !== 'undefined') {
+                            localStorage.setItem('kfa-user-role', data.role.toLowerCase());
+                        }
                     } else {
                         // SECURITY: Never fall back to user_metadata — it is user-editable.
                         setUserRole('pending');
@@ -199,6 +214,9 @@ export function PageClient({
                 }
             } else {
                 setUserRole(null);
+                if (typeof window !== 'undefined') {
+                    localStorage.removeItem('kfa-user-role');
+                }
             }
         });
 
@@ -207,18 +225,9 @@ export function PageClient({
         };
     }, []);
 
-    const getDashboardLink = () => {
-        if (!userSession) return '/login';
-        const role = userRole?.toLowerCase();
-        if (role === 'admin') return '/teacher-dashboard';
-        if (role === 'teacher') return '/teacher-dashboard';
-        if (role === 'pending') return '/pending-approval';
-        return '/student-dashboard';
-    };
-
-    const getAuthButtonLabel = () => {
-        return 'Login';
-    };
+    const authNav = getAuthNavigation(userSession, userRole);
+    const getDashboardLink = () => authNav.href;
+    const getAuthButtonLabel = () => authNav.label;
 
     const [visibleSections, setVisibleSections] = useState<Record<string, boolean>>({});
     const [currentView, setCurrentView] = useState<'home' | 'blog' | 'admin' | 'gallery'>('home');
@@ -239,6 +248,12 @@ export function PageClient({
     const [testimonials, setTestimonials] = useState<any[]>(initialTestimonials);
     const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(initialGallery);
     const [selectedGalleryItem, setSelectedGalleryItem] = useState<GalleryItem | null>(null);
+
+    // Practice Tool Modal States
+    const [showTuner, setShowTuner] = useState(false);
+    const [showPracticeSuite, setShowPracticeSuite] = useState(false);
+    const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>('metronome');
+    const [showSurToNotation, setShowSurToNotation] = useState(false);
 
     // Show event popup if there is an active event
     useEffect(() => {
@@ -419,7 +434,7 @@ Hello Krishna Flute Academy, I have an inquiry!
                 >
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="flex justify-between items-center h-16">
-                            <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
+                            <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0 mr-3 xl:mr-6">
                                 <img
                                     src={'/image.png'}
                                     alt="Krishna Flute Academy Logo"
@@ -428,38 +443,38 @@ Hello Krishna Flute Academy, I have an inquiry!
                                 <span className="text-xs min-[360px]:text-sm sm:text-base md:text-lg font-black text-blue-900 tracking-tight whitespace-nowrap">Krishna Flute Academy</span>
                             </div>
 
-                            <div className="hidden md:flex items-center space-x-6 lg:space-x-8">
-                                <button onClick={() => scrollToSection('about')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">About</button>
-                                <button onClick={() => scrollToSection('founder')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Founder</button>
-                                <Link href="/courses" className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Courses</Link>
-                                <button onClick={() => { setCurrentView('gallery'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Gallery</button>
-                                <a href="/blog/" className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Blog</a>
-                                <a href="/community" className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium font-semibold">Community</a>
-                                <button onClick={() => scrollToSection('contact')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Contact</button>
+                            <div className="hidden lg:flex items-center space-x-3 xl:space-x-6 shrink-0">
+                                <Link href="/courses" className="text-blue-700 hover:text-blue-900 transition-colors text-xs xl:text-sm font-semibold whitespace-nowrap">Courses</Link>
+                                <Link href="/practice-tools" className="text-blue-700 hover:text-blue-900 transition-colors text-xs xl:text-sm font-semibold whitespace-nowrap">Practice Tools</Link>
+                                <a href="/community" className="text-blue-700 hover:text-blue-900 transition-colors text-xs xl:text-sm font-semibold whitespace-nowrap">Community</a>
+                                <button onClick={() => scrollToSection('about')} className="text-blue-700 hover:text-blue-900 transition-colors text-xs xl:text-sm font-semibold whitespace-nowrap">About</button>
+                                <button onClick={() => { setCurrentView('gallery'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-blue-700 hover:text-blue-900 transition-colors text-xs xl:text-sm font-semibold whitespace-nowrap">Gallery</button>
+                                <a href="/blog/" className="text-blue-700 hover:text-blue-900 transition-colors text-xs xl:text-sm font-semibold whitespace-nowrap">Blog</a>
+                                <button onClick={() => scrollToSection('contact')} className="text-blue-700 hover:text-blue-900 transition-colors text-xs xl:text-sm font-semibold whitespace-nowrap">Contact</button>
                             </div>
 
-                            <div className="flex items-center justify-end shrink-0">
-                                <div className="hidden sm:flex items-center space-x-3 mr-5">
-                                    <a href={socialLinks.facebook} target="_blank" rel="noopener noreferrer" className="w-8 h-8 md:w-9 md:h-9 bg-blue-600 rounded-full flex items-center justify-center hover:bg-blue-700 transition-all duration-300 transform hover:scale-110">
-                                        <Facebook className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                            <div className="flex items-center justify-end shrink-0 ml-2">
+                                <div className="hidden xl:flex items-center space-x-2 mr-3">
+                                    <a href={socialLinks.facebook} target="_blank" rel="noopener noreferrer" className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center hover:bg-blue-700 transition-all duration-300 transform hover:scale-110">
+                                        <Facebook className="w-3.5 h-3.5 text-white" />
                                     </a>
-                                    <a href={socialLinks.instagram} target="_blank" rel="noopener noreferrer" className="w-8 h-8 md:w-9 md:h-9 bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 rounded-full flex items-center justify-center hover:shadow-lg transition-all duration-300 transform hover:scale-110">
-                                        <Instagram className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                                    <a href={socialLinks.instagram} target="_blank" rel="noopener noreferrer" className="w-8 h-8 bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 rounded-full flex items-center justify-center hover:shadow-lg transition-all duration-300 transform hover:scale-110">
+                                        <Instagram className="w-3.5 h-3.5 text-white" />
                                     </a>
-                                    <a href={socialLinks.youtube} target="_blank" rel="noopener noreferrer" className="w-8 h-8 md:w-9 md:h-9 bg-red-600 rounded-full flex items-center justify-center hover:bg-red-700 transition-all duration-300 transform hover:scale-110">
-                                        <Youtube className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                                    <a href={socialLinks.youtube} target="_blank" rel="noopener noreferrer" className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center hover:bg-red-700 transition-all duration-300 transform hover:scale-110">
+                                        <Youtube className="w-3.5 h-3.5 text-white" />
                                     </a>
                                 </div>
 
                                 <div className="flex items-center">
-                                    <a href={getDashboardLink()} className="flex items-center justify-center space-x-1 px-2.5 py-1.5 min-[400px]:space-x-1.5 min-[400px]:px-3.5 min-[400px]:py-2 sm:px-5 sm:py-2 bg-[#a15912] text-white rounded-full font-bold text-[10px] min-[400px]:text-xs md:text-sm transition-all duration-300 shadow-md hover:bg-[#8a4b0f] hover:scale-105 whitespace-nowrap">
+                                    <Link href={getDashboardLink()} className="flex items-center justify-center space-x-1 px-3 py-1.5 sm:px-4 sm:py-2 bg-[#a15912] text-white rounded-full font-bold text-xs sm:text-sm transition-all duration-300 shadow-md hover:bg-[#8a4b0f] hover:scale-105 whitespace-nowrap">
                                         <User className="w-3 h-3 min-[400px]:w-3.5 min-[400px]:h-3.5 sm:w-4 sm:h-4" />
                                         <span>{getAuthButtonLabel()}</span>
-                                    </a>
+                                    </Link>
                                 </div>
 
                                 <button
-                                    className="md:hidden p-1.5 ml-2 min-[400px]:p-2 min-[400px]:ml-3 rounded-lg hover:bg-gray-100 transition-colors text-blue-900"
+                                    className="lg:hidden p-1.5 ml-2 min-[400px]:p-2 min-[400px]:ml-3 rounded-lg hover:bg-gray-100 transition-colors text-blue-900"
                                     onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                                     aria-label="Toggle Menu"
                                 >
@@ -503,15 +518,19 @@ Hello Krishna Flute Academy, I have an inquiry!
                                     <button onClick={() => { scrollToSection('about'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">About</button>
                                     <button onClick={() => { scrollToSection('founder'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Founder</button>
                                     <Link href="/courses" onClick={() => setMobileMenuOpen(false)} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Courses</Link>
+                                    <Link href="/practice-tools" onClick={() => setMobileMenuOpen(false)} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Practice Tools</Link>
                                     <button onClick={() => { setCurrentView('gallery'); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Gallery</button>
                                     <a href="/blog/" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Blog</a>
                                     <a href="/community" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Community</a>
                                     <button onClick={() => { scrollToSection('contact'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Contact</button>
-                                    <a href={getDashboardLink()} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>{getAuthButtonLabel()}</a>
+                                    <Link href={getDashboardLink()} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>{getAuthButtonLabel()}</Link>
                                     {userSession && (
                                         <button
                                             onClick={async () => {
                                                 await supabaseAuth.auth.signOut();
+                                                if (typeof window !== 'undefined') {
+                                                    localStorage.removeItem('kfa-user-role');
+                                                }
                                                 setMobileMenuOpen(false);
                                                 window.location.reload();
                                             }}
@@ -881,6 +900,168 @@ Hello Krishna Flute Academy, I have an inquiry!
                     </div>
                 </section>
 
+                {/* Practice Smarter with KFA Tools Section */}
+                <section id="practice-tools" className="py-20 px-4 bg-gradient-to-b from-amber-500/5 via-slate-50 to-white border-y border-amber-900/10">
+                    <div className="max-w-7xl mx-auto">
+                        <div className="text-center max-w-3xl mx-auto mb-14">
+                            <span className="text-xs uppercase tracking-widest font-extrabold text-blue-900 bg-blue-100 px-3.5 py-1.5 rounded-full inline-block mb-3">
+                                Interactive Riyaz Suite
+                            </span>
+                            <h2 className="text-3xl sm:text-4xl font-black text-blue-950 mb-4">
+                                Practice Smarter with KFA Tools
+                            </h2>
+                            <p className="text-slate-700 text-sm sm:text-base leading-relaxed">
+                                Learning Bansuri takes more than attending lessons. Regular practice helps develop pitch, rhythm, timing and listening skills. Krishna Flute Academy combines guided learning with interactive practice tools designed to support meaningful Riyaz.
+                            </p>
+                        </div>
+
+                        {/* Cards Showcase */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            {/* Card 1: Bansuri Tuner */}
+                            <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group hover:border-amber-400">
+                                <div>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-orange-50 text-[#d46211] border border-orange-100 flex items-center justify-center group-hover:scale-105 transition-transform">
+                                            <Music className="w-6 h-6" />
+                                        </div>
+                                        <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full uppercase tracking-wider">
+                                            Free Practice Tool
+                                        </span>
+                                    </div>
+                                    <h3 className="text-xl font-black text-slate-900 mb-2">
+                                        Bansuri Tuner
+                                    </h3>
+                                    <p className="text-slate-600 text-sm leading-relaxed mb-6">
+                                        Check your pitch while practising and develop better awareness of accurate Swaras across Indian Sargam and chromatic modes.
+                                    </p>
+                                </div>
+                                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                                    <button
+                                        onClick={() => setShowTuner(true)}
+                                        className="text-sm font-bold text-blue-900 group-hover:text-amber-600 transition-colors flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <span>Try Tuner →</span>
+                                    </button>
+                                    <Link href="/practice-tools/bansuri-tuner" className="text-xs text-slate-400 hover:text-slate-700">
+                                        Guide
+                                    </Link>
+                                </div>
+                            </div>
+
+                            {/* Card 2: Metronome */}
+                            <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group hover:border-amber-400">
+                                <div>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center group-hover:scale-105 transition-transform">
+                                            <Sparkles className="w-6 h-6" />
+                                        </div>
+                                        <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full uppercase tracking-wider">
+                                            Free Practice Tool
+                                        </span>
+                                    </div>
+                                    <h3 className="text-xl font-black text-slate-900 mb-2">
+                                        Practice Metronome
+                                    </h3>
+                                    <p className="text-slate-600 text-sm leading-relaxed mb-6">
+                                        Practise with a consistent beat and gradually develop better timing, tempo control, and finger speed with ramp acceleration.
+                                    </p>
+                                </div>
+                                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                                    <button
+                                        onClick={() => {
+                                             setPracticeSuiteTab('metronome');
+                                             setShowPracticeSuite(true);
+                                        }}
+                                        className="text-sm font-bold text-blue-900 group-hover:text-amber-600 transition-colors flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <span>Try Metronome →</span>
+                                    </button>
+                                    <Link href="/practice-tools/metronome" className="text-xs text-slate-400 hover:text-slate-700">
+                                        Guide
+                                    </Link>
+                                </div>
+                            </div>
+
+                            {/* Card 3: Sur Practice (Tanpura) */}
+                            <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group hover:border-amber-400">
+                                <div>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-orange-50 text-[#d46211] border border-orange-100 flex items-center justify-center group-hover:scale-105 transition-transform">
+                                            <Music className="w-6 h-6" />
+                                        </div>
+                                        <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full uppercase tracking-wider">
+                                            Free Practice Tool
+                                        </span>
+                                    </div>
+                                    <h3 className="text-xl font-black text-slate-900 mb-2">
+                                        Tanpura Drone
+                                    </h3>
+                                    <p className="text-slate-600 text-sm leading-relaxed mb-6">
+                                        Develop listening, pitch awareness and greater confidence in identifying and producing Swaras with authentic Indian Tanpura drone.
+                                    </p>
+                                </div>
+                                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                                    <button
+                                        onClick={() => {
+                                            setPracticeSuiteTab('tanpura');
+                                            setShowPracticeSuite(true);
+                                        }}
+                                        className="text-sm font-bold text-blue-900 group-hover:text-amber-600 transition-colors flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <span>Open Tanpura →</span>
+                                    </button>
+                                    <Link href="/practice-tools/tanpura" className="text-xs text-slate-400 hover:text-slate-700">
+                                        Guide
+                                    </Link>
+                                </div>
+                            </div>
+
+                            {/* Card 4: Distinct Card - More Tools for KFA Students */}
+                            <div className="bg-gradient-to-br from-blue-950 via-slate-900 to-slate-900 text-white rounded-3xl border border-blue-900 p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group hover:border-amber-400/60 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-bl-full pointer-events-none" />
+                                <div>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-amber-400/15 text-amber-300 border border-amber-400/30 flex items-center justify-center group-hover:scale-105 transition-transform">
+                                            <GraduationCap className="w-6 h-6" />
+                                        </div>
+                                        <span className="text-[11px] font-extrabold text-amber-300 bg-amber-400/20 border border-amber-400/30 px-3 py-1 rounded-full uppercase tracking-wider">
+                                            KFA Student Tools
+                                        </span>
+                                    </div>
+                                    <h3 className="text-xl font-black text-white mb-2">
+                                        More Tools for KFA Students
+                                    </h3>
+                                    <p className="text-blue-100/90 text-sm leading-relaxed mb-6">
+                                        Krishna Flute Academy students receive access to dedicated tools including Rhythm Machine, Sur to Notation, and combo practice sessions.
+                                    </p>
+                                </div>
+                                <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+                                    <Link
+                                        href="/practice-tools"
+                                        className="text-sm font-bold text-amber-400 group-hover:text-amber-300 transition-colors flex items-center gap-1.5"
+                                    >
+                                        <span>Explore Student Tools →</span>
+                                    </Link>
+                                    <span className="text-xs text-blue-200/60">
+                                        Exclusive
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Bottom CTA */}
+                        <div className="mt-12 text-center">
+                            <Link
+                                href="/practice-tools"
+                                className="inline-flex items-center gap-2 px-8 py-4 bg-blue-900 hover:bg-blue-950 text-white font-bold text-sm sm:text-base rounded-2xl shadow-md hover:shadow-lg transition-all"
+                            >
+                                <span>Explore All Practice Tools</span>
+                                <ArrowRight className="w-4 h-4" />
+                            </Link>
+                        </div>
+                    </div>
+                </section>
+
                 {/* Testimonials Section */}
                 {testimonials.length > 0 && (
                     <section className="py-20 px-4 bg-yellow-50">
@@ -1078,7 +1259,8 @@ Hello Krishna Flute Academy, I have an inquiry!
                                 <h3 className="text-lg font-semibold mb-4">Quick Links</h3>
                                 <ul className="space-y-2 text-blue-100">
                                     <li><button onClick={() => scrollToSection('about')} className="hover:text-white transition-colors text-sm md:text-base">About Us</button></li>
-                                    <li><button onClick={() => scrollToSection('courses')} className="hover:text-white transition-colors text-sm md:text-base">Courses</button></li>
+                                    <li><Link href="/courses" className="hover:text-white transition-colors text-sm md:text-base">Courses</Link></li>
+                                    <li><Link href="/practice-tools" className="hover:text-white transition-colors text-sm md:text-base">Practice Tools</Link></li>
                                     <li><button onClick={() => scrollToSection('founder')} className="hover:text-white transition-colors text-sm md:text-base">Our Founder</button></li>
                                     <li><button onClick={() => scrollToSection('contact')} className="hover:text-white transition-colors text-sm md:text-base">Contact</button></li>
                                     <li><button onClick={() => { setCurrentView('gallery'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="hover:text-white transition-colors text-sm md:text-base">Gallery</button></li>
@@ -1102,6 +1284,17 @@ Hello Krishna Flute Academy, I have an inquiry!
                 </footer>
 
                 <a href="/KFA-Brochure.pdf" download className="fixed bottom-12 right-6 z-50 p-4 bg-blue-700 rounded-full shadow-2xl transition-all duration-300 transform hover:scale-110 hover:bg-blue-800"><Download className="w-7 h-7 text-white" /></a>
+
+                {/* Interactive Practice Tool Modals */}
+                {showTuner && <FluteTunerModal onClose={() => setShowTuner(false)} />}
+                {showPracticeSuite && (
+                    <PracticeSuiteModal
+                        defaultTab={practiceSuiteTab}
+                        isComboMode={practiceSuiteTab === 'combosetup'}
+                        onClose={() => setShowPracticeSuite(false)}
+                    />
+                )}
+                {showSurToNotation && <SurToNotationModal onClose={() => setShowSurToNotation(false)} />}
             </div>
         );
     };

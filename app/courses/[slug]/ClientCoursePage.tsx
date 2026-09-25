@@ -360,6 +360,74 @@ ${formEmail ? `*Email:* ${formEmail}\n` : ''}*Message:* ${formMessage || 'I woul
                 </div>
             </section>
 
+            {/* Tools That Support Your Riyaz */}
+            <section className="py-16 md:py-20 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
+                <div className="text-center max-w-3xl mx-auto mb-10">
+                    <span className="inline-block text-xs uppercase tracking-wider font-bold text-blue-900 bg-blue-100 px-3 py-1 rounded-full mb-3">
+                        Interactive Riyaz
+                    </span>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">
+                        Tools That Support Your Riyaz
+                    </h2>
+                    <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
+                        KFA students can complement guided lessons with interactive tools for pitch, rhythm, timing and listening.
+                    </p>
+                </div>
+
+                <div className="grid sm:grid-cols-3 gap-6 mb-8">
+                    {(course.slug === 'beginner-bansuri' ? [
+                        { title: 'Bansuri Tuner', desc: 'Real-time pitch and Swara feedback for steady tone and lip placement.', href: '/practice-tools/bansuri-tuner' },
+                        { title: 'Practice Metronome', desc: 'Build rock-solid tempo control and steady rhythm across your alankars.', href: '/practice-tools/metronome' },
+                        { title: 'Rhythm / Drum Practice', desc: 'Practise foundational alankars and finger exercises with rhythmic pulse.', href: '/practice-tools' }
+                    ] : course.slug === 'intermediate-bansuri' ? [
+                        { title: 'Bansuri Tuner', desc: 'Verify precise komal and tivra swara intonation with cents accuracy.', href: '/practice-tools/bansuri-tuner' },
+                        { title: 'Practice Metronome', desc: 'Develop speed ramp agility and clean fingerwork transitions.', href: '/practice-tools/metronome' },
+                        { title: 'Tanpura Drone (Sur Practice)', desc: 'Immerse your daily raga riyaz in an authentic classical acoustic drone.', href: '/practice-tools/tanpura' }
+                    ] : course.slug === 'advanced-bansuri' ? [
+                        { title: 'Bansuri Tuner', desc: 'Fine-tune microtones, meends, and delicate shruti inflections.', href: '/practice-tools/bansuri-tuner' },
+                        { title: 'Rhythm Machine', desc: 'Practise drut bandishes, taans, and layakari with authentic Hindustani taals.', href: '/practice-tools' },
+                        { title: 'Sur to Notation (Ear Training)', desc: 'Transcribe intricate phrases and live sargams straight from your flute.', href: '/practice-tools' }
+                    ] : [
+                        { title: 'Bansuri Tuner', desc: 'Playful visual feedback to help young flutists produce their first clean notes.', href: '/practice-tools/bansuri-tuner' },
+                        { title: 'Practice Metronome', desc: 'Fun rhythm games to keep steady beat while learning nursery and simple songs.', href: '/practice-tools/metronome' },
+                        { title: 'Rhythm Practice', desc: 'Gentle, engaging drum accompaniment for children to play along.', href: '/practice-tools' }
+                    ]).map((toolItem, idx) => (
+                        <div 
+                            key={idx}
+                            className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+                        >
+                            <div>
+                                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 border border-amber-200/60 flex items-center justify-center font-bold text-sm mb-4">
+                                    <Sparkles className="w-5 h-5 text-amber-600" />
+                                </div>
+                                <h3 className="font-bold text-slate-900 text-base mb-2">
+                                    {toolItem.title}
+                                </h3>
+                                <p className="text-slate-600 text-xs sm:text-sm leading-relaxed mb-4">
+                                    {toolItem.desc}
+                                </p>
+                            </div>
+                            <Link 
+                                href={toolItem.href}
+                                className="text-xs font-bold text-blue-900 hover:text-amber-600 transition-colors inline-flex items-center gap-1"
+                            >
+                                <span>Try Tool</span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                            </Link>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="text-center">
+                    <Link
+                        href="/practice-tools"
+                        className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-blue-900 hover:text-amber-600 hover:underline transition-colors"
+                    >
+                        <span>Explore All KFA Practice Tools →</span>
+                    </Link>
+                </div>
+            </section>
+
             {/* Section 6: Already Play Bansuri? (Level Assessment Callout) */}
             <section className="py-12 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto">
                 <div className="bg-white border-2 border-blue-900/10 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-sm">

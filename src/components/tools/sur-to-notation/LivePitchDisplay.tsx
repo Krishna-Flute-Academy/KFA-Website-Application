@@ -10,12 +10,14 @@ interface LivePitchDisplayProps {
     status: ListeningStatus;
     selectedSa: RootNote;
     livePitch: LivePitchState | null;
+    compact?: boolean;
 }
 
 export default function LivePitchDisplay({
     status,
     selectedSa,
-    livePitch
+    livePitch,
+    compact = false
 }: LivePitchDisplayProps) {
     const isListening = status === 'listening';
     const isPaused = status === 'paused';
@@ -39,6 +41,82 @@ export default function LivePitchDisplay({
     } else if (isListening) {
         displaySwara = '—';
         confidenceLabel = 'Awaiting flute note...';
+    }
+
+    if (compact) {
+        return (
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-xs text-center relative overflow-hidden flex flex-col justify-between">
+                {/* Ambient tuning glow when note is steady in tune */}
+                {livePitch?.tuningStatus === 'in_tune' && livePitch.confidence === 'stable' && (
+                    <div className="absolute inset-0 bg-emerald-500/5 pointer-events-none animate-pulse" />
+                )}
+
+                {/* Top Bar: Selected Sa & Saptak */}
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 mb-1 px-1">
+                    <span className="flex items-center gap-1 text-slate-600">
+                        <Sparkles className="w-3 h-3 text-[#ecb613]" />
+                        <span>Tonic: <strong className="text-slate-800 font-extrabold">{selectedSa}</strong></span>
+                    </span>
+
+                    <div className="flex items-center gap-1">
+                        {livePitch?.saptakLabel && (
+                            <span className="text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-100 text-[10px] font-extrabold">
+                                {livePitch.saptakLabel}
+                            </span>
+                        )}
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                            isListening 
+                                ? (livePitch?.confidence === 'stable' 
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                    : 'bg-amber-50 text-amber-700 border-amber-200')
+                                : isPaused 
+                                    ? 'bg-amber-50 text-amber-600 border-amber-200'
+                                    : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                                isListening ? (livePitch?.confidence === 'stable' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500') : 'bg-slate-400'
+                            }`} />
+                            {confidenceLabel}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Central Note */}
+                <div className="my-1 select-none">
+                    <div className="font-black text-4xl sm:text-5xl tracking-tight text-slate-900 flex items-center justify-center gap-2">
+                        <span className="transition-all duration-100 transform">{displaySwara}</span>
+                        {devanagari && (
+                            <span className="text-xl sm:text-2xl font-extrabold text-[#d46211] opacity-90">
+                                ({devanagari})
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                        {livePitch?.swaraName ? (
+                            <span>{livePitch.swaraName} • <span className="text-slate-700 font-extrabold">{westernPitch}</span></span>
+                        ) : (
+                            <span>Western Pitch: <strong className="text-slate-700">{westernPitch}</strong></span>
+                        )}
+                    </p>
+                </div>
+
+                {/* Compact Tuner Meter */}
+                <div className="my-1">
+                    <TunerMeter
+                        cents={livePitch && livePitch.confidence !== 'silence' ? livePitch.cents : null}
+                        status={livePitch && livePitch.confidence !== 'silence' ? livePitch.tuningStatus : null}
+                        isActive={isListening}
+                        inTuneTolerance={5}
+                    />
+                </div>
+
+                {/* Single-line Metrics */}
+                <div className="flex items-center justify-around py-1 px-2 bg-slate-50/80 rounded-xl border border-slate-100 text-[11px] text-slate-600 font-bold">
+                    <span>Freq: <strong className="text-slate-800">{frequencyText}</strong></span>
+                    <span>Dev: <strong className={livePitch && livePitch.tuningStatus === 'in_tune' ? 'text-emerald-600' : 'text-slate-800'}>{centsText}</strong></span>
+                </div>
+            </div>
+        );
     }
 
     return (

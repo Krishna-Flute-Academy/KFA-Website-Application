@@ -12,6 +12,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/courses/intermediate-bansuri',
     '/courses/advanced-bansuri',
     '/courses/kids-bansuri',
+    '/practice-tools',
+    '/practice-tools/bansuri-tuner',
+    '/practice-tools/metronome',
+    '/practice-tools/tanpura',
+    '/practice-tools/rhythm-machine',
+    '/practice-tools/flute-to-notes',
     '/gallery',
     '/blog',
     '/community',
@@ -21,7 +27,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     url: `${baseUrl}${route}`,
     lastModified: new Date(),
     changeFrequency: 'weekly' as const,
-    priority: route === '' ? 1 : route.startsWith('/courses') ? 0.9 : 0.8,
+    priority: route === '' ? 1 : route.startsWith('/courses') || route.startsWith('/practice-tools') ? 0.9 : 0.8,
   }));
 
   let communityRoutes: any[] = [];
@@ -34,12 +40,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .eq('visibility', 'public');
 
     if (communityPosts) {
-      communityRoutes = communityPosts.map((post) => ({
-        url: `${baseUrl}/community/discussion/${post.slug}`,
-        lastModified: new Date(post.updated_at || post.created_at || new Date()),
-        changeFrequency: 'weekly' as const,
-        priority: 0.7,
-      }));
+      communityRoutes = communityPosts
+        .filter((post: any) => !post.is_deleted)
+        .map((post) => ({
+          url: `${baseUrl}/community/discussion/${post.slug}`,
+          lastModified: new Date(post.updated_at || post.created_at || new Date()),
+          changeFrequency: 'weekly' as const,
+          priority: 0.7,
+        }));
     }
   } catch (error) {
     // Non-blocking

@@ -96,6 +96,7 @@ function LoginContent() {
                     const dest = redirectParam ? getSafeRedirectUrl(redirectParam, '/teacher-dashboard') : '/teacher-dashboard';
                     router.push(dest);
                 } else if (normalizedRole === 'student' || normalizedRole === 'mentor') {
+                    localStorage.setItem('kfa-user-role', normalizedRole);
                     const dest = redirectParam ? getSafeRedirectUrl(redirectParam, '/student-dashboard') : '/student-dashboard';
                     router.push(dest);
                 } else {

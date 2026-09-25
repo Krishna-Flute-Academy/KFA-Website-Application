@@ -29,9 +29,10 @@ const {
     generatePostSlug, 
     resolveUserBadge, 
     getFallbackCategories,
-    getSafeRedirectUrl
+    getSafeRedirectUrl,
+    isContentEdited
 } = await importTypeScriptModule('../src/lib/community.ts', {
-    "from './supabase-auth'": "from 'data:text/javascript,export const supabaseAuth={};'",
+    "from './supabase-auth'": "from 'data:text/javascript,export const supabaseAuth={auth:{getSession:async()=>({data:{session:null}})},from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:null})})})})};'",
     "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;'"
 });
 
@@ -1117,6 +1118,138 @@ test('22. Option B Migration File Invariants & RLS Hardening Audit: verifies SQL
     assert.ok(migrationContent.includes("access_scope = 'students' AND (SELECT public.can_access_student_community())"), 'Category policy must use can_access_student_community');
     assert.ok(migrationContent.includes("visibility = 'students' AND (SELECT public.can_access_student_community())"), 'Post visibility rule must use can_access_student_community');
 });
+
+test('23. Subtle "Edited" Indicator Invariants: prevents false positives and detects true edits', () => {
+    // 1. Identical creation and update timestamps (new post)
+    const now = '2026-09-25T10:00:00.000Z';
+    assert.equal(isContentEdited(now, now), false, 'New post with same timestamps must not be marked edited');
+
+    // 2. Microsecond/millisecond drift <= 2000ms (database trigger overhead or race)
+    const slightlyLater = '2026-09-25T10:00:01.500Z'; // 1.5 seconds later
+    assert.equal(isContentEdited(now, slightlyLater), false, 'Diff under 2000ms must not trigger edited badge');
+
+    // 3. Genuine content update > 2000ms
+    const genuinelyEdited = '2026-09-25T10:05:00.000Z'; // 5 minutes later
+    assert.equal(isContentEdited(now, genuinelyEdited), true, 'Diff over 2000ms must trigger edited badge');
+
+    // 4. Missing or null dates
+    assert.equal(isContentEdited(undefined, undefined), false);
+    assert.equal(isContentEdited(now, null), false);
+    assert.equal(isContentEdited('invalid', 'dates'), false);
+});
+
+test('24. Edit/Delete Moderation Database Migration Integrity: verifies SQL schemas, triggers, and admin restrictions', async () => {
+    const migrationContent = await readFile(
+        new URL('../supabase/migrations/20260925080000_community_edit_delete_moderation.sql', import.meta.url),
+        'utf8'
+    );
+
+    // 1. Soft-delete columns and indexes on community_posts
+    assert.ok(migrationContent.includes('ALTER TABLE public.community_posts'));
+    assert.ok(migrationContent.includes('is_deleted BOOLEAN NOT NULL DEFAULT false'));
+    assert.ok(migrationContent.includes('deleted_at TIMESTAMPTZ'));
+    assert.ok(migrationContent.includes('deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL'));
+    assert.ok(migrationContent.includes('deletion_reason TEXT'));
+    assert.ok(migrationContent.includes('CREATE INDEX IF NOT EXISTS idx_community_posts_is_deleted'));
+
+    // 2. Soft-delete columns and indexes on community_replies
+    assert.ok(migrationContent.includes('ALTER TABLE public.community_replies'));
+    assert.ok(migrationContent.includes('CREATE INDEX IF NOT EXISTS idx_community_replies_is_deleted'));
+
+    // 3. Immutability & Admin word tampering restriction on community_posts
+    assert.ok(migrationContent.includes('CREATE OR REPLACE FUNCTION public.enforce_community_post_update_rules()'));
+    assert.ok(migrationContent.includes('Cannot alter post author_id'));
+    assert.ok(migrationContent.includes('accepted_reply_id can only be updated through the accepted answer workflow'));
+    // CRITICAL: Admins cannot tamper with author words
+    assert.ok(migrationContent.includes("RAISE EXCEPTION 'Admins may moderate or delete posts, but cannot alter the author''s original content'"));
+    // Updated_at only bumps when title, content, category, or post_type changes
+    assert.ok(migrationContent.includes('NEW.title IS DISTINCT FROM OLD.title OR'));
+    assert.ok(migrationContent.includes('NEW.updated_at := now()'));
+    assert.ok(migrationContent.includes('NEW.updated_at := OLD.updated_at'));
+
+    // 4. Immutability & Admin word tampering restriction on community_replies
+    assert.ok(migrationContent.includes('CREATE OR REPLACE FUNCTION public.enforce_community_reply_update_rules()'));
+    assert.ok(migrationContent.includes('Cannot alter reply author_id'));
+    assert.ok(migrationContent.includes('Cannot alter reply post_id'));
+    assert.ok(migrationContent.includes("RAISE EXCEPTION 'Admins may moderate or delete replies, but cannot alter the author''s original words'"));
+
+    // 5. Soft-delete aware stats trigger
+    assert.ok(migrationContent.includes('NEW.is_deleted = true AND OLD.is_deleted = false'));
+    assert.ok(migrationContent.includes('replies_count = GREATEST(0, replies_count - 1)'));
+
+    // 6. Hardened RLS policies
+    assert.ok(migrationContent.includes('CREATE POLICY "Community posts visibility rule"'));
+    assert.ok(migrationContent.includes('is_deleted = false OR (SELECT public.is_admin()) OR (SELECT auth.uid()) = author_id'));
+    assert.ok(migrationContent.includes('CREATE POLICY "Replies readable if parent post is readable"'));
+    assert.ok(migrationContent.includes('CREATE POLICY "Authors and staff can update posts"'));
+    assert.ok(migrationContent.includes('CREATE POLICY "Authors and staff can update replies"'));
+    assert.ok(migrationContent.includes('CREATE POLICY "Authors and admins can delete posts"'));
+    assert.ok(migrationContent.includes('CREATE POLICY "Authors and admins can delete replies"'));
+});
+
+test('25. UI Components Invariants: verifies ActionMenu, EditModal, DeleteModal, and removed placeholders', async () => {
+    // 1. Action Menu
+    const actionMenuCode = await readFile(
+        new URL('../src/components/community/CommunityActionMenu.tsx', import.meta.url),
+        'utf8'
+    );
+    assert.ok(actionMenuCode.includes('isAuthor'), 'Action menu must check author permissions');
+    assert.ok(actionMenuCode.includes('isAdmin'), 'Action menu must check admin permissions');
+    assert.ok(actionMenuCode.includes('Delete as Admin'), 'Action menu must offer distinct admin deletion');
+    assert.ok(actionMenuCode.includes('aria-label="Actions"'), 'Action menu must be accessible');
+
+    // 2. Edit Modal
+    const editModalCode = await readFile(
+        new URL('../src/components/community/EditPostModal.tsx', import.meta.url),
+        'utf8'
+    );
+    assert.ok(editModalCode.includes('title'), 'Edit modal must allow title editing');
+    assert.ok(editModalCode.includes('content'), 'Edit modal must allow content editing');
+    assert.ok(editModalCode.includes('selectedCategoryId'), 'Edit modal must allow category selection');
+    assert.ok(editModalCode.includes('postType'), 'Edit modal must allow post_type selection');
+    assert.ok(editModalCode.includes('Notation Quick-Insert'), 'Edit modal must support flute notation buttons');
+    assert.ok(editModalCode.includes('showPreview'), 'Edit modal must support live preview');
+
+    // 3. Delete Confirm Modal
+    const deleteModalCode = await readFile(
+        new URL('../src/components/community/DeleteConfirmModal.tsx', import.meta.url),
+        'utf8'
+    );
+    assert.ok(deleteModalCode.includes('Remove this content from the Community?'), 'Delete modal must have distinct admin text');
+    assert.ok(deleteModalCode.includes('MODERATION_REASONS'), 'Delete modal must define moderation reasons');
+    assert.ok(deleteModalCode.includes('Spam'), 'Delete modal must include Spam moderation option');
+    assert.ok(deleteModalCode.includes('Inappropriate content'), 'Delete modal must include Inappropriate content');
+    assert.ok(deleteModalCode.includes('Delete this post?'), 'Delete modal must include author post delete title');
+    assert.ok(deleteModalCode.includes('Delete this reply?'), 'Delete modal must include author reply delete title');
+
+    // 4. Discussion Card
+    const cardCode = await readFile(
+        new URL('../src/components/community/DiscussionCard.tsx', import.meta.url),
+        'utf8'
+    );
+    assert.ok(cardCode.includes('isContentEdited'), 'Discussion card must check for edited status');
+    assert.ok(cardCode.includes('Edited'), 'Discussion card must display subtle edited indicator');
+
+    // 5. Discussion Detail View
+    const detailCode = await readFile(
+        new URL('../src/components/community/DiscussionDetailView.tsx', import.meta.url),
+        'utf8'
+    );
+    assert.ok(detailCode.includes('Discussion Removed'), 'Detail view must handle deleted post state');
+    assert.ok(detailCode.includes('This reply has been removed.'), 'Detail view must display tombstone for deleted replies');
+    assert.ok(detailCode.includes('CommunityActionMenu'), 'Detail view must render action menus');
+    assert.ok(detailCode.includes('EditPostModal'), 'Detail view must render edit post modal');
+    assert.ok(detailCode.includes('DeleteConfirmModal'), 'Detail view must render delete confirm modal');
+});
+
+test('26. Sitemap SEO Exclusions: soft-deleted community posts are excluded from XML sitemap', async () => {
+    const sitemapCode = await readFile(
+        new URL('../app/sitemap.ts', import.meta.url),
+        'utf8'
+    );
+    assert.ok(sitemapCode.includes('!post.is_deleted'), 'Sitemap must exclude soft-deleted posts');
+});
+
 
 
 

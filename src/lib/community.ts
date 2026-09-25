@@ -43,6 +43,10 @@ export interface CommunityPost {
     views_count: number;
     upvotes_count: number;
     replies_count: number;
+    is_deleted?: boolean;
+    deleted_at?: string | null;
+    deleted_by?: string | null;
+    deletion_reason?: string | null;
     created_at: string;
     updated_at: string;
     // Enriched fields
@@ -59,11 +63,27 @@ export interface CommunityReply {
     parent_reply_id: string | null;
     is_accepted: boolean;
     upvotes_count: number;
+    is_deleted?: boolean;
+    deleted_at?: string | null;
+    deleted_by?: string | null;
+    deletion_reason?: string | null;
     created_at: string;
     updated_at: string;
     // Enriched fields
     author?: CommunityProfile;
     has_upvoted?: boolean;
+}
+
+/**
+ * Check if content has genuinely been modified after creation.
+ * Compares created_at and updated_at with a 2-second tolerance for DB trigger execution.
+ */
+export function isContentEdited(createdAt?: string, updatedAt?: string): boolean {
+    if (!createdAt || !updatedAt) return false;
+    const c = new Date(createdAt).getTime();
+    const u = new Date(updatedAt).getTime();
+    if (isNaN(c) || isNaN(u)) return false;
+    return u - c > 2000;
 }
 
 export interface CommunityFilterOptions {
@@ -260,66 +280,63 @@ export async function getCommunityPosts(
             if (cat) categoryId = cat.id;
         }
 
-        let query = supabaseAuth
-            .from('community_posts')
-            .select(`
-                id,
-                category_id,
-                author_id,
-                title,
-                slug,
-                content,
-                visibility,
-                classroom_id,
-                post_type,
-                is_pinned,
-                is_locked,
-                accepted_reply_id,
-                views_count,
-                upvotes_count,
-                replies_count,
-                created_at,
-                updated_at,
-                category:community_categories(id, name, slug, access_scope, icon_name)
-            `, { count: 'exact' });
-
-        if (categoryId) {
-            query = query.eq('category_id', categoryId);
-        }
-
-        if (searchQuery.trim()) {
-            const cleanQuery = searchQuery.trim();
-            // Use PostgreSQL ilike across title and content
-            query = query.or(`title.ilike.%${cleanQuery}%,content.ilike.%${cleanQuery}%`);
-        }
-
-        // Apply Tab Filter
-        if (tab === 'unanswered') {
-            query = query.eq('replies_count', 0);
-        } else if (tab === 'solved') {
-            query = query.not('accepted_reply_id', 'is', null);
-        }
-
-        // Apply Sorting
-        if (tab === 'popular') {
-            query = query
-                .order('is_pinned', { ascending: false })
-                .order('upvotes_count', { ascending: false })
-                .order('replies_count', { ascending: false })
-                .order('created_at', { ascending: false });
-        } else {
-            // Default: recent (pinned first)
-            query = query
-                .order('is_pinned', { ascending: false })
-                .order('created_at', { ascending: false });
-        }
-
-        // Range Pagination
         const from = (page - 1) * pageSize;
         const to = from + pageSize - 1;
-        query = query.range(from, to);
 
-        const { data: posts, count, error } = await query;
+        const buildQuery = (includeSoftDelete: boolean) => {
+            const selectFields = includeSoftDelete
+                ? 'id, category_id, author_id, title, slug, content, visibility, classroom_id, post_type, is_pinned, is_locked, accepted_reply_id, views_count, upvotes_count, replies_count, is_deleted, deleted_at, deleted_by, deletion_reason, created_at, updated_at, category:community_categories(id, name, slug, access_scope, icon_name)'
+                : 'id, category_id, author_id, title, slug, content, visibility, classroom_id, post_type, is_pinned, is_locked, accepted_reply_id, views_count, upvotes_count, replies_count, created_at, updated_at, category:community_categories(id, name, slug, access_scope, icon_name)';
+
+            let q = (supabaseAuth.from('community_posts') as any)
+                .select(selectFields, { count: 'exact' });
+
+            if (includeSoftDelete) {
+                q = q.eq('is_deleted', false);
+            }
+
+            if (categoryId) {
+                q = q.eq('category_id', categoryId);
+            }
+
+            if (searchQuery.trim()) {
+                const cleanQuery = searchQuery.trim();
+                // Use PostgreSQL ilike across title and content
+                q = q.or(`title.ilike.%${cleanQuery}%,content.ilike.%${cleanQuery}%`);
+            }
+
+            // Apply Tab Filter
+            if (tab === 'unanswered') {
+                q = q.eq('replies_count', 0);
+            } else if (tab === 'solved') {
+                q = q.not('accepted_reply_id', 'is', null);
+            }
+
+            // Apply Sorting
+            if (tab === 'popular') {
+                q = q
+                    .order('is_pinned', { ascending: false })
+                    .order('upvotes_count', { ascending: false })
+                    .order('replies_count', { ascending: false })
+                    .order('created_at', { ascending: false });
+            } else {
+                // Default: recent (pinned first)
+                q = q
+                    .order('is_pinned', { ascending: false })
+                    .order('created_at', { ascending: false });
+            }
+
+            // Range Pagination
+            return q.range(from, to);
+        };
+
+        let { data: posts, count, error } = await buildQuery(true);
+        if (error && (error.code === '42703' || error.message?.includes('is_deleted'))) {
+            const fallbackRes = await buildQuery(false);
+            posts = fallbackRes.data;
+            count = fallbackRes.count;
+            error = fallbackRes.error;
+        }
 
         if (error) {
             console.warn('[Community] getCommunityPosts error:', error.message);
@@ -400,34 +417,47 @@ export async function getCommunityPostBySlug(
     currentUserId?: string | null
 ): Promise<CommunityPost | null> {
     try {
-        const { data: post, error } = await supabaseAuth
-            .from('community_posts')
-            .select(`
-                id,
-                category_id,
-                author_id,
-                title,
-                slug,
-                content,
-                visibility,
-                classroom_id,
-                post_type,
-                is_pinned,
-                is_locked,
-                accepted_reply_id,
-                views_count,
-                upvotes_count,
-                replies_count,
-                created_at,
-                updated_at,
-                category:community_categories(id, name, slug, access_scope, icon_name)
-            `)
-            .eq('slug', slug)
-            .maybeSingle();
+        const buildPostQuery = (includeSoftDelete: boolean) => {
+            const selectFields = includeSoftDelete
+                ? 'id, category_id, author_id, title, slug, content, visibility, classroom_id, post_type, is_pinned, is_locked, accepted_reply_id, views_count, upvotes_count, replies_count, is_deleted, deleted_at, deleted_by, deletion_reason, created_at, updated_at, category:community_categories(id, name, slug, access_scope, icon_name)'
+                : 'id, category_id, author_id, title, slug, content, visibility, classroom_id, post_type, is_pinned, is_locked, accepted_reply_id, views_count, upvotes_count, replies_count, created_at, updated_at, category:community_categories(id, name, slug, access_scope, icon_name)';
+
+            return (supabaseAuth.from('community_posts') as any)
+                .select(selectFields)
+                .eq('slug', slug)
+                .maybeSingle();
+        };
+
+        let { data: post, error } = await buildPostQuery(true);
+        if (error && (error.code === '42703' || error.message?.includes('is_deleted'))) {
+            const fallbackRes = await buildPostQuery(false);
+            post = fallbackRes.data;
+            error = fallbackRes.error;
+        }
 
         if (error || !post) {
             console.warn('[Community] getCommunityPostBySlug not found or error:', error?.message);
             return null;
+        }
+
+        // If post has been soft-deleted
+        if (post.is_deleted) {
+            // Check if user is admin
+            let isUserAdmin = false;
+            if (currentUserId) {
+                const { data: u } = await supabaseAuth.from('users').select('role').eq('id', currentUserId).maybeSingle();
+                if (u?.role === 'admin') isUserAdmin = true;
+            }
+            if (!isUserAdmin) {
+                // Do not expose original content or title to non-admins
+                return {
+                    ...post,
+                    title: 'Discussion Removed',
+                    content: '',
+                    is_deleted: true,
+                    category: (post as any).category
+                };
+            }
         }
 
         // Fetch author profile, role, and current user upvote
@@ -489,22 +519,24 @@ export async function getCommunityReplies(
     currentUserId?: string | null
 ): Promise<CommunityReply[]> {
     try {
-        const { data: replies, error } = await supabaseAuth
-            .from('community_replies')
-            .select(`
-                id,
-                post_id,
-                author_id,
-                content,
-                parent_reply_id,
-                is_accepted,
-                upvotes_count,
-                created_at,
-                updated_at
-            `)
-            .eq('post_id', postId)
-            .order('is_accepted', { ascending: false })
-            .order('created_at', { ascending: true });
+        const buildRepliesQuery = (includeSoftDelete: boolean) => {
+            const selectFields = includeSoftDelete
+                ? 'id, post_id, author_id, content, parent_reply_id, is_accepted, upvotes_count, is_deleted, deleted_at, deleted_by, deletion_reason, created_at, updated_at'
+                : 'id, post_id, author_id, content, parent_reply_id, is_accepted, upvotes_count, created_at, updated_at';
+
+            return (supabaseAuth.from('community_replies') as any)
+                .select(selectFields)
+                .eq('post_id', postId)
+                .order('is_accepted', { ascending: false })
+                .order('created_at', { ascending: true });
+        };
+
+        let { data: replies, error } = await buildRepliesQuery(true);
+        if (error && (error.code === '42703' || error.message?.includes('is_deleted'))) {
+            const fallbackRes = await buildRepliesQuery(false);
+            replies = fallbackRes.data;
+            error = fallbackRes.error;
+        }
 
         if (error || !replies) {
             console.warn('[Community] getCommunityReplies error:', error?.message);
@@ -516,7 +548,7 @@ export async function getCommunityReplies(
         const authorIds = Array.from(new Set(replies.map(r => r.author_id)));
         const replyIds = replies.map(r => r.id);
 
-        const [profilesRes, rolesRes, reactionsRes] = await Promise.all([
+        const [profilesRes, rolesRes, reactionsRes, currentUserRoleRes] = await Promise.all([
             supabaseAuth
                 .from('community_profiles')
                 .select('id, display_name, avatar_url, bio')
@@ -531,7 +563,14 @@ export async function getCommunityReplies(
                     .select('reply_id')
                     .eq('user_id', currentUserId)
                     .in('reply_id', replyIds)
-                : Promise.resolve({ data: [] })
+                : Promise.resolve({ data: [] }),
+            currentUserId
+                ? supabaseAuth
+                    .from('users')
+                    .select('role')
+                    .eq('id', currentUserId)
+                    .maybeSingle()
+                : Promise.resolve({ data: null })
         ]);
 
         const profileMap = new Map<string, any>();
@@ -541,18 +580,24 @@ export async function getCommunityReplies(
         (rolesRes.data || []).forEach((u: any) => roleMap.set(u.id, u.role));
 
         const upvotedReplyIds = new Set((reactionsRes.data || []).map((r: any) => r.reply_id));
+        const isUserAdmin = currentUserRoleRes?.data?.role === 'admin';
 
-        return replies.map(r => ({
-            ...r,
-            author: {
-                id: r.author_id,
-                display_name: profileMap.get(r.author_id)?.display_name || 'KFA Member',
-                avatar_url: profileMap.get(r.author_id)?.avatar_url || null,
-                bio: profileMap.get(r.author_id)?.bio || null,
-                badge: resolveUserBadge(roleMap.get(r.author_id))
-            },
-            has_upvoted: upvotedReplyIds.has(r.id)
-        }));
+        return replies.map(r => {
+            const isDel = Boolean(r.is_deleted);
+            return {
+                ...r,
+                // Mask content for non-admins if deleted
+                content: (isDel && !isUserAdmin) ? '' : r.content,
+                author: {
+                    id: r.author_id,
+                    display_name: isDel ? 'Removed' : (profileMap.get(r.author_id)?.display_name || 'KFA Member'),
+                    avatar_url: isDel ? null : (profileMap.get(r.author_id)?.avatar_url || null),
+                    bio: isDel ? null : (profileMap.get(r.author_id)?.bio || null),
+                    badge: isDel ? undefined : resolveUserBadge(roleMap.get(r.author_id))
+                },
+                has_upvoted: upvotedReplyIds.has(r.id)
+            };
+        });
     } catch (err) {
         console.error('[Community] Exception in getCommunityReplies:', err);
         return [];
@@ -809,32 +854,190 @@ export async function adminUpdatePost(
     }
 }
 
-export async function adminDeletePost(postId: string): Promise<{ success: boolean; error?: string }> {
+/**
+ * Author updates their own discussion post
+ */
+export async function updateCommunityPost(params: {
+    postId: string;
+    title: string;
+    content: string;
+    categoryId?: string;
+    postType?: CommunityPostType;
+}): Promise<{ success: boolean; error?: string }> {
     try {
+        const { postId, title, content, categoryId, postType } = params;
+        if (!title.trim() || title.trim().length < 5) {
+            return { success: false, error: 'Please enter a title of at least 5 characters.' };
+        }
+        if (!content.trim() || content.trim().length < 10) {
+            return { success: false, error: 'Please provide content of at least 10 characters.' };
+        }
+
+        const updates: any = {
+            title: title.trim(),
+            content: sanitizeHtml(content),
+            updated_at: new Date().toISOString()
+        };
+
+        if (categoryId) updates.category_id = categoryId;
+        if (postType) updates.post_type = postType;
+
         const { error } = await supabaseAuth
             .from('community_posts')
-            .delete()
+            .update(updates)
             .eq('id', postId);
 
-        if (error) return { success: false, error: error.message };
+        if (error) {
+            console.error('[Community] updateCommunityPost error:', error);
+            return { success: false, error: error.message };
+        }
+
         return { success: true };
     } catch (err: any) {
-        return { success: false, error: err.message };
+        console.error('[Community] Exception in updateCommunityPost:', err);
+        return { success: false, error: err.message || 'Failed to update discussion.' };
     }
 }
 
-export async function adminDeleteReply(replyId: string): Promise<{ success: boolean; error?: string }> {
+/**
+ * Delete a post (soft delete with fallback to hard delete)
+ */
+export async function deleteCommunityPost(params: {
+    postId: string;
+    reason?: string;
+}): Promise<{ success: boolean; error?: string }> {
     try {
+        const { postId, reason } = params;
+        const { data: { session } } = await supabaseAuth.auth.getSession();
+        const currentUserId = session?.user?.id;
+
+        // Try soft-delete first
+        const softDeletePayload: any = {
+            is_deleted: true,
+            deleted_at: new Date().toISOString(),
+            deleted_by: currentUserId || null,
+            deletion_reason: reason || null
+        };
+
+        const { error: softError } = await supabaseAuth
+            .from('community_posts')
+            .update(softDeletePayload)
+            .eq('id', postId);
+
+        if (!softError) {
+            return { success: true };
+        }
+
+        // Fallback to hard delete if is_deleted column does not exist yet (code 42703)
+        if (softError.code === '42703' || softError.message?.includes('is_deleted')) {
+            const { error: hardError } = await supabaseAuth
+                .from('community_posts')
+                .delete()
+                .eq('id', postId);
+
+            if (hardError) {
+                return { success: false, error: hardError.message };
+            }
+            return { success: true };
+        }
+
+        return { success: false, error: softError.message };
+    } catch (err: any) {
+        console.error('[Community] Exception in deleteCommunityPost:', err);
+        return { success: false, error: err.message || 'Failed to delete discussion.' };
+    }
+}
+
+/**
+ * Author updates their own reply
+ */
+export async function updateCommunityReply(params: {
+    replyId: string;
+    content: string;
+}): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { replyId, content } = params;
+        if (!content.trim()) {
+            return { success: false, error: 'Reply cannot be empty.' };
+        }
+
+        const sanitized = sanitizeHtml(content);
+
         const { error } = await supabaseAuth
             .from('community_replies')
-            .delete()
+            .update({
+                content: sanitized,
+                updated_at: new Date().toISOString()
+            })
             .eq('id', replyId);
 
-        if (error) return { success: false, error: error.message };
+        if (error) {
+            console.error('[Community] updateCommunityReply error:', error);
+            return { success: false, error: error.message };
+        }
+
         return { success: true };
     } catch (err: any) {
-        return { success: false, error: err.message };
+        console.error('[Community] Exception in updateCommunityReply:', err);
+        return { success: false, error: err.message || 'Failed to update reply.' };
     }
+}
+
+/**
+ * Delete a reply (soft delete with fallback to hard delete)
+ */
+export async function deleteCommunityReply(params: {
+    replyId: string;
+    reason?: string;
+}): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { replyId, reason } = params;
+        const { data: { session } } = await supabaseAuth.auth.getSession();
+        const currentUserId = session?.user?.id;
+
+        // Try soft-delete first
+        const softDeletePayload: any = {
+            is_deleted: true,
+            deleted_at: new Date().toISOString(),
+            deleted_by: currentUserId || null,
+            deletion_reason: reason || null
+        };
+
+        const { error: softError } = await supabaseAuth
+            .from('community_replies')
+            .update(softDeletePayload)
+            .eq('id', replyId);
+
+        if (!softError) {
+            return { success: true };
+        }
+
+        // Fallback to hard delete if is_deleted column does not exist yet (code 42703)
+        if (softError.code === '42703' || softError.message?.includes('is_deleted')) {
+            const { error: hardError } = await supabaseAuth
+                .from('community_replies')
+                .delete()
+                .eq('id', replyId);
+
+            if (hardError) {
+                return { success: false, error: hardError.message };
+            }
+            return { success: true };
+        }
+
+        return { success: false, error: softError.message };
+    } catch (err: any) {
+        console.error('[Community] Exception in deleteCommunityReply:', err);
+        return { success: false, error: err.message || 'Failed to delete reply.' };
+    }
+}
+
+export async function adminDeletePost(postId: string, reason?: string): Promise<{ success: boolean; error?: string }> {
+    return deleteCommunityPost({ postId, reason });
+}
+
+export async function adminDeleteReply(replyId: string, reason?: string): Promise<{ success: boolean; error?: string }> {
+    return deleteCommunityReply({ replyId, reason });
 }
 
 export async function reportContent(params: {

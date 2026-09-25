@@ -10,12 +10,17 @@ import {
 } from 'lucide-react';
 import CommunityNavbar from './CommunityNavbar';
 import AcademyConversionBanner from './AcademyConversionBanner';
+import EditPostModal from './EditPostModal';
+import DeleteConfirmModal from './DeleteConfirmModal';
+import CommunityActionMenu from './CommunityActionMenu';
 import { 
-    CommunityPost, CommunityReply, 
+    CommunityPost, CommunityReply, CommunityCategory,
+    CommunityPostType, getCommunityCategories,
     getCommunityPostBySlug, getCommunityReplies, 
-    createCommunityReply, toggleAcceptedAnswer, 
-    toggleCommunityReaction, incrementPostView, 
-    CommunityBadge 
+    createCommunityReply, updateCommunityReply,
+    deleteCommunityPost, deleteCommunityReply,
+    toggleAcceptedAnswer, toggleCommunityReaction, 
+    incrementPostView, isContentEdited, CommunityBadge 
 } from '../../lib/community';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import { sanitizeHtml, htmlToPlainText } from '../../lib/text-utils';
@@ -29,8 +34,22 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
     const router = useRouter();
     const [post, setPost] = useState<CommunityPost | null>(null);
     const [replies, setReplies] = useState<CommunityReply[]>([]);
+    const [categories, setCategories] = useState<CommunityCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Post edit & delete modal states
+    const [isEditingPost, setIsEditingPost] = useState(false);
+    const [isDeletingPost, setIsDeletingPost] = useState(false);
+    const [isAdminDeletePost, setIsAdminDeletePost] = useState(false);
+
+    // Reply inline edit & delete modal states
+    const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+    const [editReplyText, setEditReplyText] = useState('');
+    const [isSavingReply, setIsSavingReply] = useState(false);
+    const [isDeletingReply, setIsDeletingReply] = useState(false);
+    const [targetDeleteReplyId, setTargetDeleteReplyId] = useState<string | null>(null);
+    const [isAdminDeleteReply, setIsAdminDeleteReply] = useState(false);
 
     // Auth state
     const [currentUser, setCurrentUser] = useState<any>(null);
@@ -122,6 +141,12 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                 const repliesData = await getCommunityReplies(postData.id, userId);
                 if (isMounted) {
                     setReplies(repliesData);
+                }
+
+                // Load categories for post edit modal
+                const cats = await getCommunityCategories();
+                if (isMounted) {
+                    setCategories(cats);
                 }
             } catch (err: any) {
                 console.error('[Community] Discussion load error:', err);
@@ -282,6 +307,102 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
         }
     };
 
+    // Handle post edited
+    const handlePostSaved = (updated: {
+        title: string;
+        content: string;
+        categoryId: string;
+        postType: CommunityPostType;
+        category?: CommunityCategory;
+    }) => {
+        setPost(prev => prev ? {
+            ...prev,
+            title: updated.title,
+            content: updated.content,
+            category_id: updated.categoryId,
+            post_type: updated.postType,
+            category: updated.category || prev.category,
+            updated_at: new Date().toISOString()
+        } : null);
+    };
+
+    // Handle post delete confirmation
+    const handleConfirmDeletePost = async (reason?: string) => {
+        if (!post) return;
+        const res = await deleteCommunityPost({
+            postId: post.id,
+            reason
+        });
+        if (res.success) {
+            router.push('/community');
+        } else {
+            alert(res.error || 'Failed to delete discussion.');
+        }
+    };
+
+    // Start inline reply edit
+    const startEditReply = (reply: CommunityReply) => {
+        setEditingReplyId(reply.id);
+        const raw = (reply.content || '')
+            .replace(/<br\s*[\/]?>/gi, '\n')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"');
+        setEditReplyText(raw);
+    };
+
+    // Save inline reply edit
+    const handleSaveEditReply = async (replyId: string) => {
+        if (!editReplyText.trim()) return;
+        setIsSavingReply(true);
+        try {
+            const htmlContent = editReplyText.replace(/\n/g, '<br/>');
+            const res = await updateCommunityReply({
+                replyId,
+                content: htmlContent
+            });
+            if (res.success) {
+                setReplies(prev => prev.map(r => r.id === replyId ? {
+                    ...r,
+                    content: htmlContent,
+                    updated_at: new Date().toISOString()
+                } : r));
+                setEditingReplyId(null);
+                setEditReplyText('');
+            } else {
+                alert(res.error || 'Failed to update reply.');
+            }
+        } finally {
+            setIsSavingReply(false);
+        }
+    };
+
+    // Handle reply delete confirmation
+    const handleConfirmDeleteReply = async (reason?: string) => {
+        if (!targetDeleteReplyId) return;
+        const res = await deleteCommunityReply({
+            replyId: targetDeleteReplyId,
+            reason
+        });
+        if (res.success) {
+            setReplies(prev => prev.map(r => r.id === targetDeleteReplyId ? {
+                ...r,
+                is_deleted: true,
+                content: '',
+                author: { ...r.author, display_name: 'Removed' }
+            } : r));
+            setPost(prev => prev ? {
+                ...prev,
+                replies_count: Math.max(0, (prev.replies_count || 1) - 1)
+            } : null);
+            setIsDeletingReply(false);
+            setTargetDeleteReplyId(null);
+        } else {
+            alert(res.error || 'Failed to delete reply.');
+        }
+    };
+
     // Badge styling helper
     const renderBadge = (badge?: CommunityBadge) => {
         if (!badge) return null;
@@ -327,17 +448,21 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
         );
     }
 
-    if (error || !post) {
+    if (error || !post || post.is_deleted) {
         return (
             <div className="min-h-screen bg-[#faf8f5] dark:bg-[#120d09] text-slate-900 dark:text-slate-100 flex flex-col font-sans">
                 <CommunityNavbar />
                 <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4 flex-1 flex flex-col justify-center items-center">
-                    <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center">
+                    <div className="w-14 h-14 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 rounded-2xl flex items-center justify-center">
                         <AlertCircle className="w-8 h-8" />
                     </div>
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Discussion Unavailable</h2>
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                        {post?.is_deleted ? 'Discussion Removed' : 'Discussion Unavailable'}
+                    </h2>
                     <p className="text-sm text-slate-600 dark:text-slate-400">
-                        {error || 'This discussion may be private or restricted to enrolled KFA students.'}
+                        {post?.is_deleted
+                            ? 'This discussion has been deleted or removed by community moderation.'
+                            : error || 'This discussion may be private or restricted to enrolled KFA students.'}
                     </p>
                     <Link
                         href="/community"
@@ -430,13 +555,21 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                                         </span>
                                         {renderBadge(post.author?.badge)}
                                     </div>
-                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                        Asked {formatRelativeTime(post.created_at)}
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                        <span>Asked {formatRelativeTime(post.created_at)}</span>
+                                        {isContentEdited(post.created_at, post.updated_at) && (
+                                            <span 
+                                                className="text-[11px] text-slate-400 dark:text-slate-500 font-normal"
+                                                title={`Edited ${formatRelativeTime(post.updated_at)}`}
+                                            >
+                                                · Edited
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 sm:gap-3">
                                 <button
                                     onClick={handleCopyShare}
                                     className="p-2 text-slate-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-slate-800 rounded-xl transition-colors relative"
@@ -452,6 +585,16 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                                 <span className="flex items-center gap-1 text-xs text-slate-400">
                                     <Eye className="w-4 h-4" /> {post.views_count || 0} views
                                 </span>
+                                <CommunityActionMenu
+                                    isAuthor={currentUser?.id === post.author_id}
+                                    isAdmin={currentUserRole === 'admin'}
+                                    itemType="post"
+                                    onEdit={() => setIsEditingPost(true)}
+                                    onDelete={(isAdminDel) => {
+                                        setIsAdminDeletePost(isAdminDel);
+                                        setIsDeletingPost(true);
+                                    }}
+                                />
                             </div>
                         </div>
                     </div>
@@ -501,8 +644,22 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                     ) : (
                         <div className="space-y-4">
                             {replies.map((reply) => {
+                                if (reply.is_deleted) {
+                                    return (
+                                        <div
+                                            key={reply.id}
+                                            className="bg-slate-50/70 dark:bg-slate-900/40 rounded-2xl p-4 sm:p-5 border border-dashed border-slate-200 dark:border-slate-800"
+                                        >
+                                            <p className="text-xs sm:text-sm text-slate-400 dark:text-slate-500 italic">
+                                                This reply has been removed.
+                                            </p>
+                                        </div>
+                                    );
+                                }
+
                                 const isTeacherAnswer = reply.author?.badge === 'Teacher' || reply.author?.badge === 'Admin';
                                 const isAccepted = reply.is_accepted;
+                                const isEditingThisReply = editingReplyId === reply.id;
 
                                 return (
                                     <div
@@ -552,49 +709,106 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                                                         </span>
                                                         {renderBadge(reply.author?.badge)}
                                                     </div>
-                                                    <span className="text-[11px] text-slate-400">
-                                                        {formatRelativeTime(reply.created_at)}
-                                                    </span>
+                                                    <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                                        <span>{formatRelativeTime(reply.created_at)}</span>
+                                                        {isContentEdited(reply.created_at, reply.updated_at) && (
+                                                            <span 
+                                                                className="text-slate-400 dark:text-slate-500 font-normal"
+                                                                title={`Edited ${formatRelativeTime(reply.updated_at)}`}
+                                                            >
+                                                                · Edited
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
 
-                                            {/* Accepted Answer action button */}
-                                            {canManageAccepted && (
-                                                <button
-                                                    onClick={() => handleToggleAccepted(reply.id, reply.is_accepted)}
-                                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                                                        reply.is_accepted
-                                                            ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200'
-                                                            : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50'
-                                                    }`}
-                                                    title={reply.is_accepted ? 'Unmark accepted' : 'Mark as accepted answer'}
-                                                >
-                                                    <Check className="w-3.5 h-3.5" />
-                                                    <span>{reply.is_accepted ? 'Accepted' : 'Mark Accepted'}</span>
-                                                </button>
-                                            )}
+                                            {/* Reply Action Buttons */}
+                                            <div className="flex items-center gap-1.5">
+                                                {canManageAccepted && (
+                                                    <button
+                                                        onClick={() => handleToggleAccepted(reply.id, reply.is_accepted)}
+                                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                                            reply.is_accepted
+                                                                ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200'
+                                                                : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50'
+                                                        }`}
+                                                        title={reply.is_accepted ? 'Unmark accepted' : 'Mark as accepted answer'}
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                        <span>{reply.is_accepted ? 'Accepted' : 'Mark Accepted'}</span>
+                                                    </button>
+                                                )}
+
+                                                <CommunityActionMenu
+                                                    isAuthor={currentUser?.id === reply.author_id}
+                                                    isAdmin={currentUserRole === 'admin'}
+                                                    itemType="reply"
+                                                    onEdit={() => startEditReply(reply)}
+                                                    onDelete={(isAdminDel) => {
+                                                        setTargetDeleteReplyId(reply.id);
+                                                        setIsAdminDeleteReply(isAdminDel);
+                                                        setIsDeletingReply(true);
+                                                    }}
+                                                />
+                                            </div>
                                         </div>
 
-                                        {/* Reply Content Body */}
-                                        <div 
-                                            className="prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 text-sm leading-relaxed mb-4"
-                                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(reply.content) }}
-                                        />
+                                        {/* Reply Content or Inline Edit Box */}
+                                        {isEditingThisReply ? (
+                                            <div className="my-3 space-y-3">
+                                                <textarea
+                                                    value={editReplyText}
+                                                    onChange={(e) => setEditReplyText(e.target.value)}
+                                                    rows={4}
+                                                    className="w-full p-3.5 rounded-2xl bg-[#faf8f5] dark:bg-[#120d09] border border-amber-900/15 dark:border-amber-500/20 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 transition-all resize-y"
+                                                />
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setEditingReplyId(null);
+                                                            setEditReplyText('');
+                                                        }}
+                                                        disabled={isSavingReply}
+                                                        className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSaveEditReply(reply.id)}
+                                                        disabled={isSavingReply || !editReplyText.trim()}
+                                                        className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-[#a15912] hover:bg-[#8a4b0f] text-white text-xs font-bold rounded-xl shadow-2xs transition-all disabled:opacity-50"
+                                                    >
+                                                        {isSavingReply ? 'Saving...' : 'Save'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {/* Reply Content Body */}
+                                                <div 
+                                                    className="prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 text-sm leading-relaxed mb-4"
+                                                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(reply.content) }}
+                                                />
 
-                                        {/* Reply Footer: Upvote action */}
-                                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-50 dark:border-slate-850">
-                                            <button
-                                                onClick={() => handleToggleReplyUpvote(reply.id, reply.has_upvoted || false)}
-                                                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                                                    reply.has_upvoted
-                                                        ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200'
-                                                        : 'text-slate-500 hover:text-amber-800 hover:bg-amber-50 dark:hover:bg-slate-800'
-                                                }`}
-                                            >
-                                                <ThumbsUp className={`w-3.5 h-3.5 ${reply.has_upvoted ? 'fill-current text-amber-700' : ''}`} />
-                                                <span>{reply.upvotes_count || 0}</span>
-                                            </button>
-                                        </div>
+                                                {/* Reply Footer: Upvote action */}
+                                                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-50 dark:border-slate-850">
+                                                    <button
+                                                        onClick={() => handleToggleReplyUpvote(reply.id, reply.has_upvoted || false)}
+                                                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                                            reply.has_upvoted
+                                                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200'
+                                                                : 'text-slate-500 hover:text-amber-800 hover:bg-amber-50 dark:hover:bg-slate-800'
+                                                        }`}
+                                                    >
+                                                        <ThumbsUp className={`w-3.5 h-3.5 ${reply.has_upvoted ? 'fill-current text-amber-700' : ''}`} />
+                                                        <span>{reply.upvotes_count || 0}</span>
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -706,6 +920,42 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
 
                 {/* Academy Course Conversion Banner */}
                 <AcademyConversionBanner />
+
+                {/* Edit Post Modal */}
+                {post && (
+                    <EditPostModal
+                        isOpen={isEditingPost}
+                        post={post}
+                        categories={categories}
+                        onClose={() => setIsEditingPost(false)}
+                        onSaved={handlePostSaved}
+                    />
+                )}
+
+                {/* Delete Post Modal */}
+                <DeleteConfirmModal
+                    isOpen={isDeletingPost}
+                    itemType="post"
+                    isAdminAction={isAdminDeletePost}
+                    onClose={() => {
+                        setIsDeletingPost(false);
+                        setIsAdminDeletePost(false);
+                    }}
+                    onConfirm={handleConfirmDeletePost}
+                />
+
+                {/* Delete Reply Modal */}
+                <DeleteConfirmModal
+                    isOpen={isDeletingReply}
+                    itemType="reply"
+                    isAdminAction={isAdminDeleteReply}
+                    onClose={() => {
+                        setIsDeletingReply(false);
+                        setTargetDeleteReplyId(null);
+                        setIsAdminDeleteReply(false);
+                    }}
+                    onConfirm={handleConfirmDeleteReply}
+                />
             </main>
         </div>
     );

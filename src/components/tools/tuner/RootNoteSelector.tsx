@@ -7,6 +7,7 @@ interface RootNoteSelectorProps {
     selectedSa: RootNote;
     onSelectSa: (sa: RootNote) => void;
     disabled?: boolean;
+    compact?: boolean;
 }
 
 const ROOT_NOTES: Array<{ value: RootNote; label: string; flutes?: string }> = [
@@ -27,8 +28,50 @@ const ROOT_NOTES: Array<{ value: RootNote; label: string; flutes?: string }> = [
 export default function RootNoteSelector({
     selectedSa,
     onSelectSa,
-    disabled = false
+    disabled = false,
+    compact = false
 }: RootNoteSelectorProps) {
+    if (compact) {
+        return (
+            <div className="w-full bg-white border border-slate-200/90 rounded-2xl p-2.5 shadow-xs">
+                <div className="flex items-center justify-between mb-1.5 px-0.5">
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-md bg-orange-50 text-[#d46211] border border-orange-100 flex items-center justify-center font-black text-[10px]">
+                            सा
+                        </span>
+                        <span className="text-xs font-extrabold text-slate-800">
+                            Flute Scale (Sa)
+                        </span>
+                    </div>
+                    <span className="px-2 py-0.5 bg-amber-500/10 text-[#d46211] rounded-lg font-black text-[11px] border border-amber-500/20">
+                        Sa = {selectedSa}
+                    </span>
+                </div>
+                <div className="grid grid-cols-6 gap-1">
+                    {ROOT_NOTES.map(note => {
+                        const isSelected = selectedSa === note.value;
+                        return (
+                            <button
+                                key={note.value}
+                                type="button"
+                                disabled={disabled}
+                                onClick={() => onSelectSa(note.value)}
+                                title={note.flutes}
+                                className={`py-1 px-0.5 text-center rounded-lg font-bold text-[11px] transition-all relative ${
+                                    isSelected
+                                        ? 'bg-[#ecb613] text-slate-900 font-black shadow-xs ring-1 ring-[#ecb613]'
+                                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/60'
+                                } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                                <span className="block truncate">{note.label}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="w-full bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs">
             <div className="flex items-center justify-between mb-3">

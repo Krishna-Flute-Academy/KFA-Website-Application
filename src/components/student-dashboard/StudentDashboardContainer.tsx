@@ -9,7 +9,7 @@ import {
     Clock, Video, Play, Music, Award, Users, Search, PlayCircle,
     Send, X, ClipboardList, Info, BarChart2, Plus, Volume2,
     HelpCircle, ChevronRight, Download, LogOut, Check, Menu,
-    Sparkles, AlertTriangle, CreditCard, Scroll, User, ArrowRight, Copy
+    Sparkles, AlertTriangle, CreditCard, Scroll, User, ArrowRight, Copy, Globe
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -40,6 +40,7 @@ import ProfileCompletionModal from '../common/ProfileCompletionModal';
 import { INITIAL_MODULES } from '../../../app/teacher-dashboard/inventory/initial-data';
 import { getStudentAccess } from '../../lib/student-lifecycle';
 import { fetchEffectiveClassroomParticipants } from '../../lib/classroom-participants';
+import { trackToolEvent } from '../../lib/analytics';
 
 interface StudentProfile {
     id: string;
@@ -359,6 +360,18 @@ export default function StudentDashboardContainer() {
     const [policiesInitialSubTab, setPoliciesInitialSubTab] = useState<'policies' | 'how-to'>('policies');
     const [policiesTargetGuideId, setPoliciesTargetGuideId] = useState<string | null>(null);
     const [activeGuideModalSlug, setActiveGuideModalSlug] = useState<string | null>(null);
+ 
+    const handleOpenSurToNotation = (source: string = 'student_dashboard_tools') => {
+        trackToolEvent('sur_to_notation_open', { source });
+        trackToolEvent('tool_open', { tool: 'sur_to_notation' });
+        setShowSurToNotation(true);
+    };
+
+    const handleOpenFluteTuner = (source: string = 'student_dashboard_tools') => {
+        trackToolEvent('tuner_open', { source });
+        trackToolEvent('tool_open', { tool: 'tuner' });
+        setShowFluteTuner(true);
+    };
 
     const handleNavigateToGuide = (guideId: string) => {
         setPoliciesInitialSubTab('how-to');
@@ -1748,6 +1761,9 @@ export default function StudentDashboardContainer() {
         if (audioRef.current) {
             audioRef.current.pause();
         }
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('kfa-user-role');
+        }
         await supabaseAuth.auth.signOut();
         router.push('/');
     };
@@ -2894,7 +2910,7 @@ export default function StudentDashboardContainer() {
             return;
         }
 
-        if (fullText.includes('tanpura') || fullText.includes('metronome') || fullText.includes('tuner') || fullText.includes('tool') || fullText.includes('practice suite')) {
+        if (fullText.includes('tanpura') || fullText.includes('metronome') || fullText.includes('tuner') || fullText.includes('tool') || fullText.includes('practice suite') || fullText.includes('notation') || fullText.includes('sur to notation') || fullText.includes('flute to notes')) {
             setActiveTab('library');
             return;
         }
@@ -2949,6 +2965,7 @@ export default function StudentDashboardContainer() {
             {showPracticeSuite && (
                 <PracticeSuiteModal
                     defaultTab={practiceSuiteTab}
+                    isComboMode={practiceSuiteTab === 'combosetup'}
                     onClose={() => setShowPracticeSuite(false)}
                 />
             )}
@@ -2984,11 +3001,17 @@ export default function StudentDashboardContainer() {
                     fixed md:sticky top-0 left-0 h-screen
                     ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
                 `}>
-                    <div className="p-6 flex flex-col justify-center border-b border-slate-150">
-                        <h1 className="font-black text-xl leading-tight text-slate-950 select-none">
+                    <div 
+                        onClick={() => { setActiveTab('overview'); setMobileSidebarOpen(false); }}
+                        className="p-6 flex flex-col justify-center border-b border-slate-150 cursor-pointer select-none"
+                        role="button"
+                        tabIndex={0}
+                        title="Academy Portal Overview"
+                    >
+                        <h1 className="font-black text-xl leading-tight text-slate-950">
                             Krishna Flute
                         </h1>
-                        <p className="text-xs font-semibold text-[#b45309] mt-0.5 uppercase tracking-wider select-none">
+                        <p className="text-xs font-semibold text-[#b45309] mt-0.5 uppercase tracking-wider">
                             Academy Portal
                         </p>
                     </div>
@@ -3105,6 +3128,19 @@ export default function StudentDashboardContainer() {
                             <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-200/60 text-amber-900">
                                 Forum
                             </span>
+                        </Link>
+                    </div>
+
+                    {/* Visit Main Website (Outside Academy Portal) */}
+                    <div className="px-4 py-1.5 border-t border-slate-150">
+                        <Link
+                            href="/"
+                            onClick={() => setMobileSidebarOpen(false)}
+                            className="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors group"
+                            title="Visit Main Website"
+                        >
+                            <Globe className="w-[18px] h-[18px] shrink-0 text-slate-400 group-hover:text-[#d46211] transition-colors" />
+                            <span className="text-xs font-semibold">Visit Main Website</span>
                         </Link>
                     </div>
 
@@ -3420,6 +3456,8 @@ export default function StudentDashboardContainer() {
                                     studentSpotlights={studentSpotlights}
                                     onToggleStudentSpotlight={handleToggleStudentSpotlight}
                                     onOpenGuideModal={handleOpenGuideModal}
+                                    onOpenTuner={() => handleOpenFluteTuner('student_dashboard_overview')}
+                                    onOpenSurToNotation={() => handleOpenSurToNotation('student_dashboard_overview')}
                                 />
                             </div>
                         )}
@@ -3552,8 +3590,8 @@ export default function StudentDashboardContainer() {
                                 <LibraryTab
                                     setPracticeSuiteTab={setPracticeSuiteTab}
                                     setShowPracticeSuite={setShowPracticeSuite}
-                                    onOpenTuner={() => setShowFluteTuner(true)}
-                                    onOpenSurToNotation={() => setShowSurToNotation(true)}
+                                    onOpenTuner={() => handleOpenFluteTuner('student_dashboard_tools')}
+                                    onOpenSurToNotation={() => handleOpenSurToNotation('student_dashboard_tools')}
                                 />
                             </div>
                         )}

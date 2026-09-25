@@ -125,6 +125,8 @@ interface OverviewTabProps {
     studentSpotlights?: { teacherSpotlight: any | null; studentSpotlight: any | null };
     onToggleStudentSpotlight?: (lessonId: string) => Promise<void> | void;
     onOpenGuideModal?: (slug: string) => void;
+    onOpenTuner?: () => void;
+    onOpenSurToNotation?: () => void;
 }
 
 const formatTime = (timeStr?: string) => {
@@ -170,7 +172,9 @@ export default function OverviewTab({
     batchSchedules = [],
     makeupSchedules = [],
     learningFocus,
-    onOpenGuideModal
+    onOpenGuideModal,
+    onOpenTuner,
+    onOpenSurToNotation
 }: OverviewTabProps) {
     const [latestPost, setLatestPost] = useState<BlogPostItem | null>(null);
     const [latestVideo, setLatestVideo] = useState<YouTubeVideoItem | null>(null);
@@ -668,58 +672,97 @@ export default function OverviewTab({
                             </div>
 
                             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                                Continue your daily flute practice with all built-in acoustic tools, including fine pitch tuner, concert tanpura, rhythm metronome, and beat loops.
+                                Continue your daily flute practice with all built-in acoustic tools, including fine pitch tuner, live sur notation, concert tanpura, rhythm metronome, and beat loops.
                             </p>
 
-                            <div className="grid grid-cols-2 gap-2 pt-1">
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveTab('library')}
-                                    className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
-                                >
-                                    <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
-                                        Flute Tuner
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 block mt-0.5">Accurate micro-tuning</span>
-                                </button>
+                            {/* Individual Practice Tools */}
+                            <div className="pt-1">
+                                <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-2">Individual Tools</span>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenTuner ? onOpenTuner() : setActiveTab('library')}
+                                        className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
+                                    >
+                                        <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
+                                            Flute Tuner
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 block mt-0.5">Accurate micro-tuning</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenSurToNotation ? onOpenSurToNotation() : setActiveTab('library')}
+                                        className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
+                                    >
+                                        <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-purple-600">
+                                            Flute to Notes
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 block mt-0.5">Sur to Notation</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPracticeSuiteTab?.('tanpura');
+                                            setShowPracticeSuite?.(true);
+                                        }}
+                                        className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
+                                    >
+                                        <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
+                                            Tanpura Drone
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 block mt-0.5">Custom scale & pitch</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPracticeSuiteTab?.('metronome');
+                                            setShowPracticeSuite?.(true);
+                                        }}
+                                        className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
+                                    >
+                                        <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
+                                            Practice Metronome
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 block mt-0.5">BPM & subdivisions</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPracticeSuiteTab?.('drums');
+                                            setShowPracticeSuite?.(true);
+                                        }}
+                                        className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group sm:col-span-2 md:col-span-1"
+                                    >
+                                        <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
+                                            Drum Beats
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 block mt-0.5">Step groove sequencer</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Combo Riyaz Section (Merged Tanpura + Metronome + Drums) */}
+                            <div className="mt-3 p-3 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-transparent rounded-2xl border border-amber-300/60 dark:border-amber-500/30 flex items-center justify-between gap-3">
+                                <div className="text-left">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-[#d46211] animate-pulse" />
+                                        <span className="text-[11px] font-extrabold text-amber-900 dark:text-amber-300">
+                                            Combo Session Mixer
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5">
+                                        Merged Tanpura + Metronome + Drums in sync
+                                    </p>
+                                </div>
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        setPracticeSuiteTab?.('tanpura');
+                                        setPracticeSuiteTab?.('combosetup');
                                         setShowPracticeSuite?.(true);
                                     }}
-                                    className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
+                                    className="px-3.5 py-1.5 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-2xs transition-all shrink-0 cursor-pointer"
                                 >
-                                    <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
-                                        Tanpura Drone
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 block mt-0.5">Custom scale & pitch</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setPracticeSuiteTab?.('metronome');
-                                        setShowPracticeSuite?.(true);
-                                    }}
-                                    className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
-                                >
-                                    <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
-                                        Metronome & Taal
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 block mt-0.5">BPM & Teentaal cycles</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setPracticeSuiteTab?.('drums');
-                                        setShowPracticeSuite?.(true);
-                                    }}
-                                    className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
-                                >
-                                    <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
-                                        Rhythm Loops
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 block mt-0.5">Tabla & drum beats</span>
+                                    Open Combo
                                 </button>
                             </div>
                         </div>

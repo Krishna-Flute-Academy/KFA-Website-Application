@@ -651,6 +651,19 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     </div>
                 </div>
 
+                {/* Visit Main Website (Outside Academy Portal) */}
+                <div className="pt-2 pb-1 border-t border-slate-150 dark:border-slate-800">
+                    <Link
+                        href="/"
+                        onClick={() => setIsOpen(false)}
+                        className="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Visit Main Website"
+                    >
+                        <span className="material-symbols-outlined text-[20px]">public</span>
+                        <span className="text-xs font-semibold">Visit Main Website</span>
+                    </Link>
+                </div>
+
                 <button
                     onClick={handleLogoutWithClear}
                     className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"

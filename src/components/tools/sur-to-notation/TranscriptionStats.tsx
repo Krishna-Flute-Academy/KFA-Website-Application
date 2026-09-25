@@ -9,19 +9,49 @@ interface TranscriptionStatsProps {
     noteCount: number;
     status: ListeningStatus;
     inputVolume?: number;
+    compact?: boolean;
 }
 
 export default function TranscriptionStats({
     durationSeconds,
     noteCount,
     status,
-    inputVolume = 0
+    inputVolume = 0,
+    compact = false
 }: TranscriptionStatsProps) {
     const formatDuration = (totalSec: number) => {
         const mins = Math.floor(totalSec / 60);
         const secs = totalSec % 60;
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
+
+    if (compact) {
+        return (
+            <div className="grid grid-cols-3 gap-1.5 text-center">
+                <div className="bg-white border border-slate-200/90 rounded-xl px-2 py-1.5 shadow-xs flex items-center justify-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#ecb613]" />
+                    <span className="font-mono font-black text-xs text-slate-800">
+                        {formatDuration(durationSeconds)}
+                    </span>
+                </div>
+                <div className="bg-white border border-slate-200/90 rounded-xl px-2 py-1.5 shadow-xs flex items-center justify-center gap-1.5">
+                    <Music4 className="w-3.5 h-3.5 text-[#d46211]" />
+                    <span className="font-black text-xs text-slate-800">
+                        {noteCount} <span className="font-normal text-[10px] text-slate-400">Notes</span>
+                    </span>
+                </div>
+                <div className="bg-white border border-slate-200/90 rounded-xl px-2 py-1.5 shadow-xs flex items-center justify-center gap-1.5">
+                    <Volume2 className="w-3.5 h-3.5 text-slate-500" />
+                    <div className="w-12 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-emerald-500 transition-all duration-75 rounded-full"
+                            style={{ width: `${Math.min(100, Math.max(0, inputVolume * 500))}%` }}
+                        />
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="grid grid-cols-3 gap-2 sm:gap-3">

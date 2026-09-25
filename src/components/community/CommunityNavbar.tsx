@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import { resolveUserBadge, CommunityBadge } from '../../lib/community';
+import { getAuthNavigation } from '../../lib/auth-navigation';
 
 interface CommunityNavbarProps {
     searchQuery?: string;
@@ -90,19 +91,20 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
 
     const handleSignOut = async () => {
         await supabaseAuth.auth.signOut();
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('kfa-user-role');
+        }
         setUser(null);
         setUserRole(null);
         router.refresh();
     };
 
     const badge: CommunityBadge = resolveUserBadge(userRole);
+    const authNav = getAuthNavigation(user, userRole);
 
     const getDashboardLink = () => {
         if (!userRole) return '/community';
-        const r = userRole.toLowerCase();
-        if (r === 'admin' || r === 'teacher') return '/teacher-dashboard';
-        if (r === 'student' || r === 'mentor') return '/student-dashboard';
-        return '/community';
+        return authNav.href;
     };
 
     return (
@@ -295,7 +297,7 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
                                         onClick={() => setMobileMenuOpen(false)}
                                         className="block px-3 py-2 rounded-lg text-sm font-semibold text-amber-700 hover:bg-amber-50"
                                     >
-                                        My Academy Dashboard ({badge})
+                                        {authNav.label} ({badge})
                                     </Link>
                                 ) : (
                                     <div className="px-3 py-2 text-xs font-semibold text-slate-500">

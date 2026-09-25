@@ -174,6 +174,7 @@ export default function AuthCallbackPage() {
                 localStorage.setItem('kfa-user-role', 'teacher');
                 router.push('/teacher-dashboard');
             } else if (role === 'student') {
+                localStorage.setItem('kfa-user-role', 'student');
                 router.push('/student-dashboard');
             } else {
                 // User exists but has no role assigned yet (pending)
