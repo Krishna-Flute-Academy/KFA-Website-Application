@@ -11,6 +11,7 @@ import CommunityNavbar from './CommunityNavbar';
 import DiscussionCard from './DiscussionCard';
 import CategoryPills from './CategoryPills';
 import AcademyConversionBanner from './AcademyConversionBanner';
+import CommunityUpcomingEventsShowcase from './CommunityUpcomingEventsShowcase';
 import { 
     CommunityCategory, CommunityPost, 
     getCommunityCategories, getCommunityPosts 
@@ -158,6 +159,8 @@ export default function CommunityClientView({ initialCategorySlug }: CommunityCl
                         onSelect={(slug) => setSelectedCategory(slug)}
                     />
                 </div>
+
+                <CommunityUpcomingEventsShowcase currentUserId={currentUserId} />
 
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                     {/* Discussions List Column (3 Cols) */}
@@ -376,6 +379,7 @@ export default function CommunityClientView({ initialCategorySlug }: CommunityCl
                         </div>
                     </aside>
                 </div>
+
             </main>
         </div>
     );

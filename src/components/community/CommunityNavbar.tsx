@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
-    MessageSquare, PlusCircle, Search, User, LogOut, 
+    MessageSquare, PlusCircle, Search, User, LogOut, CalendarDays,
     Menu, X, Sparkles, BookOpen, ExternalLink, ShieldCheck 
 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
@@ -138,6 +138,12 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
                         >
                             Discussions
                         </Link>
+                        <Link
+                            href="/community/events"
+                            className="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
+                        >
+                            Events
+                        </Link>
                         <Link 
                             href="/courses" 
                             className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
@@ -250,6 +256,14 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
                         <PlusCircle className="w-4 h-4" />
                         <span>Start a Discussion / Ask</span>
                     </Link>
+                    <Link
+                        href="/community/events/new"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-amber-700/30 text-amber-900 dark:text-amber-200 text-sm font-bold rounded-xl"
+                    >
+                        <CalendarDays className="w-4 h-4" />
+                        <span>Share an Event</span>
+                    </Link>
 
                     <div className="pt-2 space-y-1">
                         <Link
@@ -258,6 +272,13 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
                             className="block px-3 py-2 rounded-lg text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-slate-800"
                         >
                             All Discussions
+                        </Link>
+                        <Link
+                            href="/community/events"
+                            onClick={() => setMobileMenuOpen(false)}
+                            className="block px-3 py-2 rounded-lg text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-slate-800"
+                        >
+                            Community Events
                         </Link>
                         <Link
                             href="/#courses"
