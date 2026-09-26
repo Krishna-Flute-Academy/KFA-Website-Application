@@ -1,6 +1,11 @@
 import { supabaseAuth } from './supabase-auth';
 import { sanitizeHtml, htmlToPlainText } from './text-utils';
 
+// The production schema may temporarily be behind the moderation migration.
+// Remember the capability after the first response so a known-missing column
+// does not add a failed request before every subsequent discussion query.
+let supportsCommunityPostSoftDelete: boolean | null = null;
+
 export type CommunityAccessScope = 'public' | 'students' | 'classroom';
 export type CommunityPostType = 'question' | 'discussion';
 export type CommunityBadge = 'Admin' | 'Teacher' | 'KFA Student' | 'Community Member';
@@ -330,12 +335,16 @@ export async function getCommunityPosts(
             return q.range(from, to);
         };
 
-        let { data: posts, count, error } = await buildQuery(true);
-        if (error && (error.code === '42703' || error.message?.includes('is_deleted'))) {
+        const includeSoftDelete = supportsCommunityPostSoftDelete !== false;
+        let { data: posts, count, error } = await buildQuery(includeSoftDelete);
+        if (includeSoftDelete && error && (error.code === '42703' || error.message?.includes('is_deleted'))) {
+            supportsCommunityPostSoftDelete = false;
             const fallbackRes = await buildQuery(false);
             posts = fallbackRes.data;
             count = fallbackRes.count;
             error = fallbackRes.error;
+        } else if (!error && includeSoftDelete) {
+            supportsCommunityPostSoftDelete = true;
         }
 
         if (error) {
@@ -503,11 +512,18 @@ export async function getCommunityPostBySlug(
 /**
  * Increment view count for a post safely
  */
-export async function incrementPostView(postId: string): Promise<void> {
+export async function incrementPostView(postId: string): Promise<boolean> {
     try {
-        await (supabaseAuth.rpc('increment_community_post_view', { p_id: postId }) as unknown as Promise<any>).catch(() => {});
+        const { error } = await supabaseAuth.rpc('increment_community_post_view', { p_id: postId });
+        if (error) {
+            console.warn('[Community] Could not increment post view count:', error.message);
+            return false;
+        }
+        return true;
     } catch (err) {
-        // View count increment failures are non-blocking
+        // View count increment failures are non-blocking.
+        console.warn('[Community] Could not increment post view count:', err);
+        return false;
     }
 }
 

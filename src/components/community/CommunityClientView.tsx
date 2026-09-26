@@ -34,19 +34,26 @@ export default function CommunityClientView({ initialCategorySlug }: CommunityCl
     const [totalCount, setTotalCount] = useState(0);
     const [hasMore, setHasMore] = useState(false);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [initializing, setInitializing] = useState(true);
 
     // Initial auth & category load
     useEffect(() => {
         let isMounted = true;
         const init = async () => {
             try {
-                const { data: { session } } = await supabaseAuth.auth.getSession();
+                // Categories do not depend on the signed-in user. Load them in
+                // parallel with session resolution, then fetch discussions once
+                // with the final user context (including upvote state).
+                const [{ data: { session } }, cats] = await Promise.all([
+                    supabaseAuth.auth.getSession(),
+                    getCommunityCategories()
+                ]);
                 if (isMounted) setCurrentUserId(session?.user?.id || null);
-
-                const cats = await getCommunityCategories();
                 if (isMounted) setCategories(cats);
             } catch (e) {
                 console.error('[Community] Init error:', e);
+            } finally {
+                if (isMounted) setInitializing(false);
             }
         };
         init();
@@ -90,11 +97,12 @@ export default function CommunityClientView({ initialCategorySlug }: CommunityCl
 
     // Trigger fetch on filter change
     useEffect(() => {
+        if (initializing) return;
         const timer = setTimeout(() => {
             fetchDiscussions(true);
         }, 200);
         return () => clearTimeout(timer);
-    }, [selectedCategory, currentTab, searchQuery, currentUserId]);
+    }, [selectedCategory, currentTab, searchQuery, currentUserId, initializing]);
 
     const activeCatObj = categories.find(c => c.slug === selectedCategory);
 

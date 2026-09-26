@@ -1,5 +1,4 @@
 import { supabaseAuth } from './supabase-auth';
-import { sanitizeHtml } from './text-utils';
 import { CommunityProfile, resolveUserBadge } from './community';
 
 export const COMMUNITY_EVENT_TYPES = [
@@ -62,7 +61,22 @@ export interface CommunityEvent {
 
 export type CommunityEventPreview = Pick<CommunityEvent, 'id' | 'title' | 'event_type' | 'event_date' | 'start_time' | 'event_timezone' | 'venue' | 'city' | 'poster_url'>;
 
-export type CommunityEventInput = Omit<CommunityEvent, 'id' | 'author_id' | 'is_deleted' | 'created_at' | 'updated_at' | 'author'>;
+// This is intentionally the editable form surface, not a mirror of every
+// persisted event column. Keeping historical detail fields out of updates
+// means editing the simplified form cannot erase existing event data.
+export interface CommunityEventInput {
+    title: string;
+    event_type: CommunityEventType;
+    event_date: string;
+    start_time: string;
+    end_time?: string | null;
+    ends_next_day: boolean;
+    event_timezone: string;
+    venue?: string | null;
+    city?: string | null;
+    poster_url?: string | null;
+    external_url?: string | null;
+}
 
 export function isSafeExternalUrl(value: string): boolean {
     try {
@@ -109,15 +123,14 @@ function cleanOptional(value?: string | null): string | null {
 
 function toEventPayload(input: CommunityEventInput) {
     return {
-        ...input,
         title: input.title.trim(),
-        venue: input.venue.trim(),
-        city: input.city.trim(),
-        short_description: input.short_description.trim(),
+        event_type: input.event_type,
+        event_date: input.event_date,
+        start_time: input.start_time,
+        ends_next_day: input.ends_next_day,
         event_timezone: input.event_timezone.trim(),
-        details: cleanOptional(input.details) ? sanitizeHtml(cleanOptional(input.details)!.replace(/\n/g, '<br/>')) : null,
-        performer_name: cleanOptional(input.performer_name),
-        organizer_name: cleanOptional(input.organizer_name),
+        venue: cleanOptional(input.venue),
+        city: cleanOptional(input.city),
         poster_url: cleanOptional(input.poster_url),
         external_url: cleanOptional(input.external_url),
         end_time: cleanOptional(input.end_time),

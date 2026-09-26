@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
@@ -67,6 +67,7 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
     const [postUpvoted, setPostUpvoted] = useState(false);
     const [postUpvotesCount, setPostUpvotesCount] = useState(0);
     const [copiedLink, setCopiedLink] = useState(false);
+    const viewedPostIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         let isMounted = true;
@@ -134,8 +135,18 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                 setPostUpvoted(postData.has_upvoted || false);
                 setPostUpvotesCount(postData.upvotes_count || 0);
 
-                // Increment view
-                incrementPostView(postData.id);
+                // Count one completed, intentional detail-page open. The ref prevents
+                // duplicate increments from React effect re-runs for this same open.
+                if (viewedPostIdRef.current !== postData.id) {
+                    viewedPostIdRef.current = postData.id;
+                    const incremented = await incrementPostView(postData.id);
+                    if (incremented && isMounted) {
+                        setPost(current => current?.id === postData.id
+                            ? { ...current, views_count: (current.views_count || 0) + 1 }
+                            : current
+                        );
+                    }
+                }
 
                 // Load replies
                 const repliesData = await getCommunityReplies(postData.id, userId);
