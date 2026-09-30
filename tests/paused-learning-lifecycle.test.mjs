@@ -9,7 +9,8 @@ const {
     isStudentPaused,
     isStudentArchived,
     getStudentStatusBadge,
-    getStudentAccess
+    getStudentAccess,
+    isStudentEnrolledOnDate
 } = jiti('../src/lib/student-lifecycle.ts');
 
 const {
@@ -466,4 +467,158 @@ test('16. Messages & Broadcasts: Inactive students excluded from operational cla
     });
     assert.deepEqual(Array.from(studentIdsForLC), ['s2']);
 });
+
+test('17. Attendance Header Summaries: Inactive students excluded from batch attendance count and total', () => {
+    // Scenario: Saturday Slot 2 has 4 active students and 2 paused/inactive students
+    // In database: all 6 students have historical attendance rows for 2026-08-29
+    const permRows = [
+        { classroom_id: 'cls-sat-2', student_id: 'active-1', users: { status: 'active' } },
+        { classroom_id: 'cls-sat-2', student_id: 'active-2', users: { status: 'active' } },
+        { classroom_id: 'cls-sat-2', student_id: 'active-3', users: { status: 'active' } },
+        { classroom_id: 'cls-sat-2', student_id: 'active-4', users: { status: 'active' } },
+        { classroom_id: 'cls-sat-2', student_id: 'paused-1', users: { status: 'inactive' } },
+        { classroom_id: 'cls-sat-2', student_id: 'paused-2', users: { status: 'inactive' } }
+    ];
+    const overrideRows = [];
+    const attRows = [
+        { classroom_id: 'cls-sat-2', student_id: 'active-1', status: 'present' },
+        { classroom_id: 'cls-sat-2', student_id: 'active-2', status: 'excused' },
+        { classroom_id: 'cls-sat-2', student_id: 'active-3', status: 'absent' },
+        { classroom_id: 'cls-sat-2', student_id: 'active-4', status: 'absent' },
+        { classroom_id: 'cls-sat-2', student_id: 'paused-1', status: 'present' },
+        { classroom_id: 'cls-sat-2', student_id: 'paused-2', status: 'absent' }
+    ];
+
+    // Compute active roster students by batch
+    const enrolledCountMap = new Map();
+    const activeRosterStudentsByBatch = new Set();
+    permRows.forEach(r => {
+        if (isStudentOperationallyActive(r.users?.status)) {
+            enrolledCountMap.set(r.classroom_id, (enrolledCountMap.get(r.classroom_id) || 0) + 1);
+            activeRosterStudentsByBatch.add(`${r.classroom_id}_${r.student_id}`);
+        }
+    });
+
+    const attendanceStatsMap = new Map();
+    attRows.forEach(r => {
+        // Must filter out inactive students so they do not inflate the batch marked count
+        if (!activeRosterStudentsByBatch.has(`${r.classroom_id}_${r.student_id}`)) {
+            return;
+        }
+
+        if (!attendanceStatsMap.has(r.classroom_id)) {
+            attendanceStatsMap.set(r.classroom_id, { present: 0, absent: 0, late: 0, excused: 0 });
+        }
+        const stats = attendanceStatsMap.get(r.classroom_id);
+        if (r.status === 'present') stats.present++;
+        else if (r.status === 'absent') stats.absent++;
+        else if (r.status === 'late') stats.late++;
+        else if (r.status === 'excused') stats.excused++;
+    });
+
+    const stats = attendanceStatsMap.get('cls-sat-2');
+    const totalEnrolled = enrolledCountMap.get('cls-sat-2');
+    const totalMarked = stats.present + stats.absent + stats.late + stats.excused;
+
+    assert.equal(totalEnrolled, 4, 'Active enrolled denominator must be 4');
+    assert.equal(totalMarked, 4, 'Total marked numerator must be 4 (not 6)');
+    assert.equal(stats.present, 1);
+    assert.equal(stats.excused, 1);
+    assert.equal(stats.absent, 2);
+});
+
+test('18. Date-Aware Roster: isStudentEnrolledOnDate historical enrollment isolation', () => {
+    // Prasanna Prabhu joined on 2026-09-26
+    const prasannaRow = {
+        joined_at: '2026-09-26T07:24:19.717+00:00',
+        users: {
+            join_date: '2026-09-26',
+            created_at: '2026-09-26T07:23:06.397586+00:00'
+        }
+    };
+
+    // 19 Sept: Before joining date -> NOT enrolled
+    assert.equal(isStudentEnrolledOnDate(prasannaRow, '2026-09-19', false), false);
+    // 20 Sept: Before joining date -> NOT enrolled
+    assert.equal(isStudentEnrolledOnDate(prasannaRow, '2026-09-20', false), false);
+    // 25 Sept: Before joining date -> NOT enrolled
+    assert.equal(isStudentEnrolledOnDate(prasannaRow, '2026-09-25', false), false);
+    // 26 Sept: Joining date -> Enrolled
+    assert.equal(isStudentEnrolledOnDate(prasannaRow, '2026-09-26', false), true);
+    // 3 Oct: After joining date -> Enrolled
+    assert.equal(isStudentEnrolledOnDate(prasannaRow, '2026-10-03', false), true);
+
+    // Legitimate attendance recorded on date overrides date check
+    assert.equal(isStudentEnrolledOnDate(prasannaRow, '2026-09-19', true), true);
+
+    // Legacy user without timestamp metadata defaults safely to true
+    assert.equal(isStudentEnrolledOnDate({ joined_at: null, users: { join_date: null, created_at: null } }, '2026-09-19', false), true);
+
+    // Flat student object support (used in Classroom details page)
+    const flatPrasanna = {
+        joined_at: '2026-09-26T07:24:19.717+00:00',
+        join_date: '2026-09-26',
+        created_at: '2026-09-26T07:23:06.397586+00:00'
+    };
+    assert.equal(isStudentEnrolledOnDate(flatPrasanna, '2026-09-19', false), false);
+    assert.equal(isStudentEnrolledOnDate(flatPrasanna, '2026-09-26', false), true);
+});
+
+test('19. Date-Aware Roster: Saturday Slot 5 historical roster & summary simulation (19 Sept vs 26 Sept)', () => {
+    const batchId = 'd5679ae2-742f-41a2-a7cc-f198b639a7d1'; // Saturday Slot 5
+    const permRows = [
+        {
+            classroom_id: batchId,
+            student_id: 'rahul-dravid',
+            joined_at: '2026-08-01T00:00:00Z',
+            users: { status: 'active', join_date: '2026-08-01', created_at: '2026-08-01T00:00:00Z' }
+        },
+        {
+            classroom_id: batchId,
+            student_id: 'saransh-dravid',
+            joined_at: '2026-08-01T00:00:00Z',
+            users: { status: 'active', join_date: '2026-08-01', created_at: '2026-08-01T00:00:00Z' }
+        },
+        {
+            classroom_id: batchId,
+            student_id: 'prasanna-prabhu',
+            joined_at: '2026-09-26T07:24:19.717+00:00',
+            users: { status: 'active', join_date: '2026-09-26', created_at: '2026-09-26T07:23:06.397586+00:00' }
+        }
+    ];
+
+    // --- On 19 Sept 2026 ---
+    const date19 = '2026-09-19';
+    const attRows19 = [
+        { classroom_id: batchId, student_id: 'rahul-dravid', status: 'present', date: date19 },
+        { classroom_id: batchId, student_id: 'saransh-dravid', status: 'present', date: date19 }
+    ];
+    const physicalAttSet19 = new Set(attRows19.map(r => `${r.student_id}_${r.classroom_id}`));
+
+    const enrolled19 = permRows.filter(r => {
+        const hasAtt = physicalAttSet19.has(`${r.student_id}_${r.classroom_id}`);
+        return isStudentOperationallyActive(r.users?.status) && isStudentEnrolledOnDate(r, date19, hasAtt);
+    });
+
+    assert.equal(enrolled19.length, 2, 'Only 2 students enrolled on 19 Sept (Prasanna excluded)');
+    assert.deepEqual(enrolled19.map(r => r.student_id), ['rahul-dravid', 'saransh-dravid']);
+
+    // --- On 26 Sept 2026 ---
+    const date26 = '2026-09-26';
+    const attRows26 = [
+        { classroom_id: batchId, student_id: 'rahul-dravid', status: 'absent', date: date26 },
+        { classroom_id: batchId, student_id: 'saransh-dravid', status: 'absent', date: date26 },
+        { classroom_id: batchId, student_id: 'prasanna-prabhu', status: 'present', date: date26 }
+    ];
+    const physicalAttSet26 = new Set(attRows26.map(r => `${r.student_id}_${r.classroom_id}`));
+
+    const enrolled26 = permRows.filter(r => {
+        const hasAtt = physicalAttSet26.has(`${r.student_id}_${r.classroom_id}`);
+        return isStudentOperationallyActive(r.users?.status) && isStudentEnrolledOnDate(r, date26, hasAtt);
+    });
+
+    assert.equal(enrolled26.length, 3, 'All 3 students enrolled on 26 Sept (Prasanna included)');
+    assert.deepEqual(enrolled26.map(r => r.student_id), ['rahul-dravid', 'saransh-dravid', 'prasanna-prabhu']);
+});
+
 

@@ -30,6 +30,7 @@ import {
     SpecialSessionLifecycleStatus 
 } from '../../lib/special-sessions';
 import { fetchEffectiveClassroomParticipants } from '../../lib/classroom-participants';
+import { isStudentOperationallyActive, isStudentEnrolledOnDate } from '../../lib/student-lifecycle';
 
 // Import subcomponents
 import StatsSummary from './StatsSummary';
@@ -1569,14 +1570,16 @@ export default function TeacherDashboardContainer() {
                 } else {
                     const { data } = await supabaseAuth
                         .from('classroom_students')
-                        .select('student_id, users!student_id(name, profile_pic_url)')
+                        .select('student_id, joined_at, users!student_id(name, profile_pic_url, join_date, created_at, status)')
                         .eq('classroom_id', evt.classroom_id);
                     
-                    studentMap[evt.classroom_id] = (data || []).map((row: any) => ({
-                        id: row.student_id,
-                        name: row.users?.name || 'Student',
-                        profile_pic_url: row.users?.profile_pic_url || undefined
-                    }));
+                    studentMap[evt.classroom_id] = (data || [])
+                        .filter((row: any) => isStudentOperationallyActive(row.users?.status) && isStudentEnrolledOnDate(row, dateStr))
+                        .map((row: any) => ({
+                            id: row.student_id,
+                            name: row.users?.name || 'Student',
+                            profile_pic_url: row.users?.profile_pic_url || undefined
+                        }));
                 }
             }
         }

@@ -161,3 +161,201 @@ test('On-Behalf-Of Attendance: Absent and Excused on behalf of target date', () 
     assert.equal(sep5.creditImpact, 'consumed', 'Unexcused absence on behalf consumes credit');
     assert.equal(ledger.summary.unresolvedSessions, 0, 'No missing attendance warning');
 });
+
+const {
+    isQualifyingAlternativeAttendance,
+    buildCoveredAttendanceMap
+} = jiti('../src/lib/on-behalf-attendance.ts');
+
+test('On-Behalf-Of Lock: Recorded statuses (present, late, absent, excused) lock target date', () => {
+    const scheduledDate = '2026-09-12';
+
+    // Present on 29 Aug on behalf of 12 Sept
+    assert.equal(
+        isQualifyingAlternativeAttendance(
+            { date: '2026-08-29', on_behalf_of_date: '2026-09-12', status: 'present' },
+            scheduledDate
+        ),
+        true,
+        'Present on alternative date must qualify as covered'
+    );
+
+    // Late on 29 Aug on behalf of 12 Sept
+    assert.equal(
+        isQualifyingAlternativeAttendance(
+            { date: '2026-08-29', on_behalf_of_date: '2026-09-12', status: 'late' },
+            scheduledDate
+        ),
+        true,
+        'Late on alternative date must qualify as covered'
+    );
+
+    // Absent on 29 Aug on behalf of 12 Sept - attendance outcome decided as absent
+    assert.equal(
+        isQualifyingAlternativeAttendance(
+            { date: '2026-08-29', on_behalf_of_date: '2026-09-12', status: 'absent' },
+            scheduledDate
+        ),
+        true,
+        'Absent on alternative date represents finalized attendance outcome and must lock student on target date'
+    );
+
+    // Excused on 29 Aug on behalf of 12 Sept - attendance outcome decided as excused
+    assert.equal(
+        isQualifyingAlternativeAttendance(
+            { date: '2026-08-29', on_behalf_of_date: '2026-09-12', status: 'excused' },
+            scheduledDate
+        ),
+        true,
+        'Excused on alternative date represents finalized attendance outcome and must lock student on target date'
+    );
+});
+
+test('On-Behalf-Of Lock: Self-matching guard prevents matching current date row as alternative', () => {
+    const scheduledDate = '2026-09-12';
+
+    // Row on 12 Sept with on_behalf_of_date = 12 Sept (self-date)
+    assert.equal(
+        isQualifyingAlternativeAttendance(
+            { date: '2026-09-12', on_behalf_of_date: '2026-09-12', status: 'present' },
+            scheduledDate
+        ),
+        false,
+        'Attendance row on scheduled date itself must never self-match as an alternative covering attendance'
+    );
+});
+
+test('On-Behalf-Of Lock: Partial Batch scenario on scheduled date', () => {
+    const targetScheduledDate = '2026-09-12';
+
+    const dbRows = [
+        // Student A: Present on 29 Aug on behalf of 12 Sept
+        { id: 'att-1', student_id: 'student-A', classroom_id: 'cls-1', date: '2026-08-29', status: 'present', on_behalf_of_date: '2026-09-12' },
+        // Student B: Late on 29 Aug on behalf of 12 Sept
+        { id: 'att-2', student_id: 'student-B', classroom_id: 'cls-1', date: '2026-08-29', status: 'late', on_behalf_of_date: '2026-09-12' },
+        // Student C: Absent on 29 Aug on behalf of 12 Sept
+        { id: 'att-3', student_id: 'student-C', classroom_id: 'cls-1', date: '2026-08-29', status: 'absent', on_behalf_of_date: '2026-09-12' },
+        // Student D: Unmarked on 29 Aug (no row)
+    ];
+
+    const coveredMap = buildCoveredAttendanceMap(dbRows, targetScheduledDate);
+
+    // Students A, B, and C received attendance outcomes on 29 Aug, so all 3 must be locked on 12 Sept
+    assert.ok(coveredMap['student-A'], 'Student A must be locked on 12 Sept');
+    assert.equal(coveredMap['student-A'].actualDate, '2026-08-29');
+    assert.equal(coveredMap['student-A'].status, 'present');
+
+    assert.ok(coveredMap['student-B'], 'Student B must be locked on 12 Sept');
+    assert.equal(coveredMap['student-B'].actualDate, '2026-08-29');
+    assert.equal(coveredMap['student-B'].status, 'late');
+
+    assert.ok(coveredMap['student-C'], 'Student C must be locked on 12 Sept with absent status');
+    assert.equal(coveredMap['student-C'].actualDate, '2026-08-29');
+    assert.equal(coveredMap['student-C'].status, 'absent');
+
+    // Only Student D was genuinely unmarked on 29 Aug, so must remain editable on 12 Sept
+    assert.equal(coveredMap['student-D'], undefined, 'Student D was unmarked on 29 Aug, so must remain editable on 12 Sept');
+});
+
+test('On-Behalf-Of Attendance: Real Saturday Slot 1 Acceptance Scenario (29 Aug -> 12 Sept)', () => {
+    // 29 Aug 2026 — Saturday Slot 1
+    // Class taken on behalf of 12 Sept:
+    // Snigdha Dani -> PRESENT
+    // Paramasivam Mukherjee -> PRESENT
+    // Divya AP -> ABSENT
+    const targetScheduledDate = '2026-09-12';
+    const dbRows29Aug = [
+        { id: 'att-snigdha', student_id: 'snigdha-id', classroom_id: 'slot-1', date: '2026-08-29', status: 'present', on_behalf_of_date: '2026-09-12' },
+        { id: 'att-param', student_id: 'param-id', classroom_id: 'slot-1', date: '2026-08-29', status: 'present', on_behalf_of_date: '2026-09-12' },
+        { id: 'att-divya', student_id: 'divya-id', classroom_id: 'slot-1', date: '2026-08-29', status: 'absent', on_behalf_of_date: '2026-09-12' }
+    ];
+
+    const coveredMap = buildCoveredAttendanceMap(dbRows29Aug, targetScheduledDate);
+
+    // All 3 students are locked and have their exact mapped status
+    assert.ok(coveredMap['snigdha-id']);
+    assert.equal(coveredMap['snigdha-id'].status, 'present');
+    assert.equal(coveredMap['snigdha-id'].actualDate, '2026-08-29');
+
+    assert.ok(coveredMap['param-id']);
+    assert.equal(coveredMap['param-id'].status, 'present');
+    assert.equal(coveredMap['param-id'].actualDate, '2026-08-29');
+
+    assert.ok(coveredMap['divya-id']);
+    assert.equal(coveredMap['divya-id'].status, 'absent');
+    assert.equal(coveredMap['divya-id'].actualDate, '2026-08-29');
+
+    // Simulate batch header summary calculation on 12 Sept
+    const permRows = [
+        { classroom_id: 'slot-1', student_id: 'snigdha-id', users: { status: 'active' } },
+        { classroom_id: 'slot-1', student_id: 'param-id', users: { status: 'active' } },
+        { classroom_id: 'slot-1', student_id: 'divya-id', users: { status: 'active' } }
+    ];
+    const physicalAtt12Sept = []; // No physical rows for 12 Sept
+
+    const stats = { present: 0, absent: 0, late: 0, excused: 0 };
+    permRows.forEach(r => {
+        const cov = coveredMap[r.student_id];
+        if (cov) {
+            if (cov.status === 'present') stats.present++;
+            else if (cov.status === 'late') stats.late++;
+            else if (cov.status === 'absent') stats.absent++;
+            else if (cov.status === 'excused') stats.excused++;
+        }
+    });
+
+    const totalMarked = stats.present + stats.late + stats.absent + stats.excused;
+    assert.equal(stats.present, 2, '2 students present');
+    assert.equal(stats.absent, 1, '1 student absent');
+    assert.equal(totalMarked, 3, 'All 3 students are marked');
+    assert.equal(permRows.length, 3, 'Total roster is 3');
+    // Result on 12 Sept is MARKED 3/3!
+});
+
+test('On-Behalf-Of Lock: Clearing mapping immediately unlocks student on scheduled date', () => {
+    const targetScheduledDate = '2026-09-12';
+
+    // Admin cleared on_behalf_of_date on 29 Aug
+    const dbRowsCleared = [
+        { id: 'att-1', student_id: 'student-A', classroom_id: 'cls-1', date: '2026-08-29', status: 'present', on_behalf_of_date: null }
+    ];
+
+    const coveredMap = buildCoveredAttendanceMap(dbRowsCleared, targetScheduledDate);
+    assert.equal(coveredMap['student-A'], undefined, 'Student A must be immediately unlocked when mapping is cleared');
+});
+
+test('On-Behalf-Of Lock: Changing mapping moves lock to the new scheduled date', () => {
+    // Admin changes mapping from 12 Sept to 19 Sept
+    const dbRowsChanged = [
+        { id: 'att-1', student_id: 'student-A', classroom_id: 'cls-1', date: '2026-08-29', status: 'present', on_behalf_of_date: '2026-09-19' }
+    ];
+
+    // Check 12 Sept: should NOT be locked
+    const covered12Sept = buildCoveredAttendanceMap(dbRowsChanged, '2026-09-12');
+    assert.equal(covered12Sept['student-A'], undefined, 'Student A must not be locked on 12 Sept');
+
+    // Check 19 Sept: should BE locked
+    const covered19Sept = buildCoveredAttendanceMap(dbRowsChanged, '2026-09-19');
+    assert.ok(covered19Sept['student-A'], 'Student A must be locked on 19 Sept');
+    assert.equal(covered19Sept['student-A'].actualDate, '2026-08-29');
+});
+
+test('On-Behalf-Of Lock: Guest and Makeup students are isolated by student_id', () => {
+    const targetScheduledDate = '2026-09-12';
+
+    const dbRows = [
+        // Regular student in Class 1
+        { id: 'att-1', student_id: 'student-1', classroom_id: 'cls-1', date: '2026-08-29', status: 'present', on_behalf_of_date: '2026-09-12' },
+        // Guest/Makeup student attending Class 1 on 29 Aug
+        { id: 'att-guest', student_id: 'guest-student', classroom_id: 'cls-1', date: '2026-08-29', status: 'present', on_behalf_of_date: '2026-09-12' },
+        // Another student in Class 2 who was NOT marked on behalf of 12 Sept
+        { id: 'att-2', student_id: 'student-2', classroom_id: 'cls-2', date: '2026-08-29', status: 'present', on_behalf_of_date: null }
+    ];
+
+    const coveredMap = buildCoveredAttendanceMap(dbRows, targetScheduledDate);
+
+    assert.ok(coveredMap['student-1'], 'Student 1 is locked');
+    assert.ok(coveredMap['guest-student'], 'Guest student is locked strictly by student_id');
+    assert.equal(coveredMap['student-2'], undefined, 'Student 2 is not locked');
+});
+

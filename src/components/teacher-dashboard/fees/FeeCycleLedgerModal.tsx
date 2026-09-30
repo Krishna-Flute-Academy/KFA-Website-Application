@@ -35,6 +35,7 @@ interface FeeCycleLedgerModalProps {
     studentId: string;
     loading?: boolean;
     onRefresh?: () => void;
+    onViewAttendanceHistory?: () => void;
 }
 
 export default function FeeCycleLedgerModal({
@@ -46,7 +47,8 @@ export default function FeeCycleLedgerModal({
     studentAvatar,
     studentId,
     loading = false,
-    onRefresh
+    onRefresh,
+    onViewAttendanceHistory
 }: FeeCycleLedgerModalProps) {
     const modalRef = useRef<HTMLDivElement>(null);
     const [showArrangeMakeup, setShowArrangeMakeup] = useState(false);
@@ -133,14 +135,28 @@ export default function FeeCycleLedgerModal({
                         </div>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="size-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
-                        aria-label="Close modal"
-                    >
-                        <X className="size-4" />
-                    </button>
+                    <div className="flex items-center gap-2 ml-auto shrink-0">
+                        {onViewAttendanceHistory && (
+                            <button
+                                type="button"
+                                onClick={onViewAttendanceHistory}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer"
+                                title="View complete attendance timeline across all classrooms"
+                            >
+                                <CalendarCheck className="size-3.5 text-amber-600 dark:text-amber-400" />
+                                <span className="hidden sm:inline">Attendance History</span>
+                                <span className="sm:hidden">History</span>
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="size-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            aria-label="Close modal"
+                        >
+                            <X className="size-4" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Body Content */}
@@ -428,6 +444,19 @@ export default function FeeCycleLedgerModal({
                 {/* Footer */}
                 <div className="p-3 sm:p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-wrap items-center justify-between gap-2 shrink-0 text-xs">
                     <div className="flex items-center gap-3">
+                        {onViewAttendanceHistory && (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={onViewAttendanceHistory}
+                                    className="text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 font-medium flex items-center gap-1 hover:underline cursor-pointer"
+                                >
+                                    <CalendarCheck className="size-3" />
+                                    Full Attendance Timeline
+                                </button>
+                                <span className="text-slate-300 dark:text-slate-700">•</span>
+                            </>
+                        )}
                         <Link
                             href={`/teacher-dashboard/attendance`}
                             onClick={onClose}

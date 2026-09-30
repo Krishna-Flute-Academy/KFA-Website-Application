@@ -6,6 +6,8 @@ import {
     CheckCircle, X, TrendingUp, Loader2
 } from 'lucide-react';
 
+import { CoveredAttendanceRecord } from '../../lib/on-behalf-attendance';
+
 interface AttendanceTabProps {
     attendanceDate: string;
     setAttendanceDate: (date: string) => void;
@@ -16,6 +18,7 @@ interface AttendanceTabProps {
     handleMarkClassroomAttendance: (studentId: string, status: string) => Promise<void>;
     handleUnmarkClassroomAttendance?: (studentId: string) => Promise<void>;
     formatLocalDate: (dateStr: string) => Date;
+    coveredAttendanceMap?: Record<string, CoveredAttendanceRecord>;
 }
 
 export default function AttendanceTab({
@@ -27,12 +30,21 @@ export default function AttendanceTab({
     isSavingAttendanceMap,
     handleMarkClassroomAttendance,
     handleUnmarkClassroomAttendance,
-    formatLocalDate
+    formatLocalDate,
+    coveredAttendanceMap = {}
 }: AttendanceTabProps) {
     const activeRecords = Object.values(attendanceRecords);
     const totalCount = activeAttendanceRoster.length;
-    const presentCount = activeRecords.filter(r => r === 'present').length;
-    const lateCount = activeRecords.filter(r => r === 'late').length;
+
+    // Incorporate covered students if not physically marked
+    const coveredStudents = activeAttendanceRoster.filter(s => {
+        return !attendanceRecords[s.student_id] && coveredAttendanceMap[s.student_id];
+    });
+    const coveredPresentCount = coveredStudents.filter(s => coveredAttendanceMap[s.student_id].status === 'present').length;
+    const coveredLateCount = coveredStudents.filter(s => coveredAttendanceMap[s.student_id].status === 'late').length;
+
+    const presentCount = activeRecords.filter(r => r === 'present').length + coveredPresentCount;
+    const lateCount = activeRecords.filter(r => r === 'late').length + coveredLateCount;
     const absentCount = activeRecords.filter(r => r === 'absent').length;
     const excusedCount = activeRecords.filter(r => r === 'excused').length;
     const activeTotalCount = totalCount - excusedCount;
@@ -149,15 +161,19 @@ export default function AttendanceTab({
                         {activeAttendanceRoster.map((student) => {
                             const status = attendanceRecords[student.student_id];
                             const isSaving = isSavingAttendanceMap[student.student_id];
+                            const coveredInfo = coveredAttendanceMap[student.student_id];
+                            const isCoveredLocked = !!coveredInfo;
+                            const currentStatus = isCoveredLocked ? (coveredInfo.status as any) : status;
                             return (
                                 <div 
                                     key={student.id} 
                                     onDoubleClick={() => {
+                                        if (isCoveredLocked) return;
                                         if (status && handleUnmarkClassroomAttendance) {
                                             handleUnmarkClassroomAttendance(student.student_id);
                                         }
                                     }}
-                                    title={status ? "Double-click marked section to unmark attendance" : undefined}
+                                    title={isCoveredLocked ? `Attendance covered on ${coveredInfo.actualDate}` : (status ? "Double-click marked section to unmark attendance" : undefined)}
                                     className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-all group select-none"
                                 >
                                     <div className="flex items-center gap-4">
@@ -174,6 +190,12 @@ export default function AttendanceTab({
                                                 {student.is_makeup && (
                                                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300/60 dark:border-amber-700/60 shadow-xs">
                                                         GUEST • MAKEUP
+                                                    </span>
+                                                )}
+                                                {isCoveredLocked && (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                                                        <CheckCircle className="w-3 h-3 text-emerald-500" />
+                                                        <span>Already counted on {formatLocalDate(coveredInfo.actualDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
                                                     </span>
                                                 )}
                                             </div>
@@ -203,28 +225,34 @@ export default function AttendanceTab({
                                             { key: 'late', label: 'Late', color: 'amber', border: 'border-amber-200 dark:border-amber-800', activeBg: 'bg-amber-500 text-white shadow-lg shadow-amber-500/20' },
                                             { key: 'excused', label: 'Excused', color: 'slate', border: 'border-slate-200 dark:border-slate-700', activeBg: 'bg-slate-600 text-white shadow-lg shadow-slate-600/20' }
                                         ] as const).map(opt => {
-                                            const isActive = status === opt.key;
+                                            const isActive = currentStatus === opt.key;
                                             return (
                                                 <button
                                                     key={opt.key}
-                                                    disabled={isSaving}
-                                                    title={isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`}
+                                                    disabled={isSaving || isCoveredLocked}
+                                                    title={isCoveredLocked ? `Attendance covered on ${coveredInfo.actualDate}` : (isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`)}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
+                                                        if (isCoveredLocked) return;
                                                         handleMarkClassroomAttendance(student.student_id, opt.key);
                                                     }}
                                                     onDoubleClick={(e) => {
                                                         e.stopPropagation();
+                                                        if (isCoveredLocked) return;
                                                         if (handleUnmarkClassroomAttendance) {
                                                             handleUnmarkClassroomAttendance(student.student_id);
                                                         } else {
                                                             handleMarkClassroomAttendance(student.student_id, opt.key);
                                                         }
                                                     }}
-                                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
-                                                        isActive 
-                                                            ? opt.activeBg
-                                                            : `border ${opt.border} bg-white dark:bg-slate-900 text-slate-505 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800`
+                                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
+                                                        isCoveredLocked
+                                                            ? (isActive 
+                                                                ? `${opt.activeBg} opacity-85 cursor-not-allowed` 
+                                                                : `border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 dark:text-slate-600 opacity-40 cursor-not-allowed`)
+                                                            : (isActive 
+                                                                ? `${opt.activeBg} cursor-pointer`
+                                                                : `border ${opt.border} bg-white dark:bg-slate-900 text-slate-505 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer`)
                                                     }`}
                                                 >
                                                     {opt.label}

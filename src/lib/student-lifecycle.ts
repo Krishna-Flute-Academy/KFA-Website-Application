@@ -143,3 +143,46 @@ export function getStudentStatusBadge(status?: string | null): {
     };
 }
 
+/**
+ * Determines whether a student was enrolled/assigned to a classroom on or before a given date.
+ * If the student already has recorded or covered attendance on that date, they are always considered eligible.
+ * Otherwise, resolves the effective joining date as the earliest among:
+ *   - classroom_students.joined_at
+ *   - users.join_date
+ *   - users.created_at
+ * Returns true if effectiveDate <= selectedDate, or true as safe fallback if no date metadata exists.
+ */
+export function isStudentEnrolledOnDate(
+    enrollment: {
+        joined_at?: string | null;
+        join_date?: string | null;
+        created_at?: string | null;
+        users?: {
+            join_date?: string | null;
+            created_at?: string | null;
+        } | null;
+    } | null | undefined,
+    selectedDate: string,
+    hasAttendanceOnDate: boolean = false
+): boolean {
+    if (hasAttendanceOnDate) return true;
+    if (!enrollment) return false;
+
+    // If explicit classroom enrollment date is present, it is authoritative
+    if (enrollment.joined_at) {
+        const classJoinDate = enrollment.joined_at.split('T')[0];
+        return classJoinDate <= selectedDate;
+    }
+
+    // Fallbacks if classroom_students row does not have joined_at
+    const fallbackDates: string[] = [];
+    if (enrollment.join_date) fallbackDates.push(enrollment.join_date.split('T')[0]);
+    if (enrollment.created_at) fallbackDates.push(enrollment.created_at.split('T')[0]);
+    if (enrollment.users?.join_date) fallbackDates.push(enrollment.users.join_date.split('T')[0]);
+    if (enrollment.users?.created_at) fallbackDates.push(enrollment.users.created_at.split('T')[0]);
+
+    if (fallbackDates.length === 0) return true;
+    fallbackDates.sort();
+    return fallbackDates[0] <= selectedDate;
+}
+

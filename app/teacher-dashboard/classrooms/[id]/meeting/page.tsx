@@ -11,6 +11,7 @@ import TeacherSidebar from '../../../../../src/components/TeacherSidebar';
 import ClassroomDashboardPage from '../page';
 import { sendClassroomNotification } from '../../../../../src/lib/notifications';
 import { isStudentOperationallyActive } from '../../../../../src/lib/student-lifecycle';
+import { CoveredAttendanceRecord, buildCoveredAttendanceMap } from '../../../../../src/lib/on-behalf-attendance';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionType = 'online' | 'offline';
@@ -37,6 +38,7 @@ export default function MeetingPage() {
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
     const [classroomName, setClassroomName] = useState('');
     const [students, setStudents] = useState<SessionStudent[]>([]);
+    const [coveredMap, setCoveredMap] = useState<Record<string, CoveredAttendanceRecord>>({});
 
     // Step flow
     const [step, setStep] = useState<Step>(1);
@@ -69,8 +71,8 @@ export default function MeetingPage() {
                 if (classroom) {
                     setClassroomName(classroom.name);
 
-                    // Fetch roster, overrides, and pre-existing attendance concurrently
-                    const [rosterRes, overrideRes, attendanceRes] = await Promise.all([
+                    // Fetch roster, overrides, pre-existing attendance, and covered alternative attendance concurrently
+                    const [rosterRes, overrideRes, attendanceRes, coveredRes] = await Promise.all([
                         classroom.type === 'temporary'
                             ? supabaseAuth
                                 .from('session_student_overrides')
@@ -91,7 +93,13 @@ export default function MeetingPage() {
                             .from('attendance')
                             .select('student_id, status')
                             .eq('classroom_id', classroomId)
-                            .eq('date', sessionDate)
+                            .eq('date', sessionDate),
+                        supabaseAuth
+                            .from('attendance')
+                            .select('id, student_id, classroom_id, date, status, on_behalf_of_date')
+                            .eq('on_behalf_of_date', sessionDate)
+                            .neq('date', sessionDate)
+                            .in('status', ['present', 'late', 'absent', 'excused'])
                     ]);
 
                     const isLearningCircle = classroom.type === 'learning_circle';
@@ -143,6 +151,9 @@ export default function MeetingPage() {
                         }));
                     }
 
+                    const loadedCoveredMap = buildCoveredAttendanceMap(coveredRes.data || [], sessionDate);
+                    setCoveredMap(loadedCoveredMap);
+
                     const recordsMap: Record<string, AttendanceStatus> = {};
                     (attendanceRes.data || []).forEach((row: any) => {
                         recordsMap[row.student_id] = row.status;
@@ -152,7 +163,9 @@ export default function MeetingPage() {
                         id: r.student_id,
                         name: r.users?.name || 'Unknown',
                         profile_pic_url: r.users?.profile_pic_url || null,
-                        attendance: recordsMap[r.student_id] || null,
+                        attendance: loadedCoveredMap[r.student_id]
+                            ? (loadedCoveredMap[r.student_id].status as AttendanceStatus)
+                            : (recordsMap[r.student_id] || null),
                     }));
 
                     setStudents(formatted);
@@ -199,22 +212,35 @@ export default function MeetingPage() {
         const updateAttendanceForDate = async () => {
             if (!classroomId || students.length === 0) return;
             try {
-                const { data, error } = await supabaseAuth
-                    .from('attendance')
-                    .select('student_id, status')
-                    .eq('classroom_id', classroomId)
-                    .eq('date', sessionDate);
+                const [attRes, coveredRes] = await Promise.all([
+                    supabaseAuth
+                        .from('attendance')
+                        .select('student_id, status')
+                        .eq('classroom_id', classroomId)
+                        .eq('date', sessionDate),
+                    supabaseAuth
+                        .from('attendance')
+                        .select('id, student_id, classroom_id, date, status, on_behalf_of_date')
+                        .eq('on_behalf_of_date', sessionDate)
+                        .neq('date', sessionDate)
+                        .in('status', ['present', 'late', 'absent', 'excused'])
+                ]);
 
-                if (error) throw error;
+                if (attRes.error) throw attRes.error;
+
+                const dateCoveredMap = buildCoveredAttendanceMap(coveredRes.data || [], sessionDate);
+                setCoveredMap(dateCoveredMap);
 
                 const recordsMap: Record<string, AttendanceStatus> = {};
-                (data || []).forEach((row: any) => {
+                (attRes.data || []).forEach((row: any) => {
                     recordsMap[row.student_id] = row.status;
                 });
 
                 setStudents(prev => prev.map(s => ({
                     ...s,
-                    attendance: recordsMap[s.id] || null
+                    attendance: dateCoveredMap[s.id]
+                        ? (dateCoveredMap[s.id].status as AttendanceStatus)
+                        : (recordsMap[s.id] || null)
                 })));
             } catch (err) {
                 console.error('Error updating attendance for date:', err);
@@ -235,6 +261,7 @@ export default function MeetingPage() {
 
     // ── Attendance helpers ────────────────────────────────────────────────────
     const markStudent = (studentId: string, status: AttendanceStatus) => {
+        if (coveredMap[studentId]) return;
         setStudents(prev => prev.map(s => {
             if (s.id === studentId) {
                 const nextStatus = s.attendance === status ? null : status;
@@ -245,11 +272,15 @@ export default function MeetingPage() {
     };
 
     const unmarkStudent = (studentId: string) => {
+        if (coveredMap[studentId]) return;
         setStudents(prev => prev.map(s => s.id === studentId ? { ...s, attendance: null } : s));
     };
 
     const markAllPresent = () => {
-        setStudents(prev => prev.map(s => ({ ...s, attendance: 'present' })));
+        setStudents(prev => prev.map(s => {
+            if (coveredMap[s.id]) return s;
+            return { ...s, attendance: 'present' };
+        }));
     };
 
     const stats = useMemo(() => {
@@ -269,8 +300,9 @@ export default function MeetingPage() {
         setSavingAttendance(true);
         const t0 = performance.now();
         try {
+            // Exclude covered students whose attendance belongs to the alternative date
             const rowsToUpsert = students
-                .filter(s => s.attendance !== null)
+                .filter(s => s.attendance !== null && !coveredMap[s.id])
                 .map(s => ({
                     student_id: s.id,
                     classroom_id: classroomId,
@@ -280,7 +312,7 @@ export default function MeetingPage() {
                 }));
 
             const nullStudentIds = students
-                .filter(s => s.attendance === null)
+                .filter(s => s.attendance === null && !coveredMap[s.id])
                 .map(s => s.id);
 
             // Parallel execution: Attendance upsert, null deletion, and start_classroom_session RPC
@@ -598,69 +630,90 @@ export default function MeetingPage() {
 
                             {/* Student roster listing */}
                             <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[400px] overflow-y-auto pr-1">
-                                {students.map((student) => (
-                                    <div key={student.id} className="py-4 first:pt-0 last:pb-0">
-                                        <div 
-                                            key={student.id} 
-                                            onDoubleClick={() => {
-                                                if (student.attendance) {
-                                                    unmarkStudent(student.id);
-                                                }
-                                            }}
-                                            title={student.attendance ? "Double-click marked section to unmark attendance" : undefined}
-                                            className="flex items-center justify-between gap-4 flex-wrap md:flex-nowrap select-none"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-9 h-9 rounded-full bg-[#ecb613]/10 flex items-center justify-center border-2 border-white shadow-sm dark:border-slate-800 flex-shrink-0">
-                                                    {student.profile_pic_url ? (
-                                                        <img src={student.profile_pic_url} alt={student.name} className="w-full h-full rounded-full object-cover" />
-                                                    ) : (
-                                                        <span className="text-xs font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
-                                                    )}
+                                {students.map((student) => {
+                                    const coveredInfo = coveredMap[student.id];
+                                    const isCoveredLocked = !!coveredInfo;
+                                    const currentStatus = isCoveredLocked ? (coveredInfo.status as any) : student.attendance;
+                                    return (
+                                        <div key={student.id} className="py-4 first:pt-0 last:pb-0">
+                                            <div 
+                                                key={student.id} 
+                                                onDoubleClick={() => {
+                                                    if (isCoveredLocked) return;
+                                                    if (student.attendance) {
+                                                        unmarkStudent(student.id);
+                                                    }
+                                                }}
+                                                title={isCoveredLocked ? `Attendance covered on ${coveredInfo.actualDate}` : (student.attendance ? "Double-click marked section to unmark attendance" : undefined)}
+                                                className="flex items-center justify-between gap-4 flex-wrap md:flex-nowrap select-none"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-9 h-9 rounded-full bg-[#ecb613]/10 flex items-center justify-center border-2 border-white shadow-sm dark:border-slate-800 flex-shrink-0">
+                                                        {student.profile_pic_url ? (
+                                                            <img src={student.profile_pic_url} alt={student.name} className="w-full h-full rounded-full object-cover" />
+                                                        ) : (
+                                                            <span className="text-xs font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0 text-left">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{student.name}</p>
+                                                            {isCoveredLocked && (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                                                                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                                                                    <span>Already counted on {coveredInfo.actualDate}</span>
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {student.attendance === null && !isCoveredLocked && (
+                                                            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">Not marked yet</p>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div className="flex-1 min-w-0 text-left">
-                                                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{student.name}</p>
-                                                    {student.attendance === null && (
-                                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">Not marked yet</p>
-                                                    )}
-                                                </div>
-                                            </div>
 
-                                            {/* Attendance buttons */}
-                                            <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
-                                                {([
-                                                    { key: 'present', label: 'Present', color: 'emerald', border: 'border-emerald-200 dark:border-emerald-900/30', activeBg: 'bg-emerald-500 text-white shadow-md shadow-emerald-200 dark:shadow-none' },
-                                                    { key: 'absent', label: 'Absent', color: 'rose', border: 'border-rose-200 dark:border-rose-900/30', activeBg: 'bg-rose-500 text-white shadow-md shadow-rose-200 dark:shadow-none' },
-                                                    { key: 'late', label: 'Late', color: 'amber', border: 'border-amber-200 dark:border-amber-900/30', activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-200 dark:shadow-none' },
-                                                    { key: 'excused', label: 'Excused', color: 'slate', border: 'border-slate-200 dark:border-slate-700', activeBg: 'bg-slate-600 text-white shadow-md shadow-slate-200 dark:shadow-none' }
-                                                ] as const).map(opt => {
-                                                    const isActive = student.attendance === opt.key;
-                                                    return (
-                                                        <button
-                                                            key={opt.key}
-                                                            title={isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                markStudent(student.id, opt.key);
-                                                            }}
-                                                            onDoubleClick={(e) => {
-                                                                e.stopPropagation();
-                                                                unmarkStudent(student.id);
-                                                            }}
-                                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all duration-200 cursor-pointer ${
-                                                                isActive 
-                                                                    ? opt.activeBg
-                                                                    : `border ${opt.border} bg-white dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200`
-                                                            }`}
-                                                        >
-                                                            {opt.label}
-                                                        </button>
-                                                    );
-                                                })}
+                                                {/* Attendance buttons */}
+                                                <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+                                                    {([
+                                                        { key: 'present', label: 'Present', color: 'emerald', border: 'border-emerald-200 dark:border-emerald-900/30', activeBg: 'bg-emerald-500 text-white shadow-md shadow-emerald-200 dark:shadow-none' },
+                                                        { key: 'absent', label: 'Absent', color: 'rose', border: 'border-rose-200 dark:border-rose-900/30', activeBg: 'bg-rose-500 text-white shadow-md shadow-rose-200 dark:shadow-none' },
+                                                        { key: 'late', label: 'Late', color: 'amber', border: 'border-amber-200 dark:border-amber-900/30', activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-200 dark:shadow-none' },
+                                                        { key: 'excused', label: 'Excused', color: 'slate', border: 'border-slate-200 dark:border-slate-700', activeBg: 'bg-slate-600 text-white shadow-md shadow-slate-200 dark:shadow-none' }
+                                                    ] as const).map(opt => {
+                                                        const isActive = currentStatus === opt.key;
+                                                        return (
+                                                            <button
+                                                                key={opt.key}
+                                                                disabled={isCoveredLocked}
+                                                                title={isCoveredLocked ? `Attendance covered on ${coveredInfo.actualDate}` : (isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`)}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (isCoveredLocked) return;
+                                                                    markStudent(student.id, opt.key);
+                                                                }}
+                                                                onDoubleClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (isCoveredLocked) return;
+                                                                    unmarkStudent(student.id);
+                                                                }}
+                                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all duration-200 ${
+                                                                    isCoveredLocked
+                                                                        ? (isActive 
+                                                                            ? `${opt.activeBg} opacity-85 cursor-not-allowed` 
+                                                                            : `border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-600 opacity-40 cursor-not-allowed`)
+                                                                        : (isActive 
+                                                                            ? `${opt.activeBg} cursor-pointer`
+                                                                            : `border ${opt.border} bg-white dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer`)
+                                                                }`}
+                                                            >
+                                                                {opt.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
 
                                 {students.length === 0 && (
                                     <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">

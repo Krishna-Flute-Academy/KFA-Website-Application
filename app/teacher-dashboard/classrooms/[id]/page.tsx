@@ -22,8 +22,9 @@ import AudioRecorderWidget from '../../../../src/components/AudioRecorderWidget'
 import AutoLinkText from '../../../../src/components/common/AutoLinkText';
 import { getCurriculumMediaInfo } from '../../../../src/lib/curriculum-media';
 import { fetchEffectiveClassroomParticipants } from '../../../../src/lib/classroom-participants';
-import { isStudentOperationallyActive } from '../../../../src/lib/student-lifecycle';
+import { isStudentOperationallyActive, isStudentEnrolledOnDate } from '../../../../src/lib/student-lifecycle';
 import { matchesSearchTokens, getSearchTokens, normalizeSearchText } from '../../../../src/lib/search-utils';
+import { CoveredAttendanceRecord, buildCoveredAttendanceMap } from '../../../../src/lib/on-behalf-attendance';
 
 import dynamic from 'next/dynamic';
 import TaskCreateDialog from '../../../../src/components/teacher-dashboard/tasks/TaskCreateDialog';
@@ -1371,6 +1372,7 @@ export default function ClassroomDashboardPage({
         }
     }, [sessionDate]);
     const [attendanceRecords, setAttendanceRecords] = useState<Record<string, 'present' | 'absent' | 'late' | 'excused'>>({});
+    const [coveredAttendanceMap, setCoveredAttendanceMap] = useState<Record<string, CoveredAttendanceRecord>>({});
     const [attendanceLoading, setAttendanceLoading] = useState(false);
     const [isSavingAttendanceMap, setIsSavingAttendanceMap] = useState<Record<string, boolean>>({});
 
@@ -1390,8 +1392,11 @@ export default function ClassroomDashboardPage({
     };
 
     const activeAttendanceRoster = useMemo(() => {
-        const list = [...students];
         const targetDate = normalizeDateStr(attendanceDate);
+        const list = students.filter(s => {
+            const hasAtt = !!attendanceRecords[s.student_id] || !!coveredAttendanceMap[s.student_id];
+            return isStudentEnrolledOnDate(s, targetDate, hasAtt);
+        });
 
         const matchingOverrides = (sessionOverrides || []).filter(
             o => o && o.override_date && normalizeDateStr(o.override_date) === targetDate
@@ -1429,7 +1434,7 @@ export default function ClassroomDashboardPage({
             }
         });
         return list;
-    }, [students, sessionOverrides, attendanceDate]);
+    }, [students, sessionOverrides, attendanceDate, attendanceRecords, coveredAttendanceMap]);
 
     // ── Error states ──────────────────────────────────────────────────────────
     const [dbSetupError, setDbSetupError] = useState(false);
@@ -1641,7 +1646,7 @@ export default function ClassroomDashboardPage({
                             id,
                             student_id,
                             joined_at,
-                            users!student_id(name, email, profile_pic_url, level, status)
+                            users!student_id(name, email, profile_pic_url, level, status, join_date, created_at)
                           `).eq('classroom_id', classroomId),
                     roomData.type === 'temporary' && tempClassData?.class_date
                         ? supabaseAuth.from('session_student_overrides').select(`
@@ -1738,6 +1743,8 @@ export default function ClassroomDashboardPage({
                         profile_pic_url: r.users?.profile_pic_url || null,
                         level: formattedLevel,
                         joined_at: r.joined_at,
+                        join_date: r.users?.join_date,
+                        created_at: r.users?.created_at,
                         mock_score,
                         mock_progress,
                         mock_attendance,
@@ -2345,7 +2352,7 @@ export default function ClassroomDashboardPage({
         if (!classroomId) return;
         setAttendanceLoading(true);
         try {
-            const [attRes, overridesRes] = await Promise.all([
+            const [attRes, overridesRes, coveredRes] = await Promise.all([
                 supabaseAuth
                     .from('attendance')
                     .select('student_id, status')
@@ -2361,12 +2368,21 @@ export default function ClassroomDashboardPage({
                         users!student_id(name, profile_pic_url, level)
                     `)
                     .eq('target_classroom_id', classroomId)
-                    .order('override_date', { ascending: true })
+                    .order('override_date', { ascending: true }),
+                supabaseAuth
+                    .from('attendance')
+                    .select('id, student_id, classroom_id, date, status, on_behalf_of_date')
+                    .eq('on_behalf_of_date', attendanceDate)
+                    .neq('date', attendanceDate)
+                    .in('status', ['present', 'late', 'absent', 'excused'])
             ]);
 
             if (overridesRes.data) {
                 setSessionOverrides(overridesRes.data);
             }
+
+            const coveredMap = buildCoveredAttendanceMap(coveredRes.data || [], attendanceDate);
+            setCoveredAttendanceMap(coveredMap);
 
             if (attRes.error) {
                 console.error('Error fetching classroom attendance:', attRes.error.message);
@@ -2376,6 +2392,11 @@ export default function ClassroomDashboardPage({
             const recordsMap: Record<string, 'present' | 'absent' | 'late' | 'excused'> = {};
             (attRes.data || []).forEach((row: any) => {
                 recordsMap[row.student_id] = row.status;
+            });
+            Object.values(coveredMap).forEach(cov => {
+                if (!recordsMap[cov.studentId]) {
+                    recordsMap[cov.studentId] = cov.status as any;
+                }
             });
             setAttendanceRecords(recordsMap);
         } catch (err: any) {
@@ -2422,6 +2443,12 @@ export default function ClassroomDashboardPage({
     const handleUnmarkClassroomAttendance = async (studentId: string) => {
         if (!classroomId || !teacherProfile) return;
 
+        const coveredInfo = coveredAttendanceMap[studentId];
+        if (coveredInfo) {
+            alert(`Cannot unmark attendance: Student attendance was recorded on ${coveredInfo.actualDate} on behalf of this date.`);
+            return;
+        }
+
         const prevStatus = attendanceRecords[studentId];
 
         // Optimistically remove from state
@@ -2456,6 +2483,33 @@ export default function ClassroomDashboardPage({
 
     const handleMarkClassroomAttendance = async (studentId: string, status: string) => {
         if (!classroomId || !teacherProfile) return;
+
+        let coveredInfo = coveredAttendanceMap[studentId];
+        if (!coveredInfo) {
+            const { data: dbCovered } = await supabaseAuth
+                .from('attendance')
+                .select('id, date, status')
+                .eq('student_id', studentId)
+                .eq('on_behalf_of_date', attendanceDate)
+                .neq('date', attendanceDate)
+                .in('status', ['present', 'late', 'absent', 'excused'])
+                .limit(1);
+            if (dbCovered && dbCovered.length > 0) {
+                coveredInfo = {
+                    attendanceId: dbCovered[0].id,
+                    studentId,
+                    classroomId,
+                    actualDate: dbCovered[0].date,
+                    targetDate: attendanceDate,
+                    status: dbCovered[0].status
+                };
+                setCoveredAttendanceMap(prev => ({ ...prev, [studentId]: coveredInfo! }));
+            }
+        }
+        if (coveredInfo) {
+            alert(`Cannot change attendance: Student attendance was recorded on ${coveredInfo.actualDate} on behalf of this date.`);
+            return;
+        }
 
         // If clicking the already selected status, unmark it
         if (attendanceRecords[studentId] === status) {
@@ -5761,6 +5815,7 @@ export default function ClassroomDashboardPage({
                             handleMarkClassroomAttendance={handleMarkClassroomAttendance}
                             handleUnmarkClassroomAttendance={handleUnmarkClassroomAttendance}
                             formatLocalDate={formatLocalDate}
+                            coveredAttendanceMap={coveredAttendanceMap}
                         />
                     )}
 

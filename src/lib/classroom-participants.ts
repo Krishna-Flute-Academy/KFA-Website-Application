@@ -4,6 +4,8 @@
  * Permanent Classrooms and Special Sessions (Temporary Classes).
  */
 
+import { isStudentEnrolledOnDate } from './student-lifecycle';
+
 export interface ClassroomParticipant {
     id: string;
     student_id: string;
@@ -99,7 +101,7 @@ export async function fetchEffectiveClassroomParticipants(
             // Permanent Classroom: classroom_students + session_student_overrides for date if provided
             const permQuery = supabaseClient
                 .from('classroom_students')
-                .select('id, student_id, joined_at, users!student_id(id, name, email, role, level, profile_pic_url, status)')
+                .select('id, student_id, joined_at, users!student_id(id, name, email, role, level, profile_pic_url, status, join_date, created_at)')
                 .eq('classroom_id', classroomId);
 
             if (options?.date) {
@@ -144,6 +146,9 @@ export async function fetchEffectiveClassroomParticipants(
             const sid = row.student_id || u.id;
             // Operational filter: inactive / paused students must not appear in active operational classrooms
             if (!isLearningCircle && u.status && u.status !== 'active') {
+                return;
+            }
+            if (options?.date && !isStudentEnrolledOnDate(row, options.date)) {
                 return;
             }
             if (sid) {

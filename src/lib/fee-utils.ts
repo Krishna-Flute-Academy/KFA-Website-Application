@@ -645,9 +645,9 @@ export interface StudentCycleCalculationInput {
     };
     pauseEffectiveDate?: string | Date | null;
     resumeDate?: string | Date | null;
-    classrooms?: { id: string; name?: string; type?: string }[];
+    classrooms?: { id: string; name?: string; type?: string; joined_at?: string | null }[];
     batchSchedules?: { classroom_id: string; day_of_week: number; start_time?: string; end_time?: string }[];
-    attendance?: { id?: string; student_id?: string; classroom_id: string; date?: string; session_date?: string; status: string; on_behalf_of_date?: string | null }[];
+    attendance?: { id?: string; student_id?: string; classroom_id: string; date?: string; session_date?: string; status: string; on_behalf_of_date?: string | null; classroom_name?: string }[];
     overrides?: { id?: string; student_id?: string; target_classroom_id: string; override_date: string; missed_session_date?: string | null; credit_treatment?: string | null; reason?: string | null }[];
     leaveRequests?: { id?: string; student_id?: string; classroom_id?: string; class_date: string; status: string }[];
     cancelledSessions?: { id?: string; classroom_id?: string; date: string; session_date?: string; reason?: string }[];
@@ -765,9 +765,23 @@ export function evaluateStudentFeeCycle(
 
     // Classroom lookups
     const classroomMap = new Map<string, string>();
+    const classroomJoinedAtMap = new Map<string, string>();
     classrooms.forEach(c => {
-        if (c.id) classroomMap.set(c.id, c.name || 'Regular Batch');
+        if (c.id) {
+            classroomMap.set(c.id, c.name || 'Regular Batch');
+            if (c.joined_at) {
+                classroomJoinedAtMap.set(c.id, String(c.joined_at).split('T')[0]);
+            }
+        }
     });
+
+    // Populate classroom names from attendance if available
+    attendance.forEach(a => {
+        if (a.classroom_id && a.classroom_name && !classroomMap.has(a.classroom_id)) {
+            classroomMap.set(a.classroom_id, a.classroom_name);
+        }
+    });
+
     const classroomIds = new Set(classrooms.map(c => c.id));
 
     // Batch schedules mapping
@@ -858,18 +872,35 @@ export function evaluateStudentFeeCycle(
         const iterDow = iterDate.getDay();
         const iterDateStr = formatDateToYYYYMMDD(iterDate);
 
-        if (scheduledDows.has(iterDow)) {
-            const sched = scheduleByDow.get(iterDow);
-            const classId = sched?.classroom_id || (classrooms[0]?.id ?? '');
-            const className = classroomMap.get(classId) || classrooms[0]?.name || 'Batch Classroom';
+        // Determine if there is an active recurring schedule for this day of week on this specific calendar date
+        let isScheduledDay = false;
+        let sched = scheduleByDow.get(iterDow);
+        if (sched && scheduledDows.has(iterDow)) {
+            const classJoinedAt = classroomJoinedAtMap.get(sched.classroom_id);
+            // If the student joined this classroom on a specific date, only expect schedule on/after joined_at!
+            if (!classJoinedAt || iterDateStr >= classJoinedAt) {
+                isScheduledDay = true;
+            }
+        }
+
+        const satisfyingAtt = attendanceByEffectiveDate.get(iterDateStr);
+        const physicalAtt = attendanceByPhysicalDate.get(iterDateStr);
+        const isCancelled = cancelledDates.has(iterDateStr);
+        const hasApprovedLeave = approvedLeaveDates.has(iterDateStr);
+
+        const shouldProcessSession =
+            isScheduledDay ||
+            Boolean(satisfyingAtt) ||
+            Boolean(physicalAtt && physicalAtt.on_behalf_of_date && physicalAtt.on_behalf_of_date !== iterDateStr) ||
+            hasApprovedLeave ||
+            isCancelled;
+
+        if (shouldProcessSession) {
+            const classId = satisfyingAtt?.classroom_id || physicalAtt?.classroom_id || sched?.classroom_id || (classrooms[0]?.id ?? '');
+            const className = (satisfyingAtt as any)?.classroom_name || (physicalAtt as any)?.classroom_name || classroomMap.get(classId) || classrooms[0]?.name || 'Batch Classroom';
             const timeSlot = sched?.start_time
                 ? `${sched.start_time.slice(0, 5)} - ${sched.end_time?.slice(0, 5) || ''}`
                 : undefined;
-
-            const satisfyingAtt = attendanceByEffectiveDate.get(iterDateStr);
-            const physicalAtt = attendanceByPhysicalDate.get(iterDateStr);
-            const isCancelled = cancelledDates.has(iterDateStr);
-            const hasApprovedLeave = approvedLeaveDates.has(iterDateStr);
 
             const displayDate = formatPrettyDate(iterDate);
             const dayName = DOW_NAMES[iterDow];

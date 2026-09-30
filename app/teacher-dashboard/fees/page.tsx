@@ -9,6 +9,7 @@ import TeacherHeader from '../../../src/components/TeacherHeader';
 import { getStudentFeeStatus, calculateClassesAdded, getStudentBillingCycle, calculateStudentFeeCycleMetrics, getStudentFeeCycleLedger, StudentFeeCycleMetrics, FeeCycleLedgerReport } from '../../../src/lib/fee-utils';
 import { isStudentOperationallyActive } from '../../../src/lib/student-lifecycle';
 import FeeCycleLedgerModal from '../../../src/components/teacher-dashboard/fees/FeeCycleLedgerModal';
+import { StudentAttendanceModal } from '../../../src/components/teacher-dashboard/attendance/StudentAttendanceModal';
 import { exportFeesCSV } from '../../../src/lib/csv-export';
 
 interface StudentFeesData {
@@ -254,6 +255,8 @@ export default function FeesManagementDashboard() {
     const [ledgerReport, setLedgerReport] = useState<FeeCycleLedgerReport | null>(null);
     const [showLedgerModal, setShowLedgerModal] = useState(false);
     const [ledgerLoading, setLedgerLoading] = useState(false);
+    const [showFullAttendanceModal, setShowFullAttendanceModal] = useState(false);
+    const [fullAttendanceStudent, setFullAttendanceStudent] = useState<{ id: string; name: string; avatar?: string } | null>(null);
 
     // Payment Form State
     const [paymentAmount, setPaymentAmount] = useState('');
@@ -360,6 +363,7 @@ export default function FeesManagementDashboard() {
                     status,
                     classroom_students(
                         classroom_id,
+                        joined_at,
                         classrooms(id, name, type)
                     )
                 `, { count: 'exact' })
@@ -526,7 +530,8 @@ export default function FeesManagementDashboard() {
                         const sClassrooms = (s.classroom_students_raw || []).map((cs: any) => ({
                             id: cs.classroom_id || cs.classrooms?.id,
                             name: cs.classrooms?.name,
-                            type: cs.classrooms?.type
+                            type: cs.classrooms?.type,
+                            joined_at: cs.joined_at
                         }));
                         newMetrics[s.id] = calculateStudentFeeCycleMetrics({
                             student: s,
@@ -1083,7 +1088,8 @@ export default function FeesManagementDashboard() {
             const sClassrooms = (student.classroom_students_raw || []).map((cs: any) => ({
                 id: cs.classroom_id || cs.classrooms?.id,
                 name: cs.classrooms?.name,
-                type: cs.classrooms?.type
+                type: cs.classrooms?.type,
+                joined_at: cs.joined_at
             }));
 
             const now = new Date();
@@ -1130,11 +1136,44 @@ export default function FeesManagementDashboard() {
                     .in('classroom_id', sClassrooms.map(c => c.id).filter(Boolean))
             ]);
 
+            // Resolve any historical or alternative classrooms present in attendance records
+            const knownClassroomIds = new Set(sClassrooms.map(c => c.id).filter(Boolean));
+            const missingClassroomIds = Array.from(new Set(
+                (attRes.data || [])
+                    .map((a: any) => a.classroom_id)
+                    .filter((cid: string) => cid && !knownClassroomIds.has(cid))
+            ));
+
+            let extraClassrooms: any[] = [];
+            if (missingClassroomIds.length > 0) {
+                const [extraClassroomsRes, extraTempRes] = await Promise.all([
+                    supabaseAuth.from('classrooms').select('id, name, type').in('id', missingClassroomIds),
+                    supabaseAuth.from('temporary_classes').select('id, title, session_date').in('id', missingClassroomIds)
+                ]);
+                (extraClassroomsRes.data || []).forEach((c: any) => {
+                    extraClassrooms.push({ id: c.id, name: c.name, type: c.type });
+                });
+                (extraTempRes.data || []).forEach((t: any) => {
+                    extraClassrooms.push({ id: t.id, name: t.title, type: 'temporary' });
+                });
+            }
+
+            const allClassrooms = [...sClassrooms, ...extraClassrooms];
+            const classroomNameLookup = new Map<string, string>();
+            allClassrooms.forEach(c => {
+                if (c.id && c.name) classroomNameLookup.set(c.id, c.name);
+            });
+
+            const enrichedAttendance = (attRes.data || []).map((a: any) => ({
+                ...a,
+                classroom_name: classroomNameLookup.get(a.classroom_id) || undefined
+            }));
+
             const report = getStudentFeeCycleLedger({
                 student,
-                classrooms: sClassrooms,
+                classrooms: allClassrooms,
                 batchSchedules: schedRes.data || [],
-                attendance: attRes.data || [],
+                attendance: enrichedAttendance,
                 overrides: ovRes.data || [],
                 leaveRequests: lvsRes.data || [],
                 payments: studentPayments,
@@ -2855,6 +2894,25 @@ export default function FeesManagementDashboard() {
                         openLedgerModal(selectedLedgerStudent);
                     }
                 }}
+                onViewAttendanceHistory={() => {
+                    if (selectedLedgerStudent) {
+                        setFullAttendanceStudent({
+                            id: selectedLedgerStudent.id,
+                            name: selectedLedgerStudent.name,
+                            avatar: selectedLedgerStudent.profile_pic_url
+                        });
+                        setShowFullAttendanceModal(true);
+                    }
+                }}
+            />
+
+            {/* Student Full Attendance Timeline Modal */}
+            <StudentAttendanceModal
+                isOpen={showFullAttendanceModal}
+                onClose={() => setShowFullAttendanceModal(false)}
+                studentId={fullAttendanceStudent?.id || null}
+                initialStudentName={fullAttendanceStudent?.name}
+                initialProfilePicUrl={fullAttendanceStudent?.avatar}
             />
         </div>
     );

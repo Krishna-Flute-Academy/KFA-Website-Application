@@ -300,13 +300,12 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
 
             const overridesList = allOverrides || [];
 
-            // 6. Fetch Attendance Records in the Selected Date Range
+            // 6. Fetch Attendance Records in the Selected Date Range (including on_behalf_of_date targets)
             const { data: attendanceData, error: attErr } = await supabaseAuth
                 .from('attendance')
                 .select('*')
                 .eq('student_id', studentId)
-                .gte('date', fromDate)
-                .lte('date', toDate)
+                .or(`and(date.gte.${fromDate},date.lte.${toDate}),and(on_behalf_of_date.gte.${fromDate},on_behalf_of_date.lte.${toDate})`)
                 .order('date', { ascending: false });
 
             if (attErr) throw attErr;
