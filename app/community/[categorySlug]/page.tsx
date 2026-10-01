@@ -17,10 +17,10 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
         openGraph: {
             title: `${catName} | KFA Community`,
             description: cat?.description || `Flute and Indian classical music discussions in ${catName}.`,
-            url: `https://www.krishnafluteacademy.com/community/${categorySlug}`,
+            url: `https://krishnafluteacademy.com/community/${categorySlug}`,
         },
         alternates: {
-            canonical: `https://www.krishnafluteacademy.com/community/${categorySlug}`,
+            canonical: `https://krishnafluteacademy.com/community/${categorySlug}`,
         },
     };
 }

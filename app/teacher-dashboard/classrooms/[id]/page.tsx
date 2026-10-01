@@ -25,6 +25,7 @@ import { fetchEffectiveClassroomParticipants } from '../../../../src/lib/classro
 import { isStudentOperationallyActive, isStudentEnrolledOnDate } from '../../../../src/lib/student-lifecycle';
 import { matchesSearchTokens, getSearchTokens, normalizeSearchText } from '../../../../src/lib/search-utils';
 import { CoveredAttendanceRecord, buildCoveredAttendanceMap } from '../../../../src/lib/on-behalf-attendance';
+import { endActiveClass } from '../../../../src/lib/class-session-lifecycle';
 
 import dynamic from 'next/dynamic';
 import TaskCreateDialog from '../../../../src/components/teacher-dashboard/tasks/TaskCreateDialog';
@@ -173,7 +174,7 @@ export default function ClassroomDashboardPage({
     sessionType = 'online',
     sessionDate = '',
     secondsElapsed = 0,
-    onEndSession = () => {},
+    onEndSession,
     onMinimizeSession = () => {}
 }: {
     isMeetingView?: boolean;
@@ -208,7 +209,6 @@ export default function ClassroomDashboardPage({
             setIsEndingSession(true);
             const t0 = performance.now();
 
-            // Read active session parameters BEFORE removing from local storage
             const activeSessionStr = typeof window !== 'undefined' ? localStorage.getItem('active_class_session') : null;
             let startedAtTime = classroom?.live_session_started_at 
                 ? new Date(classroom.live_session_started_at).getTime() 
@@ -227,40 +227,20 @@ export default function ClassroomDashboardPage({
                 }
             }
 
-            // Optimistically update local state & clear local storage for immediate UI feedback
-            if (typeof window !== 'undefined') {
-                localStorage.removeItem('active_class_session');
-                window.dispatchEvent(new Event('storage'));
-                window.dispatchEvent(new CustomEvent('class_session_ended', { detail: { classroomId } }));
-            }
-            setClassroom(prev => prev ? { ...prev, is_live: false, live_meeting_link: null, live_session_started_at: null } : null);
-
             try {
                 const endedAtTime = Date.now();
                 const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
 
-                // Single atomic RPC clears is_live, calculates attendance counts, and writes session log
-                try {
-                    const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
-                        p_classroom_id: classroomId,
-                        p_session_date: activeDate,
-                        p_session_type: activeType,
-                        p_started_at: new Date(startedAtTime).toISOString(),
-                        p_ended_at: new Date(endedAtTime).toISOString(),
-                        p_duration_seconds: durationSecs
-                    });
-                    if (rpcErr) throw rpcErr;
-                } catch (rpcErr) {
-                    console.warn('RPC end_classroom_session warning/error, falling back to direct update:', rpcErr);
-                    await supabaseAuth
-                        .from('classrooms')
-                        .update({
-                            is_live: false,
-                            live_meeting_link: null,
-                            live_session_started_at: null
-                        })
-                        .eq('id', classroomId);
-                }
+                await endActiveClass({
+                    classroomId,
+                    sessionDate: activeDate,
+                    sessionType: activeType,
+                    startedAt: startedAtTime,
+                    endedAt: endedAtTime,
+                    durationSeconds: durationSecs
+                });
+
+                setClassroom(prev => prev ? { ...prev, is_live: false, live_meeting_link: null, live_session_started_at: null } : null);
 
                 if (process.env.NODE_ENV !== 'production') {
                     console.log(`[Perf-ClassroomDetailEnd] Session ended in ${(performance.now() - t0).toFixed(1)}ms`);
@@ -273,15 +253,14 @@ export default function ClassroomDashboardPage({
                 }
             } catch (err: any) {
                 console.error('Error ending class session:', err);
+                alert(`Failed to end class session: ${err.message || 'Please try again.'}`);
             } finally {
                 setIsEndingSession(false);
             }
         }
     };
 
-    const effectiveEndSession = onEndSession && onEndSession.toString() !== '() => {}'
-        ? onEndSession
-        : handleEndClassSessionInternal;
+    const effectiveEndSession = onEndSession || handleEndClassSessionInternal;
 
     useEffect(() => {
         if (classroomId) {
@@ -1513,6 +1492,52 @@ export default function ClassroomDashboardPage({
         return () => {
             supabaseAuth.removeChannel(sessionsChannel);
             clearInterval(timer);
+        };
+    }, [classroomId]);
+
+    // Realtime & event synchronization for classroom live session state
+    useEffect(() => {
+        if (!classroomId) return;
+
+        const handleEnded = (e: any) => {
+            if (!e.detail?.classroomId || e.detail.classroomId === classroomId) {
+                setClassroom(prev => prev ? { ...prev, is_live: false, live_meeting_link: null, live_session_started_at: null } : null);
+            }
+        };
+
+        const handleStarted = (e: any) => {
+            if (!e.detail?.classroomId || e.detail.classroomId === classroomId) {
+                setRefreshTrigger(prev => prev + 1);
+            }
+        };
+
+        window.addEventListener('class_session_ended', handleEnded);
+        window.addEventListener('class_session_started', handleStarted);
+        window.addEventListener('storage', handleEnded);
+
+        const liveChannel = supabaseAuth
+            .channel(`classroom-live-updates-${classroomId}`)
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'classrooms', filter: `id=eq.${classroomId}` },
+                (payload: any) => {
+                    if (payload.new) {
+                        setClassroom(prev => prev ? {
+                            ...prev,
+                            is_live: Boolean(payload.new.is_live),
+                            live_meeting_link: payload.new.live_meeting_link || null,
+                            live_session_started_at: payload.new.live_session_started_at || null
+                        } : null);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            window.removeEventListener('class_session_ended', handleEnded);
+            window.removeEventListener('class_session_started', handleStarted);
+            window.removeEventListener('storage', handleEnded);
+            supabaseAuth.removeChannel(liveChannel);
         };
     }, [classroomId]);
 
@@ -5587,8 +5612,13 @@ export default function ClassroomDashboardPage({
                                     <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                                 </span>
                                 <div>
-                                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
                                         Class Session is Currently Live
+                                        {classroom?.live_session_started_at && (
+                                            <span className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">
+                                                • Started {new Date(classroom.live_session_started_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                                            </span>
+                                        )}
                                     </h4>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">
                                         Students can currently see the live banner and meeting access link.

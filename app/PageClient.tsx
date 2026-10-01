@@ -25,10 +25,47 @@ import { Carousel } from 'react-responsive-carousel';
 import "react-responsive-carousel/lib/styles/carousel.min.css";
 import { useSearchParams } from 'next/navigation';
 
-const heroImages = [
-    `/Toppic.jpg`,
-    `/hero-image-1.jpg`,
-    `/hero-image-2.jpg`,
+const heroSlides = [
+    {
+        imageUrl: '/carousel/slide-1-academy.jpg',
+        badge: 'KRISHNA FLUTE ACADEMY',
+        titlePart1: 'Master The Divine Art',
+        titlePart2: 'Of Indian Bansuri',
+        subtitle: 'Learn Indian Classical Flute under Guru Krishna Gopal Bhaumik. Tailored offline classes in Bangalore & live interactive online lessons worldwide.',
+        tags: ['Beginner to Advanced', 'Bangalore & Worldwide Online', 'Guru-Shishya Tradition'],
+        primaryBtn: { label: 'Explore Courses', href: '/courses' },
+        secondaryBtn: { label: 'Try Practice Tools', href: '/practice-tools' }
+    },
+    {
+        imageUrl: '/carousel/slide-2-courses.jpg',
+        badge: 'STRUCTURED COURSES',
+        titlePart1: 'Step-By-Step Guidance',
+        titlePart2: 'For All Age Groups',
+        subtitle: 'From sound production and breath control to complex Ragas, Alankars, and classical bandishes with personalized guidance.',
+        tags: ['Beginner Foundation', 'Intermediate Expression', 'Advanced Raga Mastery', 'Kids Program'],
+        primaryBtn: { label: 'View All Courses', href: '/courses' },
+        secondaryBtn: { label: 'Watch Recitals', href: '/gallery' }
+    },
+    {
+        imageUrl: '/carousel/slide-3-performance.jpg',
+        badge: 'STAGE & RECITALS',
+        titlePart1: 'Learn • Practice',
+        titlePart2: 'Perform On Stage',
+        subtitle: 'Build confidence through live stage concerts, annual Swaranjali recitals, and interactive musical workshops with tabla accompaniment.',
+        tags: ['Annual Swaranjali Concerts', 'Flute & Feast Workshops', 'Live Stage Confidence'],
+        primaryBtn: { label: 'Join Community', href: '/community' },
+        secondaryBtn: { label: 'Explore Gallery', href: '/gallery' }
+    },
+    {
+        imageUrl: '/carousel/slide-4-practice-tools.jpg',
+        badge: 'SMART RIYAZ TOOLS',
+        titlePart1: 'Free Interactive',
+        titlePart2: 'Bansuri Practice Suite',
+        subtitle: 'High-precision Bansuri Tuner, authentic Tanpura drone, Hindustani Taal rhythm machine, and real-time acoustic ear-training notation.',
+        tags: ['Bansuri Swara Tuner', 'Concert Tanpura Drone', 'Hindustani Rhythm Machine'],
+        primaryBtn: { label: 'Open Practice Tools', href: '/practice-tools' },
+        secondaryBtn: { label: 'About Academy', href: '#about' }
+    },
 ];
 
 const formatDateString = (dateString: string) => {
@@ -582,43 +619,46 @@ Hello Krishna Flute Academy, I have an inquiry!
                 ${isBannerVisible ? 'pt-28 md:pt-34' : 'pt-16 md:pt-20'} 
                 pb-0 px-0 sm:px-0`}
                 >
-                    <Carousel autoPlay={true} infiniteLoop={true} showThumbs={false} showStatus={false} interval={5000} className="w-full">
-                        {heroImages.map((imageUrl, index) => (
-                            <div key={index} className="relative w-full h-[350px] sm:h-[450px] md:h-[550px]">
-                                <img src={imageUrl} alt={`Hero Slide ${index + 1}`} className="w-full h-full object-cover" loading={index === 0 ? "eager" : "lazy"} />
-                                <div className="absolute inset-0 bg-black/40"></div>
-                                <div className="absolute inset-0 flex flex-col justify-center items-start text-left text-white p-6 sm:p-12 md:pl-24 font-montserrat z-10">
-                                    <div className="space-y-2 md:space-y-4">
-                                        {index === 0 && (
-                                            <>
-                                                <p className="text-xs md:text-2xl font-light tracking-[0.35em] uppercase text-gray-300">LEARN FLUTE</p>
-                                                <h1 className="text-3xl sm:text-5xl md:text-7xl leading-tight">
-                                                    <span className="font-bold" style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>Krishna</span><br />
-                                                    <span className="font-bold" style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>Flute Academy</span>
-                                                </h1>
-                                                <p className="text-sm md:text-xl font-medium text-yellow-400 tracking-wide">With Krishna Gopal Bhaumik</p>
-                                            </>
-                                        )}
-                                        {index === 1 && (
-                                            <>
-                                                <p className="text-xs md:text-2xl font-light tracking-[0.35em] uppercase text-gray-300">LEARN FLUTE</p>
-                                                <h1 className="text-xl sm:text-5xl md:text-7xl leading-tight">
-                                                    <span className="font-serif italic font-light">Turn Your Breath</span><br />
-                                                    <span className="font-bold" style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>Into Tune</span>
-                                                </h1>
-                                                <p className="text-xs md:text-xl font-medium text-yellow-400 tracking-wide">With Krishna Gopal Bhaumik</p>
-                                            </>
-                                        )}
-                                        {index === 2 && (
-                                            <>
-                                                <p className="text-xs md:text-2xl font-light tracking-[0.35em] uppercase text-gray-300">LEARN FLUTE</p>
-                                                <h1 className="text-2xl sm:text-5xl md:text-7xl leading-tight">
-                                                    <span className="font-serif italic font-light">From Basics</span><br />
-                                                    <span className="font-bold" style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>To Advanced</span>
-                                                </h1>
-                                                <p className="text-sm md:text-xl font-medium text-yellow-400 tracking-wide">With Krishna Gopal Bhaumik</p>
-                                            </>
-                                        )}
+                    <Carousel autoPlay={true} infiniteLoop={true} showThumbs={false} showStatus={false} interval={6000} className="w-full">
+                        {heroSlides.map((slide, index) => (
+                            <div key={index} className="relative w-full h-[400px] sm:h-[480px] md:h-[560px] lg:h-[600px]">
+                                <img src={slide.imageUrl} alt={`${slide.titlePart1} ${slide.titlePart2}`} className="w-full h-full object-cover" loading={index === 0 ? "eager" : "lazy"} />
+                                <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/55 to-transparent sm:from-black/80 sm:via-black/45 sm:to-transparent"></div>
+                                <div className="absolute inset-0 flex flex-col justify-center items-start text-left text-white p-6 sm:p-12 md:pl-20 lg:pl-28 font-montserrat z-10 max-w-3xl">
+                                    <div className="space-y-2.5 sm:space-y-4">
+                                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] sm:text-xs font-bold tracking-widest uppercase">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                                            {slide.badge}
+                                        </div>
+                                        <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight text-white drop-shadow-md">
+                                            <span className="font-serif italic font-light text-slate-100">{slide.titlePart1}</span><br />
+                                            <span className="text-yellow-400 font-bold">{slide.titlePart2}</span>
+                                        </h1>
+                                        <p className="text-xs sm:text-base md:text-lg text-slate-200 line-clamp-3 sm:line-clamp-none max-w-xl leading-relaxed">
+                                            {slide.subtitle}
+                                        </p>
+                                        <div className="hidden sm:flex flex-wrap items-center gap-2 pt-1">
+                                            {slide.tags.map((tag, tIdx) => (
+                                                <span key={tIdx} className="text-xs px-2.5 py-0.5 rounded-md bg-white/10 backdrop-blur-sm text-slate-200 border border-white/10">
+                                                    ✓ {tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex items-center gap-3 pt-2">
+                                            <Link 
+                                                href={slide.primaryBtn.href} 
+                                                className="inline-flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-bold text-xs sm:text-sm shadow-lg hover:shadow-amber-500/20 transition-all transform hover:-translate-y-0.5"
+                                            >
+                                                {slide.primaryBtn.label}
+                                                <ArrowRight className="w-4 h-4" />
+                                            </Link>
+                                            <Link 
+                                                href={slide.secondaryBtn.href} 
+                                                className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-xs sm:text-sm backdrop-blur-sm transition-all"
+                                            >
+                                                {slide.secondaryBtn.label}
+                                            </Link>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

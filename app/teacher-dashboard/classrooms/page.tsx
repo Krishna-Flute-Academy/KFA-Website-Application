@@ -9,6 +9,7 @@ import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { fetchAcademyTeachers } from '../../../src/lib/teachers';
 import { isStudentOperationallyActive } from '../../../src/lib/student-lifecycle';
+import { endActiveClass } from '../../../src/lib/class-session-lifecycle';
 
 function formatTime12hr(time24: string) {
     if (!time24) return '';
@@ -416,50 +417,27 @@ export default function ClassroomsPage() {
         const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
         setEndingSessionId(room.id);
 
-        // 1. Optimistically update local state immediately for instant responsive UI
-        setActiveSession(null);
-        setClassrooms(prev => prev.map(c => {
-            if (c.id === room.id || c.id === targetRoomId) {
-                return { ...c, is_live: false, live_meeting_link: null, live_session_started_at: null };
-            }
-            return c;
-        }));
-
         try {
-            // 2. Call RPC end_classroom_session directly (atomic update + logs)
-            const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
-                p_classroom_id: targetRoomId,
-                p_session_date: new Date().toISOString().split('T')[0],
-                p_session_type: 'online',
-                p_started_at: new Date().toISOString(),
-                p_ended_at: new Date().toISOString(),
-                p_duration_seconds: 0,
-                p_present_count: 0,
-                p_absent_count: 0,
-                p_late_count: 0,
-                p_excused_count: 0
+            await endActiveClass({
+                classroomId: targetRoomId,
+                sessionDate: room.class_date || undefined,
+                startedAt: room.live_session_started_at || undefined
             });
 
-            if (rpcErr) {
-                if (process.env.NODE_ENV !== 'production') {
-                    console.warn('[handleEndClassSession] RPC failed, falling back to direct table update', rpcErr);
+            // Optimistically update both classrooms and tempClassrooms
+            setActiveSession(null);
+            setClassrooms(prev => prev.map(c => {
+                if (c.id === room.id || c.id === targetRoomId) {
+                    return { ...c, is_live: false, live_meeting_link: null, live_session_started_at: null };
                 }
-                await supabaseAuth
-                    .from('classrooms')
-                    .update({
-                        is_live: false,
-                        live_meeting_link: null,
-                        live_session_started_at: null
-                    })
-                    .eq('id', targetRoomId);
-            }
-
-            // 3. Clear localStorage session tracker & dispatch events
-            if (typeof window !== 'undefined') {
-                localStorage.removeItem('active_class_session');
-                window.dispatchEvent(new Event('storage'));
-                window.dispatchEvent(new CustomEvent('class_session_ended', { detail: { classroomId: targetRoomId } }));
-            }
+                return c;
+            }));
+            setTempClassrooms(prev => prev.map(t => {
+                if (t.id === room.id || t.classroom_id === targetRoomId) {
+                    return { ...t, is_live: false, live_session_started_at: null, lifecycle_status: 'completed' };
+                }
+                return t;
+            }));
 
             if (process.env.NODE_ENV !== 'production') {
                 const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
@@ -474,8 +452,9 @@ export default function ClassroomsPage() {
             console.error('Error ending class session:', err);
             setToast({
                 type: 'error',
-                message: `Failed to end session: ${err.message || 'Unknown error'}`
+                message: `Failed to end session: ${err.message || 'Please try again.'}`
             });
+            fetchData();
         } finally {
             setEndingSessionId(null);
         }
@@ -810,10 +789,11 @@ export default function ClassroomsPage() {
             const tempRoomsWithCounts = (tempRoomsData || []).map((room) => {
                 const tStudents = tempStudentMap[room.id] || tempStudentMap[room.classroom_id] || [];
                 const isCancelled = room.lifecycle_status === 'cancelled';
+                const shadowRoom = (roomsData || []).find(c => c.id === room.classroom_id);
                 return {
                     id: room.id,
                     name: room.title || 'Special Session',
-                    description: (roomsData || []).find(c => c.id === room.classroom_id)?.description || `Special Session on ${room.class_date}`,
+                    description: shadowRoom?.description || `Special Session on ${room.class_date}`,
                     schedule: (() => {
                         const parsed = parseClassDate(room.class_date);
                         const dayName = parsed ? parsed.toLocaleDateString('en-US', { weekday: 'short' }) : 'Invalid Date';
@@ -824,7 +804,6 @@ export default function ClassroomsPage() {
                     student_count: tStudents.length,
                     status: (() => {
                         if (isCancelled) return 'Archived';
-                        const shadowRoom = (roomsData || []).find(c => c.id === room.classroom_id);
                         return shadowRoom ? (shadowRoom.status || 'Active') : 'Active';
                     })(),
                     class_date: room.class_date,
@@ -834,6 +813,9 @@ export default function ClassroomsPage() {
                     purpose: room.purpose || 'makeup',
                     credit_treatment: room.credit_treatment || 'makeup',
                     lifecycle_status: room.lifecycle_status || 'scheduled',
+                    is_live: Boolean(shadowRoom?.is_live),
+                    live_session_started_at: shadowRoom?.live_session_started_at || null,
+                    live_meeting_link: shadowRoom?.live_meeting_link || null,
                     type: 'temporary' as const
                 };
             });
@@ -899,12 +881,14 @@ export default function ClassroomsPage() {
             debouncedFetchData();
         };
         window.addEventListener('storage', handleStorageOrCustomEvent);
+        window.addEventListener('class_session_started', handleStorageOrCustomEvent);
         window.addEventListener('class_session_ended', handleStorageOrCustomEvent);
 
         return () => {
             if (debounceTimer) clearTimeout(debounceTimer);
             supabaseAuth.removeChannel(channel);
             window.removeEventListener('storage', handleStorageOrCustomEvent);
+            window.removeEventListener('class_session_started', handleStorageOrCustomEvent);
             window.removeEventListener('class_session_ended', handleStorageOrCustomEvent);
         };
     }, []);
@@ -1573,7 +1557,7 @@ export default function ClassroomsPage() {
                                                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                                                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                                                 </span>
-                                                                <span>Started</span>
+                                                                <span>Started{room.live_session_started_at ? ` · ${formatTime12hr(new Date(room.live_session_started_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }))}` : ''}</span>
                                                             </div>
                                                             <button
                                                                 onClick={() => handleEndClassSession(room)}
@@ -1796,7 +1780,7 @@ export default function ClassroomsPage() {
                                                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                                                         <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                                                                     </span>
-                                                                    <span>Started</span>
+                                                                    <span>Started{room.live_session_started_at ? ` · ${formatTime12hr(new Date(room.live_session_started_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }))}` : ''}</span>
                                                                 </div>
                                                                 <button
                                                                     onClick={() => handleEndClassSession(room)}
@@ -2097,7 +2081,7 @@ export default function ClassroomsPage() {
                                                                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                                                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                                                             </span>
-                                                                            <span>Started</span>
+                                                                            <span>Started{room.live_session_started_at ? ` · ${formatTime12hr(new Date(room.live_session_started_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }))}` : ''}</span>
                                                                         </div>
                                                                         <button
                                                                             onClick={() => handleEndClassSession(room)}

@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     openGraph: {
         title: 'Blog | Krishna Flute Academy',
         description: 'Explore articles on Indian classical flute, music theory, Vedic scales, mindfulness, and musical wisdom.',
-        url: 'https://www.krishnafluteacademy.com/blog/',
+        url: 'https://krishnafluteacademy.com/blog',
         siteName: 'Krishna Flute Academy',
         type: 'website',
         images: [
@@ -25,7 +25,13 @@ export const metadata: Metadata = {
         ],
     },
     alternates: {
-        canonical: 'https://www.krishnafluteacademy.com/blog/',
+        canonical: 'https://krishnafluteacademy.com/blog',
+    },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Blog | Krishna Flute Academy',
+        description: 'Explore articles on Indian classical flute, music theory, Vedic scales, mindfulness, and musical wisdom.',
+        images: ['/Toppic.jpg'],
     },
 };
 

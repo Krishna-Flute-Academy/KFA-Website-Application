@@ -5,12 +5,12 @@ export const metadata: Metadata = {
     title: 'Performance & Student Recital Gallery | Krishna Flute Academy',
     description: 'Watch classical Indian bansuri recitals, student performances, and masterclasses from Krishna Flute Academy.',
     alternates: {
-        canonical: 'https://www.krishnafluteacademy.com/gallery',
+        canonical: 'https://krishnafluteacademy.com/gallery',
     },
     openGraph: {
         title: 'Performance & Student Recital Gallery | Krishna Flute Academy',
         description: 'Watch classical Indian bansuri recitals, student performances, and masterclasses from Krishna Flute Academy.',
-        url: 'https://www.krishnafluteacademy.com/gallery',
+        url: 'https://krishnafluteacademy.com/gallery',
         siteName: 'Krishna Flute Academy',
         type: 'website',
         images: [

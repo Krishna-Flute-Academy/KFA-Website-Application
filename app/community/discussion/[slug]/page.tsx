@@ -30,7 +30,7 @@ export async function generateMetadata({ params }: DiscussionPageProps): Promise
             : {
                   title: `${post.title} | KFA Community`,
                   description: excerpt,
-                  url: `https://www.krishnafluteacademy.com/community/discussion/${slug}`,
+                  url: `https://krishnafluteacademy.com/community/discussion/${slug}`,
                   siteName: 'Krishna Flute Academy Community',
                   type: 'article',
                   publishedTime: post.created_at,
@@ -46,7 +46,7 @@ export async function generateMetadata({ params }: DiscussionPageProps): Promise
                   ],
               },
         alternates: {
-            canonical: `https://www.krishnafluteacademy.com/community/discussion/${slug}`,
+            canonical: `https://krishnafluteacademy.com/community/discussion/${slug}`,
         },
     };
 }

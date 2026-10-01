@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { supabaseAuth } from '../lib/supabase-auth';
 import { supabase } from '../lib/supabase';
+import { endActiveClass } from '../lib/class-session-lifecycle';
 
 interface TeacherSidebarProps {
     teacherProfile: { id?: string; name: string; email: string; role?: string; phone?: string | null; profile_pic_url?: string | null } | null;
@@ -308,57 +309,57 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     const isLiveCheckingRef = useRef(false);
     const isAdminCheckingRef = useRef(false);
 
+    // Live classroom checking routine
+    const checkActiveSessionInDB = useCallback(async () => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        if (isLiveCheckingRef.current || !teacherProfile?.id) return;
+        isLiveCheckingRef.current = true;
+
+        try {
+            const isUserAdmin = userRole === 'admin';
+            let query = supabaseAuth
+                .from('classrooms')
+                .select('id, name, is_live, live_meeting_link, live_session_started_at')
+                .eq('is_live', true);
+
+            if (!isUserAdmin) {
+                query = query.eq('teacher_id', teacherProfile.id);
+            }
+
+            const { data: liveRooms, error } = await query
+                .order('live_session_started_at', { ascending: false })
+                .limit(1);
+
+            if (!error) {
+                if (liveRooms && liveRooms.length > 0) {
+                    const room = liveRooms[0];
+                    const startedTime = room.live_session_started_at ? new Date(room.live_session_started_at).getTime() : Date.now();
+                    const sessionDateStr = room.live_session_started_at
+                        ? new Date(room.live_session_started_at).toISOString().split('T')[0]
+                        : new Date().toISOString().split('T')[0];
+
+                    setActiveSession({
+                        classroomId: room.id,
+                        classroomName: room.name,
+                        sessionType: room.live_meeting_link ? 'online' : 'offline',
+                        sessionDate: sessionDateStr,
+                        startedAt: startedTime
+                    });
+                } else {
+                    setActiveSession(null);
+                }
+            }
+        } catch (err: any) {
+            console.warn('Notice fetching active session from DB:', err?.message || err);
+        } finally {
+            isLiveCheckingRef.current = false;
+        }
+    }, [teacherProfile?.id, userRole]);
+
     useEffect(() => {
         if (!teacherProfile?.id) return;
 
-        // 1. Live classroom polling routine
-        const checkActiveSessionInDB = async () => {
-            if (typeof document !== 'undefined' && document.hidden) return;
-            if (isLiveCheckingRef.current || !teacherProfile?.id) return;
-            isLiveCheckingRef.current = true;
-
-            try {
-                const isUserAdmin = userRole === 'admin';
-                let query = supabaseAuth
-                    .from('classrooms')
-                    .select('id, name, is_live, live_meeting_link, live_session_started_at')
-                    .eq('is_live', true);
-
-                if (!isUserAdmin) {
-                    query = query.eq('teacher_id', teacherProfile.id);
-                }
-
-                const { data: liveRooms, error } = await query
-                    .order('live_session_started_at', { ascending: false })
-                    .limit(1);
-
-                if (!error) {
-                    if (liveRooms && liveRooms.length > 0) {
-                        const room = liveRooms[0];
-                        const startedTime = room.live_session_started_at ? new Date(room.live_session_started_at).getTime() : Date.now();
-                        const sessionDateStr = room.live_session_started_at
-                            ? new Date(room.live_session_started_at).toISOString().split('T')[0]
-                            : new Date().toISOString().split('T')[0];
-
-                        setActiveSession({
-                            classroomId: room.id,
-                            classroomName: room.name,
-                            sessionType: room.live_meeting_link ? 'online' : 'offline',
-                            sessionDate: sessionDateStr,
-                            startedAt: startedTime
-                        });
-                    } else {
-                        setActiveSession(null);
-                    }
-                }
-            } catch (err: any) {
-                console.warn('Notice fetching active session from DB:', err?.message || err);
-            } finally {
-                isLiveCheckingRef.current = false;
-            }
-        };
-
-        // 2. Administrative counters polling routine (batched)
+        // Administrative counters polling routine (batched)
         const fetchAdminCounters = async () => {
             if (typeof document !== 'undefined' && document.hidden) return;
             if (isAdminCheckingRef.current || !teacherProfile?.id) return;
@@ -489,8 +490,32 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         };
         document.addEventListener('visibilitychange', handleVisibility);
 
+        // Sync with browser custom events and localStorage
+        const handleSessionEvent = () => {
+            checkActiveSessionInDB();
+        };
+        window.addEventListener('storage', handleSessionEvent);
+        window.addEventListener('class_session_started', handleSessionEvent);
+        window.addEventListener('class_session_ended', handleSessionEvent);
+
+        // Supabase Realtime subscription on classrooms table
+        const classroomsRealtimeChannel = supabaseAuth
+            .channel('teacher-sidebar-classrooms-realtime')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'classrooms' },
+                () => {
+                    checkActiveSessionInDB();
+                }
+            )
+            .subscribe();
+
         return () => {
             document.removeEventListener('visibilitychange', handleVisibility);
+            window.removeEventListener('storage', handleSessionEvent);
+            window.removeEventListener('class_session_started', handleSessionEvent);
+            window.removeEventListener('class_session_ended', handleSessionEvent);
+            supabaseAuth.removeChannel(classroomsRealtimeChannel);
         };
     }, [teacherProfile?.id, userRole]);
 
@@ -820,48 +845,19 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                         setIsEndingSession(false);
                                         return;
                                     }
-                                    // Optimistically hide active session widget immediately for instant responsiveness
-                                    if (typeof window !== 'undefined') {
-                                        localStorage.removeItem('active_class_session');
-                                        window.dispatchEvent(new Event('storage'));
-                                        window.dispatchEvent(new CustomEvent('class_session_ended', { detail: { classroomId: sessionToClear.classroomId } }));
-                                    }
-                                    setActiveSession(null);
 
                                     try {
-                                        const t0 = performance.now();
-                                        const startedAtTime = sessionToClear.startedAt || Date.now();
-                                        const endedAtTime = Date.now();
-                                        const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
-                                        const sessionDateStr = sessionToClear.sessionDate || new Date().toISOString().split('T')[0];
-
-                                        try {
-                                            const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
-                                                p_classroom_id: sessionToClear.classroomId,
-                                                p_session_date: sessionDateStr,
-                                                p_session_type: sessionToClear.sessionType || 'online',
-                                                p_started_at: new Date(startedAtTime).toISOString(),
-                                                p_ended_at: new Date(endedAtTime).toISOString(),
-                                                p_duration_seconds: durationSecs
-                                            });
-                                            if (rpcErr) throw rpcErr;
-                                        } catch (rpcErr) {
-                                            console.warn('RPC end_classroom_session warning/error, falling back to direct update:', rpcErr);
-                                            await supabaseAuth
-                                                .from('classrooms')
-                                                .update({
-                                                    is_live: false,
-                                                    live_meeting_link: null,
-                                                    live_session_started_at: null
-                                                })
-                                                .eq('id', sessionToClear.classroomId);
-                                        }
-
-                                        if (process.env.NODE_ENV !== 'production') {
-                                            console.log(`[Perf-SidebarEnd] Session ended in ${(performance.now() - t0).toFixed(1)}ms`);
-                                        }
+                                        await endActiveClass({
+                                            classroomId: sessionToClear.classroomId,
+                                            sessionDate: sessionToClear.sessionDate,
+                                            sessionType: sessionToClear.sessionType,
+                                            startedAt: sessionToClear.startedAt
+                                        });
+                                        setActiveSession(null);
                                     } catch (err: any) {
                                         console.error('Error ending class session from sidebar:', err);
+                                        alert(`Unable to end class: ${err.message || 'Please try again.'}`);
+                                        checkActiveSessionInDB();
                                     } finally {
                                         setIsEndingSession(false);
                                     }

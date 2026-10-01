@@ -5,18 +5,18 @@ export const metadata: Metadata = {
     title: 'Bansuri Practice Tools | Tuner, Metronome & Riyaz Tools | KFA',
     description: 'Explore Bansuri practice tools from Krishna Flute Academy for pitch, rhythm, timing and listening. Use interactive tools to support focused Riyaz and flute learning.',
     alternates: {
-        canonical: 'https://www.krishnafluteacademy.com/practice-tools',
+        canonical: 'https://krishnafluteacademy.com/practice-tools',
     },
     openGraph: {
         title: 'Bansuri Practice Tools | Krishna Flute Academy',
         description: 'Interactive pitch detection, metronome, tanpura drone, rhythm sequencer, and live notation tools for Indian classical flute students.',
-        url: 'https://www.krishnafluteacademy.com/practice-tools',
+        url: 'https://krishnafluteacademy.com/practice-tools',
         siteName: 'Krishna Flute Academy',
         type: 'website',
         locale: 'en_IN',
         images: [
             {
-                url: 'https://www.krishnafluteacademy.com/image.png',
+                url: 'https://krishnafluteacademy.com/image.png',
                 width: 800,
                 height: 800,
                 alt: 'Krishna Flute Academy Practice Lab',
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
         card: 'summary_large_image',
         title: 'Bansuri Practice Tools | Krishna Flute Academy',
         description: 'Interactive pitch detection, metronome, tanpura drone, and rhythm tools for Bansuri Riyaz.',
-        images: ['https://www.krishnafluteacademy.com/image.png'],
+        images: ['https://krishnafluteacademy.com/image.png'],
     },
 };
 
@@ -47,8 +47,8 @@ export default function PracticeToolsPage() {
         provider: {
             '@type': 'Organization',
             name: 'Krishna Flute Academy',
-            url: 'https://www.krishnafluteacademy.com',
-            logo: 'https://www.krishnafluteacademy.com/image.png',
+            url: 'https://krishnafluteacademy.com',
+            logo: 'https://krishnafluteacademy.com/image.png',
         },
     };
 

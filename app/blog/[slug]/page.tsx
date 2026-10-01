@@ -96,10 +96,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return {
         title: `${post.title} | Krishna Flute Academy`,
         description: post.excerpt || 'Learn the art of Indian Flute.',
+        alternates: {
+            canonical: `https://krishnafluteacademy.com/blog/${post.slug || slug}`,
+        },
         openGraph: {
             title: post.title,
             description: post.excerpt,
-            url: `https://www.krishnafluteacademy.com/blog/${post.slug || slug}`,
+            url: `https://krishnafluteacademy.com/blog/${post.slug || slug}`,
             siteName: 'Krishna Flute Academy',
             type: 'article',
             images: post.featured_image ? [

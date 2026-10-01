@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     openGraph: {
         title: 'KFA Community | Learn • Discuss • Practice • Grow',
         description: 'Ask flute questions, discuss raag concepts, share practice tips, and learn Indian classical bansuri with Krishna Flute Academy.',
-        url: 'https://www.krishnafluteacademy.com/community',
+        url: 'https://krishnafluteacademy.com/community',
         siteName: 'Krishna Flute Academy',
         type: 'website',
         images: [
@@ -19,8 +19,14 @@ export const metadata: Metadata = {
             },
         ],
     },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'KFA Community | Learn • Discuss • Practice • Grow',
+        description: 'Ask flute questions, discuss raag concepts, share practice tips, and learn Indian classical bansuri with Krishna Flute Academy.',
+        images: ['/Toppic.jpg'],
+    },
     alternates: {
-        canonical: 'https://www.krishnafluteacademy.com/community',
+        canonical: 'https://krishnafluteacademy.com/community',
     },
 };
 

@@ -18,12 +18,12 @@ export const metadata: Metadata = {
     title: 'Indian Classical Bansuri Courses | Krishna Flute Academy',
     description: 'Explore structured Indian Classical Bansuri learning paths from Beginner to Advanced, including our dedicated Kids Program. Learn in Bangalore or online worldwide.',
     alternates: {
-        canonical: 'https://www.krishnafluteacademy.com/courses',
+        canonical: 'https://krishnafluteacademy.com/courses',
     },
     openGraph: {
         title: 'Indian Classical Bansuri Courses | Krishna Flute Academy',
         description: 'Structured learning paths for different stages of the musical journey. Offline in Bangalore & Online worldwide.',
-        url: 'https://www.krishnafluteacademy.com/courses',
+        url: 'https://krishnafluteacademy.com/courses',
         siteName: 'Krishna Flute Academy',
         type: 'website',
         images: [
@@ -34,6 +34,12 @@ export const metadata: Metadata = {
                 alt: 'Krishna Flute Academy Courses',
             },
         ],
+    },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Indian Classical Bansuri Courses | Krishna Flute Academy',
+        description: 'Structured learning paths for different stages of the musical journey. Offline in Bangalore & Online worldwide.',
+        images: ['/Toppic.jpg'],
     },
 };
 

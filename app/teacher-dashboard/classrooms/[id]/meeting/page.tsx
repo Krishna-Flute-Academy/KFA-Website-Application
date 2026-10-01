@@ -12,6 +12,7 @@ import ClassroomDashboardPage from '../page';
 import { sendClassroomNotification } from '../../../../../src/lib/notifications';
 import { isStudentOperationallyActive } from '../../../../../src/lib/student-lifecycle';
 import { CoveredAttendanceRecord, buildCoveredAttendanceMap } from '../../../../../src/lib/on-behalf-attendance';
+import { startActiveClass, endActiveClass } from '../../../../../src/lib/class-session-lifecycle';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionType = 'online' | 'offline';
@@ -202,6 +203,39 @@ export default function MeetingPage() {
         }
     }, [classroomId]);
 
+    // Live session termination synchronization (listens to auto-end, other tabs, or sidebar)
+    useEffect(() => {
+        if (!classroomId) return;
+
+        const handleEnded = (e: any) => {
+            if (!e.detail?.classroomId || e.detail.classroomId === classroomId) {
+                setIsLiveSession(false);
+                router.push(`/teacher-dashboard/classrooms/${classroomId}`);
+            }
+        };
+
+        window.addEventListener('class_session_ended', handleEnded);
+
+        const channel = supabaseAuth
+            .channel(`meeting-live-status-${classroomId}`)
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'classrooms', filter: `id=eq.${classroomId}` },
+                (payload: any) => {
+                    if (payload.new && !payload.new.is_live) {
+                        setIsLiveSession(false);
+                        router.push(`/teacher-dashboard/classrooms/${classroomId}`);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            window.removeEventListener('class_session_ended', handleEnded);
+            supabaseAuth.removeChannel(channel);
+        };
+    }, [classroomId, router]);
+
     // ── Update attendance when date changes ──────────────────────────────
     useEffect(() => {
         if (isFirstRender.current) {
@@ -345,14 +379,14 @@ export default function MeetingPage() {
             }
 
             dbOps.push(
-                (async () => {
-                    const { error } = await supabaseAuth.rpc('start_classroom_session', {
-                        p_classroom_id: classroomId,
-                        p_meeting_link: sessionType === 'online' ? meetingLink : null,
-                        p_started_at: new Date().toISOString()
-                    });
-                    if (error) throw error;
-                })()
+                startActiveClass({
+                    classroomId,
+                    classroomName,
+                    meetingLink: sessionType === 'online' ? meetingLink : null,
+                    sessionType: sessionType || 'online',
+                    sessionDate,
+                    startedAt: Date.now()
+                })
             );
 
             await Promise.all(dbOps);
@@ -382,16 +416,6 @@ export default function MeetingPage() {
             }
 
             setIsLiveSession(true);
-
-            // Save active session info to localStorage for floating PIP widget support
-            localStorage.setItem('active_class_session', JSON.stringify({
-                classroomId,
-                classroomName,
-                sessionType: sessionType || 'online',
-                sessionDate,
-                startedAt: Date.now()
-            }));
-
             setStep(3);
         } catch (err: any) {
             console.error('Error saving attendance:', err);
@@ -430,44 +454,24 @@ export default function MeetingPage() {
             const late = students.filter(s => s.attendance === 'late').length;
             const excused = students.filter(s => s.attendance === 'excused').length;
 
-            // Single atomic RPC call handles clearing is_live, attendance aggregation, and session logging
-            try {
-                const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
-                    p_classroom_id: classroomId,
-                    p_session_date: activeSessionDate,
-                    p_session_type: sessionType || 'online',
-                    p_started_at: new Date(startedAtTime).toISOString(),
-                    p_ended_at: new Date(endedAtTime).toISOString(),
-                    p_duration_seconds: durationSecs,
-                    p_present_count: present,
-                    p_absent_count: absent,
-                    p_late_count: late,
-                    p_excused_count: excused
-                });
-                if (rpcErr) throw rpcErr;
-            } catch (rpcErr) {
-                console.warn('RPC end_classroom_session warning/error, falling back to direct update:', rpcErr);
-                await supabaseAuth
-                    .from('classrooms')
-                    .update({
-                        is_live: false,
-                        live_meeting_link: null,
-                        live_session_started_at: null
-                    })
-                    .eq('id', classroomId);
-            }
+            await endActiveClass({
+                classroomId,
+                sessionDate: activeSessionDate,
+                sessionType: sessionType || 'online',
+                startedAt: startedAtTime,
+                endedAt: endedAtTime,
+                durationSeconds: durationSecs,
+                presentCount: present,
+                absentCount: absent,
+                lateCount: late,
+                excusedCount: excused
+            });
 
             if (process.env.NODE_ENV !== 'production') {
                 console.log(`[Perf-EndClass] Active session ended in ${(performance.now() - t0).toFixed(1)}ms`);
             }
 
             setIsLiveSession(false);
-            if (typeof window !== 'undefined') {
-                localStorage.removeItem('active_class_session');
-                window.dispatchEvent(new Event('storage'));
-                window.dispatchEvent(new CustomEvent('class_session_ended', { detail: { classroomId } }));
-            }
-
             router.push(`/teacher-dashboard/classrooms/${classroomId}`);
         } catch (err: any) {
             console.error('Unexpected error ending active session:', err);

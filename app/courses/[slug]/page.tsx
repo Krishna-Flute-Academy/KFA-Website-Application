@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         };
     }
 
-    const canonicalUrl = `https://www.krishnafluteacademy.com/courses/${course.slug}`;
+    const canonicalUrl = `https://krishnafluteacademy.com/courses/${course.slug}`;
 
     return {
         title: course.seoTitle,
@@ -76,7 +76,7 @@ export default async function CourseDetailPage({ params }: Props) {
         notFound();
     }
 
-    const canonicalUrl = `https://www.krishnafluteacademy.com/courses/${course.slug}`;
+    const canonicalUrl = `https://krishnafluteacademy.com/courses/${course.slug}`;
 
     // Schema.org Structured Data
     const courseJsonLd = {
@@ -85,10 +85,10 @@ export default async function CourseDetailPage({ params }: Props) {
             // 1. MusicSchool / EducationalOrganization
             {
                 '@type': 'MusicSchool',
-                '@id': 'https://www.krishnafluteacademy.com/#organization',
+                '@id': 'https://krishnafluteacademy.com/#organization',
                 name: 'Krishna Flute Academy',
-                url: 'https://www.krishnafluteacademy.com',
-                logo: 'https://www.krishnafluteacademy.com/apple-touch-icon.png',
+                url: 'https://krishnafluteacademy.com',
+                logo: 'https://krishnafluteacademy.com/apple-touch-icon.png',
                 description: 'Premier Indian Classical Bansuri academy offering structured offline classes in Bangalore (Bengaluru) and live interactive online lessons worldwide.',
                 telephone: '+919836952545',
                 email: 'kgbhaumik86@gmail.com',
@@ -108,7 +108,7 @@ export default async function CourseDetailPage({ params }: Props) {
                 name: course.title,
                 description: course.metaDescription,
                 provider: {
-                    '@id': 'https://www.krishnafluteacademy.com/#organization'
+                    '@id': 'https://krishnafluteacademy.com/#organization'
                 },
                 url: canonicalUrl,
                 educationalCredentialAwarded: 'Level Certificate of Completion',
@@ -135,13 +135,13 @@ export default async function CourseDetailPage({ params }: Props) {
                         '@type': 'ListItem',
                         position: 1,
                         name: 'Home',
-                        item: 'https://www.krishnafluteacademy.com'
+                        item: 'https://krishnafluteacademy.com'
                     },
                     {
                         '@type': 'ListItem',
                         position: 2,
                         name: 'Courses',
-                        item: 'https://www.krishnafluteacademy.com/courses'
+                        item: 'https://krishnafluteacademy.com/courses'
                     },
                     {
                         '@type': 'ListItem',

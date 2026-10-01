@@ -16,17 +16,17 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-    metadataBase: new URL('https://www.krishnafluteacademy.com'),
+    metadataBase: new URL('https://krishnafluteacademy.com'),
     title: "Krishna Flute Academy",
-    description: "Learn the divine art of flute playing with Guru Krishna Flute Academy. Professional courses, handcrafted flutes, and musical wisdom.",
+    description: "Learn Indian classical bansuri with Krishna Gopal Bhaumik at Krishna Flute Academy. Professional courses, handcrafted flutes, practice tools, and a growing music community.",
     openGraph: {
         title: "Krishna Flute Academy",
-        description: "Learn the divine art of flute playing. Professional courses, handcrafted flutes, and more.",
+        description: "Learn Indian classical bansuri with Krishna Gopal Bhaumik at Krishna Flute Academy. Professional courses, handcrafted flutes, and more.",
         url: "https://krishnafluteacademy.com",
         siteName: "Krishna Flute Academy",
         images: [
             {
-                url: "/Toppic.jpg",
+                url: "/og-image.jpg",
                 width: 1200,
                 height: 630,
                 alt: "Krishna Flute Academy",
@@ -38,8 +38,8 @@ export const metadata: Metadata = {
     twitter: {
         card: "summary_large_image",
         title: "Krishna Flute Academy",
-        description: "Learn the divine art of flute playing",
-        images: ["/Toppic.jpg"],
+        description: "Learn Indian classical bansuri with Krishna Gopal Bhaumik at Krishna Flute Academy",
+        images: ["/og-image.jpg"],
     },
 };
 

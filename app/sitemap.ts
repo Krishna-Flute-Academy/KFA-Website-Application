@@ -2,7 +2,7 @@ import { MetadataRoute } from 'next';
 import { supabase } from '../src/lib/supabase';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = 'https://www.krishnafluteacademy.com';
+  const baseUrl = 'https://krishnafluteacademy.com';
 
   // Base static routes
   const routes = [
