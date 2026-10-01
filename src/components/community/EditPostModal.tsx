@@ -7,9 +7,11 @@ import {
 } from 'lucide-react';
 import { 
     CommunityPost, CommunityCategory, 
-    CommunityPostType, updateCommunityPost 
+    CommunityPostType, updateCommunityPost,
+    MentionSuggestion, formatContentWithMentions 
 } from '../../lib/community';
 import { sanitizeHtml } from '../../lib/text-utils';
+import MentionTextarea from './MentionTextarea';
 
 interface EditPostModalProps {
     isOpen: boolean;
@@ -29,6 +31,7 @@ export default function EditPostModal({
     const [title, setTitle] = useState(post.title || '');
     // Convert HTML <br/> back to newlines for textarea editing
     const [content, setContent] = useState('');
+    const [editMentions, setEditMentions] = useState<MentionSuggestion[]>([]);
     const [selectedCategoryId, setSelectedCategoryId] = useState(post.category_id || '');
     const [postType, setPostType] = useState<CommunityPostType>(post.post_type || 'question');
     const [showPreview, setShowPreview] = useState(false);
@@ -79,13 +82,16 @@ export default function EditPostModal({
 
         setIsSubmitting(true);
         try {
-            const htmlContent = content.replace(/\n/g, '<br/>');
+            const htmlContent = formatContentWithMentions(content, editMentions).replace(/\n/g, '<br/>');
             const res = await updateCommunityPost({
                 postId: post.id,
                 title: title.trim(),
                 content: htmlContent,
                 categoryId: selectedCategoryId,
-                postType
+                postType,
+                editorUserId: post.author_id,
+                editorName: post.author?.display_name,
+                mentionedUserIds: editMentions.map(m => m.id)
             });
 
             if (res.success) {
@@ -243,17 +249,18 @@ export default function EditPostModal({
                         {showPreview ? (
                             <div className="min-h-[160px] p-4 bg-amber-50/30 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-2xl text-sm prose dark:prose-invert max-w-none">
                                 {content.trim() ? (
-                                    <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(content.replace(/\n/g, '<br/>')) }} />
+                                    <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(formatContentWithMentions(content, editMentions).replace(/\n/g, '<br/>')) }} />
                                 ) : (
                                     <p className="text-slate-400 italic">No content to preview.</p>
                                 )}
                             </div>
                         ) : (
-                            <textarea
+                            <MentionTextarea
                                 value={content}
-                                onChange={(e) => setContent(e.target.value)}
+                                onChange={setContent}
+                                onMentionsChange={setEditMentions}
                                 rows={7}
-                                placeholder="Describe your question or discussion topic in detail..."
+                                placeholder="Describe your question or discussion topic in detail... (use @ to mention anyone)"
                                 className="w-full p-3.5 rounded-2xl bg-[#faf8f5] dark:bg-[#120d09] border border-amber-900/15 dark:border-amber-500/20 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 transition-all resize-y"
                             />
                         )}

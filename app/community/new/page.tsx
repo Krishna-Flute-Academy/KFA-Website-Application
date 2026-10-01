@@ -8,9 +8,11 @@ import {
     Lock, AlertCircle, Check, Send, Eye, Edit3, Music 
 } from 'lucide-react';
 import CommunityNavbar from '../../../src/components/community/CommunityNavbar';
+import MentionTextarea from '../../../src/components/community/MentionTextarea';
 import { 
     CommunityCategory, getCommunityCategories, 
-    createCommunityPost, CommunityPostType 
+    createCommunityPost, CommunityPostType,
+    MentionSuggestion, formatContentWithMentions
 } from '../../../src/lib/community';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { sanitizeHtml } from '../../../src/lib/text-utils';
@@ -22,6 +24,7 @@ export default function NewDiscussionPage() {
     const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
+    const [selectedMentions, setSelectedMentions] = useState<MentionSuggestion[]>([]);
     const [postType, setPostType] = useState<CommunityPostType>('question');
     const [showPreview, setShowPreview] = useState(false);
 
@@ -141,14 +144,16 @@ export default function NewDiscussionPage() {
 
         setIsSubmitting(true);
         try {
+            const formattedContent = formatContentWithMentions(content, selectedMentions).replace(/\n/g, '<br/>');
             const res = await createCommunityPost({
                 categoryId: selectedCategoryId,
                 title: title.trim(),
-                content: content.replace(/\n/g, '<br/>'),
+                content: formattedContent,
                 postType,
                 authorId: currentUser.id,
                 authorName: currentUserName,
-                authorAvatar: currentUserAvatar
+                authorAvatar: currentUserAvatar,
+                mentionedUserIds: selectedMentions.map(m => m.id)
             });
 
             if (res.success && res.slug) {
@@ -165,9 +170,16 @@ export default function NewDiscussionPage() {
 
     if (authLoading) {
         return (
-            <div className="min-h-screen bg-[#faf8f5] dark:bg-[#120d09] flex flex-col items-center justify-center font-sans">
-                <div className="w-10 h-10 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mb-4" />
-                <p className="text-xs font-bold text-slate-500">Checking permissions...</p>
+            <div className="min-h-screen bg-[#faf8f5] dark:bg-[#120d09] flex flex-col font-sans">
+                <CommunityNavbar />
+                <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-6 animate-pulse" aria-busy="true">
+                    <div className="h-4 w-32 bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                    <div className="bg-white dark:bg-[#1a140e] border border-amber-900/10 dark:border-amber-500/10 rounded-3xl p-6 sm:p-8 space-y-6">
+                        <div className="h-7 w-48 bg-amber-900/15 dark:bg-amber-500/15 rounded-lg" />
+                        <div className="h-10 w-full bg-amber-900/10 dark:bg-amber-500/10 rounded-xl" />
+                        <div className="h-40 w-full bg-amber-900/10 dark:bg-amber-500/10 rounded-xl" />
+                    </div>
+                </main>
             </div>
         );
     }
@@ -360,17 +372,18 @@ export default function NewDiscussionPage() {
                             {showPreview ? (
                                 <div className="min-h-[200px] p-4 bg-amber-50/30 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-2xl text-sm prose dark:prose-invert max-w-none">
                                     {content.trim() ? (
-                                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(content.replace(/\n/g, '<br/>')) }} />
+                                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(formatContentWithMentions(content, selectedMentions).replace(/\n/g, '<br/>')) }} />
                                     ) : (
                                         <p className="text-slate-400 italic">No content to preview.</p>
                                     )}
                                 </div>
                             ) : (
-                                <textarea
+                                <MentionTextarea
                                     value={content}
-                                    onChange={(e) => setContent(e.target.value)}
+                                    onChange={setContent}
+                                    onMentionsChange={setSelectedMentions}
                                     rows={8}
-                                    placeholder="Explain your question in detail. Mention what bansuri scale you are using (e.g. C Middle, E Bass), what you have already tried, and what challenges you encounter..."
+                                    placeholder="Explain your question in detail. Mention what bansuri scale you are using (e.g. C Middle, E Bass), what you have already tried, and type @ to mention any community member..."
                                     className="w-full p-4 rounded-2xl bg-[#faf8f5] dark:bg-[#120d09] border border-amber-900/15 dark:border-amber-500/20 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 transition-all resize-y"
                                 />
                             )}

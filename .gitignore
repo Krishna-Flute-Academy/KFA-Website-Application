@@ -36,6 +36,8 @@ out/
 scratch/
 test_upsert.cjs
 migration-backups/
+test-results/
+tests/playwright/report/
 
 # TypeScript build info
 *.tsbuildinfo

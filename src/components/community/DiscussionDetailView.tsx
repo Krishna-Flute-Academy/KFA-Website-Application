@@ -13,6 +13,8 @@ import AcademyConversionBanner from './AcademyConversionBanner';
 import EditPostModal from './EditPostModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import CommunityActionMenu from './CommunityActionMenu';
+import ReactionUsersModal from './ReactionUsersModal';
+import MentionTextarea from './MentionTextarea';
 import { 
     CommunityPost, CommunityReply, CommunityCategory,
     CommunityPostType, getCommunityCategories,
@@ -20,7 +22,8 @@ import {
     createCommunityReply, updateCommunityReply,
     deleteCommunityPost, deleteCommunityReply,
     toggleAcceptedAnswer, toggleCommunityReaction, 
-    incrementPostView, isContentEdited, CommunityBadge 
+    incrementPostView, isContentEdited, CommunityBadge,
+    MentionSuggestion, formatContentWithMentions 
 } from '../../lib/community';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import { sanitizeHtml, htmlToPlainText } from '../../lib/text-utils';
@@ -59,6 +62,7 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
 
     // Reply form state
     const [replyContent, setReplyContent] = useState('');
+    const [replyMentions, setReplyMentions] = useState<MentionSuggestion[]>([]);
     const [isSubmittingReply, setIsSubmittingReply] = useState(false);
     const [replyError, setReplyError] = useState<string | null>(null);
     const [showPreview, setShowPreview] = useState(false);
@@ -67,6 +71,12 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
     const [postUpvoted, setPostUpvoted] = useState(false);
     const [postUpvotesCount, setPostUpvotesCount] = useState(0);
     const [copiedLink, setCopiedLink] = useState(false);
+    const [activeReactionModal, setActiveReactionModal] = useState<{
+        postId?: string;
+        replyId?: string;
+        count: number;
+        title: string;
+    } | null>(null);
     const viewedPostIdRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -135,6 +145,12 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                 setPostUpvoted(postData.has_upvoted || false);
                 setPostUpvotesCount(postData.upvotes_count || 0);
 
+                // If opened with post ID or non-canonical parameter, replace state with canonical URL
+                if (typeof window !== 'undefined' && postData.slug && postData.slug !== slug) {
+                    const currentHash = window.location.hash || '';
+                    window.history.replaceState(null, '', `/community/discussion/${postData.slug}${currentHash}`);
+                }
+
                 // Count one completed, intentional detail-page open. The ref prevents
                 // duplicate increments from React effect re-runs for this same open.
                 if (viewedPostIdRef.current !== postData.id) {
@@ -171,6 +187,27 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
         return () => { isMounted = false; };
     }, [slug]);
 
+    // Auto-scroll and highlight target reply if URL hash contains #reply-[id]
+    useEffect(() => {
+        if (loading || replies.length === 0) return;
+        if (typeof window === 'undefined') return;
+
+        const hash = window.location.hash;
+        if (hash && hash.startsWith('#reply-')) {
+            const replyId = hash.replace('#reply-', '');
+            const targetEl = document.getElementById(`reply-${replyId}`);
+            if (targetEl) {
+                setTimeout(() => {
+                    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    targetEl.classList.add('ring-2', 'ring-amber-500', 'bg-amber-50/40', 'dark:bg-amber-950/40');
+                    setTimeout(() => {
+                        targetEl.classList.remove('ring-2', 'ring-amber-500', 'bg-amber-50/40', 'dark:bg-amber-950/40');
+                    }, 3500);
+                }, 300);
+            }
+        }
+    }, [loading, replies.length]);
+
     // Handle post upvote
     const handleTogglePostUpvote = async () => {
         if (!currentUser || !post) {
@@ -184,7 +221,8 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
 
         const res = await toggleCommunityReaction({
             userId: currentUser.id,
-            postId: post.id
+            postId: post.id,
+            userName: currentUserName
         });
 
         if (!res.success) {
@@ -214,7 +252,8 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
 
         const res = await toggleCommunityReaction({
             userId: currentUser.id,
-            replyId
+            replyId,
+            userName: currentUserName
         });
 
         if (!res.success) {
@@ -274,12 +313,14 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
 
         setIsSubmittingReply(true);
         try {
+            const formattedContent = formatContentWithMentions(replyContent, replyMentions).replace(/\n/g, '<br/>');
             const res = await createCommunityReply({
                 postId: post.id,
-                content: replyContent,
+                content: formattedContent,
                 authorId: currentUser.id,
                 authorName: currentUserName,
-                authorAvatar: currentUserAvatar
+                authorAvatar: currentUserAvatar,
+                mentionedUserIds: replyMentions.map(m => m.id)
             });
 
             if (res.success && res.reply) {
@@ -451,10 +492,61 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
         return (
             <div className="min-h-screen bg-[#faf8f5] dark:bg-[#120d09] text-slate-900 dark:text-slate-100 flex flex-col font-sans">
                 <CommunityNavbar />
-                <div className="max-w-4xl mx-auto px-4 py-16 text-center space-y-4 flex-1 flex flex-col justify-center items-center">
-                    <div className="w-12 h-12 border-4 border-amber-600 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-sm font-bold text-slate-500">Loading discussion...</p>
-                </div>
+
+                <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8 animate-pulse" aria-busy="true">
+                    {/* Breadcrumbs Row Placeholder */}
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="h-4 w-36 bg-amber-900/10 dark:bg-amber-500/10 rounded-md" />
+                        <div className="h-6 w-24 bg-amber-900/10 dark:bg-amber-500/10 rounded-lg" />
+                    </div>
+
+                    {/* Primary Discussion Card Skeleton */}
+                    <div className="bg-white dark:bg-[#1a140e] border border-amber-900/10 dark:border-amber-500/10 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+                        <div className="space-y-3">
+                            <div className="h-5 w-24 bg-amber-900/10 dark:bg-amber-500/10 rounded-md" />
+                            <div className="h-8 sm:h-9 w-4/5 bg-amber-900/15 dark:bg-amber-500/15 rounded-xl" />
+
+                            {/* Author row skeleton */}
+                            <div className="flex items-center justify-between gap-4 pt-2 border-b border-slate-100 dark:border-amber-900/10 pb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-amber-900/10 dark:bg-amber-500/10 shrink-0" />
+                                    <div className="space-y-1.5">
+                                        <div className="h-4 w-28 bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                                        <div className="h-3 w-20 bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                                    </div>
+                                </div>
+                                <div className="h-4 w-16 bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                            </div>
+                        </div>
+
+                        {/* Content text lines */}
+                        <div className="space-y-2.5 pt-2">
+                            <div className="h-4 w-full bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                            <div className="h-4 w-11/12 bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                            <div className="h-4 w-4/5 bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                            <div className="h-4 w-2/3 bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                        </div>
+
+                        {/* Footer action bar */}
+                        <div className="flex items-center gap-3 pt-4 border-t border-slate-100 dark:border-amber-900/10">
+                            <div className="h-9 w-24 bg-amber-900/10 dark:bg-amber-500/10 rounded-xl" />
+                            <div className="h-9 w-20 bg-amber-900/10 dark:bg-amber-500/10 rounded-xl" />
+                        </div>
+                    </div>
+
+                    {/* Answers & Discussion placeholder */}
+                    <div className="space-y-4 pt-2">
+                        <div className="h-6 w-44 bg-amber-900/10 dark:bg-amber-500/10 rounded-lg" />
+                        <div className="bg-white dark:bg-[#1a140e] border border-amber-900/10 dark:border-amber-500/10 rounded-2xl p-5 space-y-3">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-amber-900/10 dark:bg-amber-500/10 shrink-0" />
+                                <div className="h-3.5 w-24 bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                            </div>
+                            <div className="h-3.5 w-full bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                            <div className="h-3.5 w-3/4 bg-amber-900/10 dark:bg-amber-500/10 rounded" />
+                        </div>
+                    </div>
+                </main>
             </div>
         );
     }
@@ -618,17 +710,35 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
 
                     {/* Post Reaction Action Bar */}
                     <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-amber-900/10">
-                        <button
-                            onClick={handleTogglePostUpvote}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                                postUpvoted
-                                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200 shadow-2xs'
-                                    : 'bg-slate-50 text-slate-700 hover:bg-amber-50 hover:text-amber-800 dark:bg-slate-800 dark:text-slate-300'
-                            }`}
-                        >
-                            <ThumbsUp className={`w-4 h-4 ${postUpvoted ? 'fill-current text-amber-700' : ''}`} />
-                            <span>{postUpvotesCount} Upvotes</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleTogglePostUpvote}
+                                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                                    postUpvoted
+                                        ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200 shadow-2xs'
+                                        : 'bg-slate-50 text-slate-700 hover:bg-amber-50 hover:text-amber-800 dark:bg-slate-800 dark:text-slate-300'
+                                }`}
+                                title={postUpvoted ? 'Remove upvote' : 'Upvote discussion'}
+                            >
+                                <ThumbsUp className={`w-4 h-4 ${postUpvoted ? 'fill-current text-amber-700' : ''}`} />
+                                <span>{postUpvoted ? 'Upvoted' : 'Upvote'}</span>
+                            </button>
+
+                            {postUpvotesCount > 0 && (
+                                <button
+                                    onClick={() => setActiveReactionModal({
+                                        postId: post.id,
+                                        count: postUpvotesCount,
+                                        title: 'Discussion Reactions'
+                                    })}
+                                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-amber-800 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors flex items-center gap-1 cursor-pointer"
+                                    title="See who reacted"
+                                >
+                                    <span className="font-bold">{postUpvotesCount}</span>
+                                    <span>{postUpvotesCount === 1 ? 'upvote' : 'upvotes'}</span>
+                                </button>
+                            )}
+                        </div>
 
                         <div className="text-xs font-semibold text-slate-500">
                             {replies.length} {replies.length === 1 ? 'Reply' : 'Replies'}
@@ -675,6 +785,7 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                                 return (
                                     <div
                                         key={reply.id}
+                                        id={`reply-${reply.id}`}
                                         className={`bg-white dark:bg-[#1a140e] rounded-3xl p-5 sm:p-6 transition-all ${
                                             isAccepted
                                                 ? 'border-2 border-emerald-500/70 shadow-md ring-1 ring-emerald-500/20'
@@ -804,19 +915,36 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                                                     dangerouslySetInnerHTML={{ __html: sanitizeHtml(reply.content) }}
                                                 />
 
-                                                {/* Reply Footer: Upvote action */}
+                                                {/* Reply Footer: Upvote action & who reacted */}
                                                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-50 dark:border-slate-850">
-                                                    <button
-                                                        onClick={() => handleToggleReplyUpvote(reply.id, reply.has_upvoted || false)}
-                                                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                                                            reply.has_upvoted
-                                                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200'
-                                                                : 'text-slate-500 hover:text-amber-800 hover:bg-amber-50 dark:hover:bg-slate-800'
-                                                        }`}
-                                                    >
-                                                        <ThumbsUp className={`w-3.5 h-3.5 ${reply.has_upvoted ? 'fill-current text-amber-700' : ''}`} />
-                                                        <span>{reply.upvotes_count || 0}</span>
-                                                    </button>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => handleToggleReplyUpvote(reply.id, reply.has_upvoted || false)}
+                                                            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all active:scale-95 ${
+                                                                reply.has_upvoted
+                                                                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200'
+                                                                    : 'text-slate-500 hover:text-amber-800 hover:bg-amber-50 dark:hover:bg-slate-800'
+                                                            }`}
+                                                            title={reply.has_upvoted ? 'Remove upvote' : 'Upvote reply'}
+                                                        >
+                                                            <ThumbsUp className={`w-3.5 h-3.5 ${reply.has_upvoted ? 'fill-current text-amber-700' : ''}`} />
+                                                            <span>{reply.has_upvoted ? 'Upvoted' : 'Upvote'}</span>
+                                                        </button>
+
+                                                        {(reply.upvotes_count || 0) > 0 && (
+                                                            <button
+                                                                onClick={() => setActiveReactionModal({
+                                                                    replyId: reply.id,
+                                                                    count: reply.upvotes_count,
+                                                                    title: 'Reply Reactions'
+                                                                })}
+                                                                className="px-2 py-1 rounded-md text-xs font-bold text-slate-500 hover:text-amber-800 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                                                                title="See who reacted"
+                                                            >
+                                                                {reply.upvotes_count}
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </>
                                         )}
@@ -862,17 +990,18 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                             {showPreview ? (
                                 <div className="min-h-[140px] p-4 bg-amber-50/30 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-2xl text-sm prose dark:prose-invert max-w-none">
                                     {replyContent.trim() ? (
-                                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(replyContent.replace(/\n/g, '<br/>')) }} />
+                                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(formatContentWithMentions(replyContent, replyMentions).replace(/\n/g, '<br/>')) }} />
                                     ) : (
                                         <p className="text-slate-400 italic">No content to preview.</p>
                                     )}
                                 </div>
                             ) : (
-                                <textarea
+                                <MentionTextarea
                                     value={replyContent}
-                                    onChange={(e) => setReplyContent(e.target.value)}
+                                    onChange={setReplyContent}
+                                    onMentionsChange={setReplyMentions}
                                     rows={5}
-                                    placeholder="Write your constructive reply, answer, or musical observation..."
+                                    placeholder="Write your constructive reply, answer, or musical observation... (use @ to mention anyone)"
                                     className="w-full p-4 rounded-2xl bg-[#faf8f5] dark:bg-[#120d09] border border-amber-900/15 dark:border-amber-500/20 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 transition-all resize-y"
                                 />
                             )}
@@ -967,6 +1096,18 @@ export default function DiscussionDetailView({ slug }: DiscussionDetailViewProps
                     }}
                     onConfirm={handleConfirmDeleteReply}
                 />
+
+                {/* Reaction Users Modal */}
+                {activeReactionModal && (
+                    <ReactionUsersModal
+                        isOpen={!!activeReactionModal}
+                        onClose={() => setActiveReactionModal(null)}
+                        postId={activeReactionModal.postId}
+                        replyId={activeReactionModal.replyId}
+                        title={activeReactionModal.title}
+                        reactionCount={activeReactionModal.count}
+                    />
+                )}
             </main>
         </div>
     );

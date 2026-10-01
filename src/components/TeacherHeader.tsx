@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../lib/supabase-auth';
 import { htmlToPlainText } from '../lib/text-utils';
 
@@ -30,10 +31,49 @@ export default function TeacherHeader({
     backLink,
     children
 }: TeacherHeaderProps) {
+    const router = useRouter();
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const notifDropdownRef = useRef<HTMLDivElement>(null);
+
+    const handleNotificationItemClick = async (notif: any) => {
+        setShowNotificationsDropdown(false);
+        if (!notif.is_read) {
+            setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+            try {
+                await supabaseAuth.from('notifications').update({ is_read: true }).eq('id', notif.id);
+            } catch (err) {
+                console.warn('Notice marking notification read:', err);
+            }
+        }
+
+        if (notif.link) {
+            router.push(notif.link);
+            return;
+        }
+
+        const targetSlug = notif.metadata?.slug || notif.metadata?.post_id;
+        if (targetSlug) {
+            router.push(`/community/discussion/${targetSlug}${notif.metadata?.reply_id ? `#reply-${notif.metadata.reply_id}` : ''}`);
+            return;
+        }
+
+        const typeLower = String(notif.type || '').toLowerCase();
+        const titleLower = String(notif.title || '').toLowerCase();
+        const messageLower = String(notif.message || '').toLowerCase();
+        const fullText = `${titleLower} ${messageLower}`;
+
+        if (typeLower === 'community' || titleLower.includes('community') || titleLower.includes('discussion') || fullText.includes('community post') || fullText.includes('replied to your comment')) {
+            router.push('/community');
+            return;
+        }
+
+        if (['tasks', 'task', 'submission'].includes(typeLower) || fullText.includes('task') || fullText.includes('assignment')) {
+            router.push('/teacher-dashboard/tasks');
+            return;
+        }
+    };
 
     // Fetch user and notifications using cached getSession (no extra getUser() round-trip)
     useEffect(() => {
@@ -202,7 +242,8 @@ export default function TeacherHeader({
                                         notifications.map((notif) => (
                                             <div 
                                                 key={notif.id} 
-                                                className={`px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-b-0 flex flex-col gap-0.5 text-left ${!notif.is_read ? 'bg-amber-500/5 dark:bg-amber-500/10 font-medium' : ''}`}
+                                                onClick={() => handleNotificationItemClick(notif)}
+                                                className={`px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-b-0 flex flex-col gap-0.5 text-left cursor-pointer ${!notif.is_read ? 'bg-amber-500/5 dark:bg-amber-500/10 font-medium' : ''}`}
                                             >
                                                 <div className="flex justify-between items-start gap-1">
                                                     <span className={`text-xs text-slate-800 dark:text-slate-200 ${!notif.is_read ? 'font-bold' : ''}`}>{notif.title}</span>

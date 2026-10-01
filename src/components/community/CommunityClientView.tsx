@@ -34,6 +34,7 @@ export default function CommunityClientView({ initialCategorySlug }: CommunityCl
     const [totalCount, setTotalCount] = useState(0);
     const [hasMore, setHasMore] = useState(false);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [currentUserName, setCurrentUserName] = useState<string>('');
     const [initializing, setInitializing] = useState(true);
 
     // Initial auth & category load
@@ -48,7 +49,15 @@ export default function CommunityClientView({ initialCategorySlug }: CommunityCl
                     supabaseAuth.auth.getSession(),
                     getCommunityCategories()
                 ]);
-                if (isMounted) setCurrentUserId(session?.user?.id || null);
+                if (isMounted) {
+                    setCurrentUserId(session?.user?.id || null);
+                    if (session?.user) {
+                        const name = session.user.user_metadata?.full_name || 
+                                     session.user.user_metadata?.name || 
+                                     session.user.email?.split('@')[0] || 'KFA Member';
+                        setCurrentUserName(name);
+                    }
+                }
                 if (isMounted) setCategories(cats);
             } catch (e) {
                 console.error('[Community] Init error:', e);
@@ -277,6 +286,7 @@ export default function CommunityClientView({ initialCategorySlug }: CommunityCl
                                         key={post.id}
                                         post={post}
                                         currentUserId={currentUserId}
+                                        currentUserName={currentUserName}
                                     />
                                 ))}
 

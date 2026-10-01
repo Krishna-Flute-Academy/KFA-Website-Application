@@ -2807,6 +2807,23 @@ export default function StudentDashboardContainer() {
         const messageLower = String(notif.message || '').toLowerCase();
         const fullText = `${titleLower} ${messageLower}`;
 
+        // 0. Direct link / Community notification routing
+        if (notif.link) {
+            router.push(notif.link);
+            return;
+        }
+
+        const targetSlug = notif.metadata?.slug || notif.metadata?.post_id;
+        if (targetSlug) {
+            router.push(`/community/discussion/${targetSlug}${notif.metadata?.reply_id ? `#reply-${notif.metadata.reply_id}` : ''}`);
+            return;
+        }
+
+        if (typeLower === 'community' || titleLower.includes('community') || titleLower.includes('discussion') || fullText.includes('community post') || fullText.includes('replied to your comment')) {
+            router.push('/community');
+            return;
+        }
+
         // 1. Explicit notification type routing
         if (['task', 'assignment', 'submission', 'feedback', 'grade', 'task_review', 'task_submission'].includes(typeLower)) {
             setActiveTab('tasks');

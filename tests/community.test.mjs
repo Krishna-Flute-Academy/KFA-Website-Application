@@ -27,13 +27,14 @@ const {
 
 const { 
     generatePostSlug, 
+    getCommunityDiscussionUrl,
     resolveUserBadge, 
     getFallbackCategories,
     getSafeRedirectUrl,
     isContentEdited
 } = await importTypeScriptModule('../src/lib/community.ts', {
     "from './supabase-auth'": "from 'data:text/javascript,export const supabaseAuth={auth:{getSession:async()=>({data:{session:null}})},from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:null})})})})};'",
-    "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;'"
+    "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
 });
 
 test('1. Community Slug Generation: cleans special characters and preserves readability', () => {
@@ -183,7 +184,7 @@ test('8. Accepted Answer Client Workflow: delegates to atomic set_community_acce
 
     const { toggleAcceptedAnswer } = await importTypeScriptModule('../src/lib/community.ts', {
         "from './supabase-auth'": "from 'data:text/javascript,export const supabaseAuth = { rpc: async (n, p) => { globalThis.__testCommunityRpc(n, p); return { error: null }; } };'",
-        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;'"
+        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
     });
 
     // Test marking reply-456 as accepted
@@ -1249,6 +1250,630 @@ test('26. Sitemap SEO Exclusions: soft-deleted community posts are excluded from
     );
     assert.ok(sitemapCode.includes('!post.is_deleted'), 'Sitemap must exclude soft-deleted posts');
 });
+
+test('27. Community Notifications: sendCommunityNotification prevents self-notifications', async () => {
+    const insertedNotifs = [];
+    const { sendCommunityNotification } = await importTypeScriptModule('../src/lib/community.ts', {
+        "from './supabase-auth'": `from 'data:text/javascript,export const supabaseAuth={from:()=>({insert:async(p)=>{globalThis.__insertedNotifs.push(p);return{error:null};},select:()=>({eq:()=>({eq:()=>({gte:()=>({order:()=>({limit:async()=>({data:[]})})})})})})})};'`,
+        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
+    });
+
+    globalThis.__insertedNotifs = insertedNotifs;
+
+    // Test 1: User reacting to own post -> returns false, 0 inserts
+    const selfRes = await sendCommunityNotification({
+        recipientUserId: 'user-krishna',
+        actorUserId: 'user-krishna',
+        actorName: 'Krishna',
+        title: 'New Reaction',
+        message: 'Krishna liked your post',
+        link: '/community/discussion/test-slug'
+    });
+    assert.equal(selfRes, false, 'Must not send notification when recipient is actor');
+    assert.equal(insertedNotifs.length, 0, 'No notification should be inserted for self-action');
+
+    // Test 2: User B reacting to User A's post -> returns true, 1 insert
+    const otherRes = await sendCommunityNotification({
+        recipientUserId: 'user-krishna',
+        actorUserId: 'user-ravi',
+        actorName: 'Ravi',
+        title: 'New Reaction',
+        message: 'Ravi liked your community post "How to Improve Breath Control?"',
+        link: '/community/discussion/how-to-improve-breath-control',
+        metadata: { type: 'post_reaction', post_id: 'post-1', actor_id: 'user-ravi' },
+        isReaction: true,
+        postId: 'post-1'
+    });
+    assert.equal(otherRes, true, 'Must send notification to recipient when actor is different');
+    assert.equal(insertedNotifs.length, 1);
+    assert.equal(insertedNotifs[0].user_id, 'user-krishna');
+    assert.equal(insertedNotifs[0].type, 'community');
+    assert.ok(insertedNotifs[0].message.includes('Ravi liked your community post'));
+    assert.equal(insertedNotifs[0].link, '/community/discussion/how-to-improve-breath-control');
+});
+
+test('28. Community Notification Anti-Spam: deduplicates repeated reaction toggles', async () => {
+    // Mock existing unread notification within 24 hours
+    const { sendCommunityNotification } = await importTypeScriptModule('../src/lib/community.ts', {
+        "from './supabase-auth'": `from 'data:text/javascript,export const supabaseAuth={from:()=>({insert:async()=>({error:null}),select:()=>({eq:()=>({eq:()=>({gte:()=>({order:()=>({limit:async()=>({data:[{id:"notif-existing",is_read:false,created_at:new Date().toISOString()}]})})})})})})})};'`,
+        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
+    });
+
+    // Ravi unlikes and immediately likes again -> existing unread notification exists
+    const duplicateRes = await sendCommunityNotification({
+        recipientUserId: 'user-krishna',
+        actorUserId: 'user-ravi',
+        actorName: 'Ravi',
+        title: 'New Reaction',
+        message: 'Ravi liked your community post "How to Improve Breath Control?"',
+        link: '/community/discussion/how-to-improve-breath-control',
+        isReaction: true,
+        postId: 'post-1'
+    });
+
+    assert.equal(duplicateRes, false, 'Must prevent duplicate notification when an unread notification already exists');
+});
+
+test('29. Community Reply Notifications: distinct messaging for post author vs comment author', async () => {
+    const insertedNotifs = [];
+    globalThis.__insertedNotifs = insertedNotifs;
+
+    const { sendCommunityNotification } = await importTypeScriptModule('../src/lib/community.ts', {
+        "from './supabase-auth'": `from 'data:text/javascript,export const supabaseAuth={from:()=>({insert:async(p)=>{globalThis.__insertedNotifs.push(p);return{error:null};}})}'`,
+        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
+    });
+
+    // 1. Reply to Post
+    await sendCommunityNotification({
+        recipientUserId: 'user-author',
+        actorUserId: 'user-replier',
+        actorName: 'Raga',
+        title: 'New Community Reply',
+        message: 'Raga replied to your community post "How to Improve Breath Control?"',
+        link: '/community/discussion/how-to-improve-breath-control#reply-rep1',
+        metadata: { type: 'post_reply', post_id: 'post-1', reply_id: 'rep1', slug: 'how-to-improve-breath-control' }
+    });
+
+    // 2. Reply to Comment
+    await sendCommunityNotification({
+        recipientUserId: 'user-commenter',
+        actorUserId: 'user-replier-2',
+        actorName: 'Kaushik',
+        title: 'New Reply to Your Comment',
+        message: 'Kaushik replied to your comment on "How to Improve Breath Control?"',
+        link: '/community/discussion/how-to-improve-breath-control#reply-rep2',
+        metadata: { type: 'comment_reply', post_id: 'post-1', reply_id: 'rep2', parent_reply_id: 'rep1', slug: 'how-to-improve-breath-control' }
+    });
+
+    assert.equal(insertedNotifs.length, 2);
+    assert.equal(insertedNotifs[0].title, 'New Community Reply');
+    assert.ok(insertedNotifs[0].message.includes('Raga replied to your community post'));
+    assert.equal(insertedNotifs[0].link, '/community/discussion/how-to-improve-breath-control#reply-rep1');
+
+    assert.equal(insertedNotifs[1].title, 'New Reply to Your Comment');
+    assert.ok(insertedNotifs[1].message.includes('Kaushik replied to your comment'));
+    assert.equal(insertedNotifs[1].link, '/community/discussion/how-to-improve-breath-control#reply-rep2');
+});
+
+test('30. Reaction Users Privacy: returns safe Community profiles with zero UUIDs, emails, or phone numbers', async () => {
+    const mockReactions = [
+        { user_id: 'uuid-1', reaction_type: 'upvote', created_at: '2026-10-01T09:00:00Z' },
+        { user_id: 'uuid-2', reaction_type: 'upvote', created_at: '2026-10-01T08:30:00Z' }
+    ];
+    const mockProfiles = [
+        { id: 'uuid-1', display_name: 'Ravi Kumar', avatar_url: 'https://example.com/avatar1.jpg' },
+        { id: 'uuid-2', display_name: 'Krishna Gopal Bhaumik', avatar_url: null }
+    ];
+    const mockUsers = [
+        { id: 'uuid-1', role: 'student' },
+        { id: 'uuid-2', role: 'admin' }
+    ];
+
+    const mockCode = `
+        export const supabaseAuth = {
+            from: (table) => {
+                if (table === "community_reactions") {
+                    return {
+                        select: () => ({
+                            eq: () => ({
+                                order: () => ({
+                                    range: async () => ({
+                                        data: ${JSON.stringify(mockReactions)},
+                                        count: 2,
+                                        error: null
+                                    })
+                                })
+                            })
+                        })
+                    };
+                }
+                if (table === "community_profiles") {
+                    return {
+                        select: () => ({
+                            in: async () => ({
+                                data: ${JSON.stringify(mockProfiles)},
+                                error: null
+                            })
+                        })
+                    };
+                }
+                if (table === "users") {
+                    return {
+                        select: () => ({
+                            in: async () => ({
+                                data: ${JSON.stringify(mockUsers)},
+                                error: null
+                            })
+                        })
+                    };
+                }
+                return { select: () => ({}) };
+            }
+        };
+    `;
+
+    const { getCommunityReactionUsers } = await importTypeScriptModule('../src/lib/community.ts', {
+        "from './supabase-auth'": `from 'data:text/javascript,${encodeURIComponent(mockCode)}'`,
+        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
+    });
+
+    const res = await getCommunityReactionUsers({ postId: 'post-123' });
+    assert.equal(res.totalCount, 2);
+    assert.equal(res.users.length, 2);
+
+    // Verify first user
+    assert.equal(res.users[0].displayName, 'Ravi Kumar');
+    assert.equal(res.users[0].avatarUrl, 'https://example.com/avatar1.jpg');
+    assert.equal(res.users[0].badge, 'KFA Student');
+    assert.equal(res.users[0].reactionType, 'upvote');
+
+    // Verify second user
+    assert.equal(res.users[1].displayName, 'Krishna Gopal Bhaumik');
+    assert.equal(res.users[1].badge, 'Admin');
+
+    // PRIVACY VERIFICATION: ensure NO UUIDs, emails, or internal IDs are leaked
+    for (const u of res.users) {
+        assert.equal(u.id, undefined, 'User ID / UUID must NOT be present on ReactionUser');
+        assert.equal(u.user_id, undefined, 'user_id must NOT be present on ReactionUser');
+        assert.equal(u.email, undefined, 'Email must NOT be present on ReactionUser');
+        assert.equal(u.phone, undefined, 'Phone must NOT be present on ReactionUser');
+        assert.ok(u.displayName, 'displayName must be present');
+        assert.ok(u.badge, 'badge must be present');
+    }
+});
+
+test('31. Database Migration Audit: verifies idempotent community notifications migration', async () => {
+    const migrationSql = await readFile(
+        new URL('../supabase/migrations/20261001000000_community_interactions_and_notifications.sql', import.meta.url),
+        'utf8'
+    );
+
+    assert.ok(migrationSql.includes('ADD COLUMN IF NOT EXISTS link TEXT'), 'Must add link column for deep linking');
+    assert.ok(migrationSql.includes('ADD COLUMN IF NOT EXISTS metadata JSONB'), 'Must add metadata column');
+    assert.ok(migrationSql.includes("'community'"), 'Must guarantee community notification type check');
+    assert.ok(migrationSql.includes('idx_notifications_user_type_created'), 'Must create targeted performance index');
+});
+
+test('32. UI Component Integration: verifies ReactionUsersModal and deep-link click routing', async () => {
+    const [cardCode, detailCode, studentCode, teacherCode, modalCode] = await Promise.all([
+        readFile(new URL('../src/components/community/DiscussionCard.tsx', import.meta.url), 'utf8'),
+        readFile(new URL('../src/components/community/DiscussionDetailView.tsx', import.meta.url), 'utf8'),
+        readFile(new URL('../src/components/student-dashboard/StudentDashboardContainer.tsx', import.meta.url), 'utf8'),
+        readFile(new URL('../src/components/TeacherHeader.tsx', import.meta.url), 'utf8'),
+        readFile(new URL('../src/components/community/ReactionUsersModal.tsx', import.meta.url), 'utf8')
+    ]);
+
+    // ReactionUsersModal checks
+    assert.ok(modalCode.includes('ReactionUsersModal'), 'Modal component must exist');
+    assert.ok(modalCode.includes('getCommunityReactionUsers'), 'Modal must fetch via safe helper');
+    assert.ok(modalCode.includes('loadMore') || modalCode.includes('handleLoadMore'), 'Modal must support pagination');
+
+    // DiscussionCard checks
+    assert.ok(cardCode.includes('ReactionUsersModal'), 'Card must import ReactionUsersModal');
+    assert.ok(cardCode.includes('setShowReactionsModal'), 'Card must support opening reactions modal');
+
+    // DiscussionDetailView checks
+    assert.ok(detailCode.includes('ReactionUsersModal'), 'Detail view must import ReactionUsersModal');
+    assert.ok(detailCode.includes('setActiveReactionModal'), 'Detail view must support opening reactions modal');
+    assert.ok(detailCode.includes('reply-${reply.id}'), 'Detail view must set DOM id for comment scrolling');
+    assert.ok(detailCode.includes('#reply-'), 'Detail view must handle hash scrolling for deep-linked comments');
+
+    // Student Dashboard click routing
+    assert.ok(studentCode.includes('notif.link'), 'Student dashboard must support notif.link direct navigation');
+    assert.ok(studentCode.includes('community'), 'Student dashboard must support community notification routing');
+
+    // Teacher Dashboard click routing
+    assert.ok(teacherCode.includes('handleNotificationItemClick'), 'Teacher header must handle notification clicks');
+    assert.ok(teacherCode.includes('notif.link'), 'Teacher header must support notif.link direct navigation');
+});
+
+test('33. Mention Member Search & Privacy: debounced search with role badges and zero contact leaks', async () => {
+    const mockProfiles = [
+        { id: 'uuid-soumen-1', display_name: 'Soumen Mukherjee', avatar_url: 'https://example.com/soumen.jpg' },
+        { id: 'uuid-soumen-2', display_name: 'Soumen Roy', avatar_url: null }
+    ];
+    const mockUsers = [
+        { id: 'uuid-soumen-1', role: 'student' },
+        { id: 'uuid-soumen-2', role: 'student' }
+    ];
+
+    const mockCode = `
+        export const supabaseAuth = {
+            from: (table) => {
+                if (table === "community_profiles") {
+                    return {
+                        select: () => ({
+                            ilike: () => ({
+                                limit: async () => ({ data: ${JSON.stringify(mockProfiles)}, error: null })
+                            })
+                        })
+                    };
+                }
+                if (table === "users") {
+                    return {
+                        select: () => ({
+                            in: async () => ({ data: ${JSON.stringify(mockUsers)}, error: null })
+                        })
+                    };
+                }
+                return { select: () => ({}) };
+            }
+        };
+    `;
+
+    const { searchCommunityMentionUsers } = await importTypeScriptModule('../src/lib/community.ts', {
+        "from './supabase-auth'": `from 'data:text/javascript,${encodeURIComponent(mockCode)}'`,
+        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
+    });
+
+    const suggestions = await searchCommunityMentionUsers('@sou');
+    assert.equal(suggestions.length, 2);
+    assert.equal(suggestions[0].displayName, 'Soumen Mukherjee');
+    assert.equal(suggestions[0].badge, 'KFA Student');
+    assert.equal(suggestions[0].avatarUrl, 'https://example.com/soumen.jpg');
+
+    assert.equal(suggestions[1].displayName, 'Soumen Roy');
+    assert.equal(suggestions[1].badge, 'KFA Student');
+
+    // Zero contact leaks
+    for (const s of suggestions) {
+        assert.equal(s.email, undefined, 'Email must never be present in mention suggestions');
+        assert.equal(s.phone, undefined, 'Phone must never be present in mention suggestions');
+    }
+});
+
+test('34. Mention Priority Deduplication: mention notification takes priority over generic reply notification', async () => {
+    globalThis.__testNotifs = [];
+    globalThis.__testMentions = [];
+
+    const mockCode = `
+        export const supabaseAuth = {
+            from: (table) => {
+                if (table === "community_profiles") {
+                    return { upsert: async () => ({ error: null }) };
+                }
+                if (table === "community_replies") {
+                    return {
+                        insert: () => ({
+                            select: () => ({
+                                single: async () => ({
+                                    data: { id: "rep-101", post_id: "post-1", author_id: "user-soumen", content: "@Krishna please check this." },
+                                    error: null
+                                })
+                            })
+                        })
+                    };
+                }
+                if (table === "community_posts") {
+                    return {
+                        select: () => ({
+                            eq: () => ({
+                                single: async () => ({
+                                    data: { id: "post-1", author_id: "user-krishna", title: "Breath Control", slug: "breath-control" },
+                                    error: null
+                                })
+                            })
+                        })
+                    };
+                }
+                if (table === "community_mentions") {
+                    return {
+                        insert: async (rows) => {
+                            globalThis.__testMentions.push(...rows);
+                            return { error: null };
+                        }
+                    };
+                }
+                if (table === "notifications") {
+                    return {
+                        select: () => ({
+                            eq: () => ({
+                                eq: () => ({
+                                    gte: () => ({
+                                        order: () => ({
+                                            limit: async () => ({ data: [] })
+                                        })
+                                    })
+                                })
+                            })
+                        }),
+                        insert: async (payload) => {
+                            globalThis.__testNotifs.push(payload);
+                            return { error: null };
+                        }
+                    };
+                }
+                return { select: () => ({}) };
+            }
+        };
+    `;
+
+    const { createCommunityReply } = await importTypeScriptModule('../src/lib/community.ts', {
+        "from './supabase-auth'": `from 'data:text/javascript,${encodeURIComponent(mockCode)}'`,
+        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
+    });
+
+    // User Soumen replies to User Krishna's post, AND Soumen mentions Krishna in the reply:
+    // Krishna must receive ONE notification (the priority mention notification), NOT duplicate notifications!
+    const res = await createCommunityReply({
+        postId: 'post-1',
+        content: '@Krishna please check this.',
+        authorId: 'user-soumen',
+        authorName: 'Soumen',
+        mentionedUserIds: ['user-krishna']
+    });
+
+    assert.equal(res.success, true);
+    // Mentions table recorded
+    assert.equal(globalThis.__testMentions.length, 1);
+    assert.equal(globalThis.__testMentions[0].mentioned_user_id, 'user-krishna');
+    assert.equal(globalThis.__testMentions[0].mentioned_by_user_id, 'user-soumen');
+
+    // EXACTLY 1 notification sent to Krishna (the priority mention notification)
+    assert.equal(globalThis.__testNotifs.length, 1, 'Krishna should only receive 1 notification due to priority mention deduplication');
+    assert.equal(globalThis.__testNotifs[0].user_id, 'user-krishna');
+    assert.equal(globalThis.__testNotifs[0].title, 'You were mentioned');
+    assert.ok(globalThis.__testNotifs[0].message.includes('Soumen mentioned you in a reply.'));
+    assert.equal(globalThis.__testNotifs[0].link, '/community/discussion/breath-control#reply-rep-101');
+});
+
+test('35. Multiple Mentions & Self-Mention Exclusion', async () => {
+    globalThis.__testNotifs = [];
+    globalThis.__testMentions = [];
+
+    const mockCode = `
+        export const supabaseAuth = {
+            from: (table) => {
+                if (table === "community_profiles") return { upsert: async () => ({ error: null }) };
+                if (table === "community_posts") {
+                    return {
+                        insert: () => ({
+                            select: () => ({
+                                single: async () => ({
+                                    data: { id: "post-multi", title: "Raag Yaman discussion", slug: "raag-yaman-discussion" },
+                                    error: null
+                                })
+                            })
+                        })
+                    };
+                }
+                if (table === "community_categories") {
+                    return {
+                        select: () => ({
+                            eq: () => ({
+                                single: async () => ({ data: { access_scope: "public" }, error: null })
+                            })
+                        })
+                    };
+                }
+                if (table === "community_mentions") {
+                    return {
+                        insert: async (rows) => {
+                            globalThis.__testMentions.push(...rows);
+                            return { error: null };
+                        }
+                    };
+                }
+                if (table === "notifications") {
+                    return {
+                        select: () => ({ eq: () => ({ eq: () => ({ gte: () => ({ order: () => ({ limit: async () => ({ data: [] }) }) }) }) }) }),
+                        insert: async (payload) => {
+                            globalThis.__testNotifs.push(payload);
+                            return { error: null };
+                        }
+                    };
+                }
+                return { select: () => ({}) };
+            }
+        };
+    `;
+
+    const { createCommunityPost } = await importTypeScriptModule('../src/lib/community.ts', {
+        "from './supabase-auth'": `from 'data:text/javascript,${encodeURIComponent(mockCode)}'`,
+        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
+    });
+
+    // Krishna creates post and mentions Soumen, Ravi, Krishna (self-mention), and Soumen again (duplicate in array)
+    const res = await createCommunityPost({
+        categoryId: 'cat-1',
+        title: 'Raag Yaman discussion with fingering tips',
+        content: '@Soumen and @Ravi what do you think? @Krishna and @Soumen again',
+        authorId: 'user-krishna',
+        authorName: 'Krishna',
+        mentionedUserIds: ['user-soumen', 'user-ravi', 'user-krishna', 'user-soumen']
+    });
+
+    assert.equal(res.success, true);
+
+    // Only 2 distinct mentions should be recorded (Soumen and Ravi; self-mention and duplicate excluded)
+    assert.equal(globalThis.__testMentions.length, 2);
+    const recordedIds = globalThis.__testMentions.map(m => m.mentioned_user_id).sort();
+    assert.deepEqual(recordedIds, ['user-ravi', 'user-soumen']);
+
+    // Only 2 notifications created (1 for Soumen, 1 for Ravi)
+    assert.equal(globalThis.__testNotifs.length, 2);
+    const recipientIds = globalThis.__testNotifs.map(n => n.user_id).sort();
+    assert.deepEqual(recipientIds, ['user-ravi', 'user-soumen']);
+
+    // None sent to Krishna (self-action prevented)
+    assert.ok(!globalThis.__testNotifs.some(n => n.user_id === 'user-krishna'));
+});
+
+test('36. Edit-Aware Mention Diffing: only newly added mentioned users receive notifications on post edit', async () => {
+    globalThis.__testNotifs = [];
+    globalThis.__testMentions = [];
+
+    // Already mentioned: user-soumen
+    const existingMentions = [{ mentioned_user_id: 'user-soumen' }];
+
+    const mockCode = `
+        export const supabaseAuth = {
+            from: (table) => {
+                if (table === "community_posts") {
+                    return {
+                        update: () => ({
+                            eq: async () => ({ error: null })
+                        }),
+                        select: () => ({
+                            eq: () => ({
+                                maybeSingle: async () => ({
+                                    data: { slug: "raag-yaman-discussion" }
+                                })
+                            })
+                        })
+                    };
+                }
+                if (table === "community_mentions") {
+                    return {
+                        select: () => ({
+                            eq: async () => ({ data: ${JSON.stringify(existingMentions)}, error: null })
+                        }),
+                        insert: async (rows) => {
+                            globalThis.__testMentions.push(...rows);
+                            return { error: null };
+                        }
+                    };
+                }
+                if (table === "notifications") {
+                    return {
+                        select: () => ({ eq: () => ({ eq: () => ({ gte: () => ({ order: () => ({ limit: async () => ({ data: [] }) }) }) }) }) }),
+                        insert: async (payload) => {
+                            globalThis.__testNotifs.push(payload);
+                            return { error: null };
+                        }
+                    };
+                }
+                return { select: () => ({}) };
+            }
+        };
+    `;
+
+    const { updateCommunityPost } = await importTypeScriptModule('../src/lib/community.ts', {
+        "from './supabase-auth'": `from 'data:text/javascript,${encodeURIComponent(mockCode)}'`,
+        "from './text-utils'": "from 'data:text/javascript,export const sanitizeHtml=(s)=>s;export const htmlToPlainText=(s)=>s;export const truncatePlainText=(s,n)=>s.slice(0,n);'"
+    });
+
+    // Editor adds Ravi to the post, while Soumen was already mentioned previously
+    const res = await updateCommunityPost({
+        postId: 'post-1',
+        title: 'Updated Raag Yaman discussion title',
+        content: 'Updated content mentioning @Soumen and newly @Ravi',
+        editorUserId: 'user-krishna',
+        editorName: 'Krishna',
+        mentionedUserIds: ['user-soumen', 'user-ravi']
+    });
+
+    assert.equal(res.success, true);
+
+    // Only Ravi is newly recorded
+    assert.equal(globalThis.__testMentions.length, 1);
+    assert.equal(globalThis.__testMentions[0].mentioned_user_id, 'user-ravi');
+
+    // Only Ravi receives a notification (Soumen is NOT re-notified!)
+    assert.equal(globalThis.__testNotifs.length, 1);
+    assert.equal(globalThis.__testNotifs[0].user_id, 'user-ravi');
+});
+
+test('37. Database Migration Audit: community_mentions schema and constraints', async () => {
+    const migrationSql = await readFile(
+        new URL('../supabase/migrations/20261001010000_community_mentions.sql', import.meta.url),
+        'utf8'
+    );
+
+    assert.ok(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.community_mentions'), 'Must create community_mentions table');
+    assert.ok(migrationSql.includes('unique_post_user_mention'), 'Must create unique post user mention index');
+    assert.ok(migrationSql.includes('unique_reply_user_mention'), 'Must create unique reply user mention index');
+    assert.ok(migrationSql.includes('idx_community_mentions_mentioned_user'), 'Must create fast recipient index');
+    assert.ok(migrationSql.includes('ENABLE ROW LEVEL SECURITY'), 'Must enable RLS');
+    assert.ok(migrationSql.includes('auth.uid() = mentioned_by_user_id'), 'Must restrict insertion to authentic actor');
+});
+
+test('38. UI Integration: CommunityNotificationBell in Navbar & MentionTextarea in composers', async () => {
+    const [navbarCode, bellCode, textareaCode, newPostCode, detailCode, editCode] = await Promise.all([
+        readFile(new URL('../src/components/community/CommunityNavbar.tsx', import.meta.url), 'utf8'),
+        readFile(new URL('../src/components/community/CommunityNotificationBell.tsx', import.meta.url), 'utf8'),
+        readFile(new URL('../src/components/community/MentionTextarea.tsx', import.meta.url), 'utf8'),
+        readFile(new URL('../app/community/new/page.tsx', import.meta.url), 'utf8'),
+        readFile(new URL('../src/components/community/DiscussionDetailView.tsx', import.meta.url), 'utf8'),
+        readFile(new URL('../src/components/community/EditPostModal.tsx', import.meta.url), 'utf8')
+    ]);
+
+    // Navbar integration
+    assert.ok(navbarCode.includes('CommunityNotificationBell'), 'CommunityNavbar must import CommunityNotificationBell');
+    assert.ok(navbarCode.includes('<CommunityNotificationBell currentUserId={user.id} />'), 'CommunityNavbar must render CommunityNotificationBell for logged-in user');
+
+    // Bell component features
+    assert.ok(bellCode.includes('channel'), 'Bell must subscribe to realtime notifications');
+    assert.ok(bellCode.includes('unreadCount'), 'Bell must compute and display unread badge count');
+    assert.ok(bellCode.includes('handleMarkAllRead'), 'Bell must support mark all as read');
+    assert.ok(bellCode.includes('router.push'), 'Bell must support navigation on notification click');
+
+    // MentionTextarea component features
+    assert.ok(textareaCode.includes('detectMentionTrigger'), 'MentionTextarea must detect @ trigger');
+    assert.ok(textareaCode.includes('searchCommunityMentionUsers'), 'MentionTextarea must query mention search');
+    assert.ok(textareaCode.includes('ArrowDown'), 'MentionTextarea must support keyboard navigation');
+    assert.ok(textareaCode.includes('handleSelectUser'), 'MentionTextarea must support selection');
+
+    // Composer integrations
+    assert.ok(newPostCode.includes('MentionTextarea'), 'New discussion page must use MentionTextarea');
+    assert.ok(newPostCode.includes('mentionedUserIds'), 'New discussion page must pass mentionedUserIds');
+
+    assert.ok(detailCode.includes('MentionTextarea'), 'Discussion detail view must use MentionTextarea');
+    assert.ok(detailCode.includes('mentionedUserIds'), 'Discussion detail view must pass mentionedUserIds');
+
+    assert.ok(editCode.includes('MentionTextarea'), 'Edit post modal must use MentionTextarea');
+    assert.ok(editCode.includes('mentionedUserIds'), 'Edit post modal must pass mentionedUserIds');
+});
+
+test('74. Canonical Discussion URL Helper: constructs valid deep-links', () => {
+    // 1. Post object with slug
+    const url1 = getCommunityDiscussionUrl({ slug: 'how-to-riyaz-effectively-12345' });
+    assert.equal(url1, '/community/discussion/how-to-riyaz-effectively-12345');
+
+    // 2. Post object with slug and replyId
+    const url2 = getCommunityDiscussionUrl(
+        { slug: 'how-to-riyaz-effectively-12345' },
+        'reply-abc-6789'
+    );
+    assert.equal(url2, '/community/discussion/how-to-riyaz-effectively-12345#reply-reply-abc-6789');
+
+    // 3. String slug directly
+    const url3 = getCommunityDiscussionUrl('breath-control-technique-99887');
+    assert.equal(url3, '/community/discussion/breath-control-technique-99887');
+
+    // 4. Fallback to post id if slug is missing
+    const url4 = getCommunityDiscussionUrl({ id: '892079cf-6f60-40be-b481-9056ac7c38ba' });
+    assert.equal(url4, '/community/discussion/892079cf-6f60-40be-b481-9056ac7c38ba');
+
+    // 5. Empty inputs return fallback
+    const url5 = getCommunityDiscussionUrl('');
+    assert.equal(url5, '/community');
+
+    const url6 = getCommunityDiscussionUrl({});
+    assert.equal(url6, '/community');
+});
+
+
 
 
 

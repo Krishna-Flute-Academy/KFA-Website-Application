@@ -8,10 +8,12 @@ import {
 } from 'lucide-react';
 import { CommunityPost, toggleCommunityReaction, isContentEdited } from '../../lib/community';
 import { htmlToPlainText, truncatePlainText } from '../../lib/text-utils';
+import ReactionUsersModal from './ReactionUsersModal';
 
 interface DiscussionCardProps {
     post: CommunityPost;
     currentUserId?: string | null;
+    currentUserName?: string;
     onUpvoteToggle?: (postId: string, hasUpvoted: boolean) => void;
 }
 
@@ -30,9 +32,10 @@ export function formatRelativeTime(dateString: string): string {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function DiscussionCard({ post, currentUserId, onUpvoteToggle }: DiscussionCardProps) {
+export default function DiscussionCard({ post, currentUserId, currentUserName, onUpvoteToggle }: DiscussionCardProps) {
     const [upvoted, setUpvoted] = useState(post.has_upvoted || false);
     const [upvoteCount, setUpvoteCount] = useState(post.upvotes_count || 0);
+    const [showReactionsModal, setShowReactionsModal] = useState(false);
     const [copyNotification, setCopyNotification] = useState(false);
     const [isUpvoting, setIsUpvoting] = useState(false);
 
@@ -54,7 +57,8 @@ export default function DiscussionCard({ post, currentUserId, onUpvoteToggle }: 
 
         const res = await toggleCommunityReaction({
             userId: currentUserId,
-            postId: post.id
+            postId: post.id,
+            userName: currentUserName
         });
 
         if (res.success) {
@@ -219,18 +223,38 @@ export default function DiscussionCard({ post, currentUserId, onUpvoteToggle }: 
 
                 {/* Metrics & Upvote Button */}
                 <div className="flex items-center gap-3">
-                    <button
-                        onClick={handleUpvote}
-                        className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg transition-colors ${
-                            upvoted
-                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200'
-                                : 'text-slate-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-slate-800'
-                        }`}
-                        title={upvoted ? 'Remove upvote' : 'Upvote this discussion'}
-                    >
-                        <ThumbsUp className={`w-3.5 h-3.5 ${upvoted ? 'fill-current text-amber-700' : ''}`} />
-                        <span>{upvoteCount}</span>
-                    </button>
+                    <div className="inline-flex items-center rounded-lg p-0.5 border border-slate-200/80 dark:border-amber-900/20 bg-slate-50/80 dark:bg-slate-800/40">
+                        <button
+                            onClick={handleUpvote}
+                            className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-md transition-colors ${
+                                upvoted
+                                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200'
+                                    : 'text-slate-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-slate-800'
+                            }`}
+                            title={upvoted ? 'Remove upvote' : 'Upvote this discussion'}
+                        >
+                            <ThumbsUp className={`w-3.5 h-3.5 ${upvoted ? 'fill-current text-amber-700' : ''}`} />
+                        </button>
+
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (upvoteCount > 0) {
+                                    setShowReactionsModal(true);
+                                }
+                            }}
+                            disabled={upvoteCount === 0}
+                            className={`px-1.5 py-1 text-xs font-bold rounded-md transition-colors ${
+                                upvoteCount > 0
+                                    ? 'text-slate-700 dark:text-slate-200 hover:text-amber-800 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer'
+                                    : 'text-slate-400 dark:text-slate-500 cursor-default'
+                            }`}
+                            title={upvoteCount > 0 ? 'See who reacted' : 'No reactions yet'}
+                        >
+                            <span>{upvoteCount}</span>
+                        </button>
+                    </div>
 
                     <Link
                         href={`/community/discussion/${post.slug}#replies`}
@@ -247,6 +271,17 @@ export default function DiscussionCard({ post, currentUserId, onUpvoteToggle }: 
                     </span>
                 </div>
             </div>
+
+            {/* Reactions Modal */}
+            {showReactionsModal && (
+                <ReactionUsersModal
+                    isOpen={showReactionsModal}
+                    onClose={() => setShowReactionsModal(false)}
+                    postId={post.id}
+                    title="Discussion Reactions"
+                    reactionCount={upvoteCount}
+                />
+            )}
         </article>
     );
 }

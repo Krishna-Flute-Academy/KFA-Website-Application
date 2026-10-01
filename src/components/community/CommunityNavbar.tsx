@@ -10,6 +10,7 @@ import {
 import { supabaseAuth } from '../../lib/supabase-auth';
 import { resolveUserBadge, CommunityBadge } from '../../lib/community';
 import { getAuthNavigation } from '../../lib/auth-navigation';
+import CommunityNotificationBell from './CommunityNotificationBell';
 
 interface CommunityNavbarProps {
     searchQuery?: string;
@@ -108,101 +109,115 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
     };
 
     return (
-        <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#1a140e]/95 backdrop-blur-md border-b border-amber-900/10 dark:border-amber-500/10 shadow-xs transition-colors">
+        <header className="sticky top-0 z-40 h-[65px] bg-white/95 dark:bg-[#1a140e]/95 backdrop-blur-md border-b border-amber-900/10 dark:border-amber-500/10 shadow-xs transition-colors">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16 gap-4">
-                    {/* Brand Logo & Title */}
-                    <div className="flex items-center gap-3 shrink-0">
-                        <Link href="/" className="flex items-center gap-2.5 group">
+                    {/* Brand Logo & Desktop Navigation */}
+                    <div className="flex items-center gap-8 shrink-0">
+                        <Link href="/" className="flex items-center gap-2.5 group shrink-0">
                             <img
                                 src="/image.png"
                                 alt="Krishna Flute Academy"
-                                className="h-9 w-9 object-contain transform group-hover:scale-105 transition-transform"
+                                className="h-9 w-9 object-contain transform group-hover:scale-105 transition-transform shrink-0"
                             />
                             <div className="flex flex-col">
-                                <span className="text-sm font-black text-amber-950 dark:text-amber-100 tracking-tight leading-none">
+                                <span className="text-sm font-black text-amber-950 dark:text-amber-100 tracking-tight leading-none whitespace-nowrap">
                                     Krishna Flute Academy
                                 </span>
-                                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-0.5">
-                                    <Sparkles className="w-3 h-3 text-amber-600" /> Community
+                                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-0.5 whitespace-nowrap">
+                                    <Sparkles className="w-3 h-3 text-amber-600 shrink-0" /> Community
                                 </span>
                             </div>
                         </Link>
+
+                        {/* Desktop Navigation Links (anchored to logo to prevent horizontal shift) */}
+                        <nav className="hidden md:flex items-center gap-6 shrink-0">
+                            <Link 
+                                href="/community" 
+                                className="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-amber-700 dark:hover:text-amber-400 transition-colors whitespace-nowrap"
+                            >
+                                Discussions
+                            </Link>
+                            <Link
+                                href="/community/events"
+                                className="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-amber-700 dark:hover:text-amber-400 transition-colors whitespace-nowrap"
+                            >
+                                Events
+                            </Link>
+                            <Link 
+                                href="/courses" 
+                                className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-400 transition-colors whitespace-nowrap"
+                            >
+                                Courses
+                            </Link>
+                            <Link 
+                                href="/blog" 
+                                className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-400 transition-colors whitespace-nowrap"
+                            >
+                                Blog
+                            </Link>
+                            {userRole === 'admin' && (
+                                <Link 
+                                    href="/teacher-dashboard/community" 
+                                    className="text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-900/40 px-2.5 py-1 rounded-full hover:bg-amber-200/80 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
+                                >
+                                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" /> Community Admin
+                                </Link>
+                            )}
+                        </nav>
                     </div>
 
-                    {/* Desktop Navigation Links */}
-                    <nav className="hidden md:flex items-center gap-6">
-                        <Link 
-                            href="/community" 
-                            className="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
-                        >
-                            Discussions
-                        </Link>
-                        <Link
-                            href="/community/events"
-                            className="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
-                        >
-                            Events
-                        </Link>
-                        <Link 
-                            href="/courses" 
-                            className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
-                        >
-                            Courses
-                        </Link>
-                        <Link 
-                            href="/blog" 
-                            className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
-                        >
-                            Blog
-                        </Link>
-                        {userRole === 'admin' && (
-                            <Link 
-                                href="/teacher-dashboard/community" 
-                                className="text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-900/40 px-2.5 py-1 rounded-full hover:bg-amber-200/80 transition-colors flex items-center gap-1"
-                            >
-                                <ShieldCheck className="w-3.5 h-3.5" /> Community Admin
-                            </Link>
-                        )}
-                    </nav>
+                    {/* Right Action Section (reserved footprint across loading and auth resolution) */}
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                        {/* Notification Bell Footprint: always reserves 36x36px */}
+                        {loading ? (
+                            <div className="w-9 h-9 rounded-xl shrink-0" aria-hidden="true" />
+                        ) : user ? (
+                            <CommunityNotificationBell currentUserId={user.id} />
+                        ) : null}
 
-                    {/* Right Action Section */}
-                    <div className="flex items-center gap-3">
-                        {/* New Discussion Button */}
+                        {/* New Discussion Button: stable footprint */}
                         <Link
                             href="/community/new"
-                            className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 bg-[#a15912] hover:bg-[#8a4b0f] text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs hover:shadow-md transform active:scale-95 transition-all"
+                            className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 bg-[#a15912] hover:bg-[#8a4b0f] text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs hover:shadow-md transform active:scale-95 transition-all shrink-0 whitespace-nowrap"
                         >
-                            <PlusCircle className="w-4 h-4" />
+                            <PlusCircle className="w-4 h-4 shrink-0" />
                             <span>Ask / Discuss</span>
                         </Link>
 
                         {/* User Profile or Login */}
                         {loading ? (
-                            <div className="w-8 h-8 rounded-full bg-amber-100 animate-pulse" />
+                            <div className="flex items-center gap-2.5 shrink-0" aria-hidden="true">
+                                <div className="w-8 h-8 rounded-full bg-amber-900/10 dark:bg-amber-500/10 animate-pulse shrink-0" />
+                                <div className="hidden lg:flex flex-col gap-1 w-20 shrink-0">
+                                    <div className="h-3 w-16 bg-amber-900/10 dark:bg-amber-500/10 rounded animate-pulse" />
+                                    <div className="h-2.5 w-12 bg-amber-900/10 dark:bg-amber-500/10 rounded animate-pulse" />
+                                </div>
+                                <div className="hidden sm:block w-8 h-8 rounded-lg shrink-0" />
+                            </div>
                         ) : user ? (
-                            <div className="flex items-center gap-2.5">
+                            <div className="flex items-center gap-2.5 shrink-0">
                                 <Link 
                                     href={getDashboardLink()}
-                                    className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors"
+                                    className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors shrink-0"
                                     title="Go to Dashboard"
                                 >
                                     {userAvatar ? (
                                         <img 
                                             src={userAvatar} 
                                             alt={userName} 
-                                            className="w-8 h-8 rounded-full object-cover border border-amber-300 dark:border-amber-700" 
+                                            className="w-8 h-8 rounded-full object-cover border border-amber-300 dark:border-amber-700 shrink-0" 
                                         />
                                     ) : (
-                                        <div className="w-8 h-8 rounded-full bg-amber-700 text-white font-bold text-xs flex items-center justify-center">
+                                        <div className="w-8 h-8 rounded-full bg-amber-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
                                             {userName.charAt(0).toUpperCase()}
                                         </div>
                                     )}
                                     <div className="hidden lg:flex flex-col text-left">
-                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight truncate max-w-[120px]">
+                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight truncate max-w-[110px]">
                                             {userName}
                                         </span>
-                                        <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                                        <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 truncate max-w-[110px]">
                                             {badge}
                                         </span>
                                     </div>
@@ -211,32 +226,32 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
                                 <button
                                     onClick={handleSignOut}
                                     title="Sign Out"
-                                    className="p-2 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                                    className="hidden sm:flex w-8 h-8 p-1.5 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors items-center justify-center shrink-0"
                                 >
-                                    <LogOut className="w-4 h-4" />
+                                    <LogOut className="w-4 h-4 shrink-0" />
                                 </button>
                             </div>
                         ) : (
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 shrink-0">
                                 <Link
                                     href="/community/join"
-                                    className="hidden sm:inline-flex px-3.5 py-1.5 sm:px-4 sm:py-2 bg-amber-100 hover:bg-amber-200/80 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 text-xs sm:text-sm font-bold rounded-xl transition-colors"
+                                    className="hidden sm:inline-flex px-3.5 py-1.5 sm:px-4 sm:py-2 bg-amber-100 hover:bg-amber-200/80 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 text-xs sm:text-sm font-bold rounded-xl transition-colors shrink-0 whitespace-nowrap"
                                 >
                                     Join Community
                                 </Link>
                                 <Link
                                     href="/login?redirect=/community"
-                                    className="px-3.5 py-1.5 sm:px-4 sm:py-2 border border-amber-800/30 dark:border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs sm:text-sm font-bold rounded-xl hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors"
+                                    className="px-3.5 py-1.5 sm:px-4 sm:py-2 border border-amber-800/30 dark:border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs sm:text-sm font-bold rounded-xl hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors shrink-0 whitespace-nowrap"
                                 >
                                     Login
                                 </Link>
                             </div>
                         )}
 
-                        {/* Mobile Menu Toggle Button */}
+                        {/* Mobile Menu Toggle Button: stable footprint */}
                         <button
                             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                            className="md:hidden p-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-slate-800 transition-colors"
+                            className="md:hidden w-9 h-9 p-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center shrink-0"
                             aria-label="Toggle menu"
                         >
                             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
