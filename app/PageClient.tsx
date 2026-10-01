@@ -28,6 +28,7 @@ import { useSearchParams } from 'next/navigation';
 const heroSlides = [
     {
         imageUrl: '/carousel/slide-1-academy.jpg',
+        mobileImageUrl: '/carousel/slide-1-academy-mobile.jpg',
         badge: 'KRISHNA FLUTE ACADEMY',
         titlePart1: 'Master The Divine Art',
         titlePart2: 'Of Indian Bansuri',
@@ -38,6 +39,7 @@ const heroSlides = [
     },
     {
         imageUrl: '/carousel/slide-2-courses.jpg',
+        mobileImageUrl: '/carousel/slide-2-courses-mobile.jpg',
         badge: 'STRUCTURED COURSES',
         titlePart1: 'Step-By-Step Guidance',
         titlePart2: 'For All Age Groups',
@@ -48,6 +50,7 @@ const heroSlides = [
     },
     {
         imageUrl: '/carousel/slide-3-performance.jpg',
+        mobileImageUrl: '/carousel/slide-3-performance-mobile.jpg',
         badge: 'STAGE & RECITALS',
         titlePart1: 'Learn • Practice',
         titlePart2: 'Perform On Stage',
@@ -58,6 +61,7 @@ const heroSlides = [
     },
     {
         imageUrl: '/carousel/slide-4-practice-tools.jpg',
+        mobileImageUrl: '/carousel/slide-4-practice-tools-mobile.jpg',
         badge: 'SMART RIYAZ TOOLS',
         titlePart1: 'Free Interactive',
         titlePart2: 'Bansuri Practice Suite',
@@ -621,20 +625,28 @@ Hello Krishna Flute Academy, I have an inquiry!
                 >
                     <Carousel autoPlay={true} infiniteLoop={true} showThumbs={false} showStatus={false} interval={6000} className="w-full">
                         {heroSlides.map((slide, index) => (
-                            <div key={index} className="relative w-full h-[400px] sm:h-[480px] md:h-[560px] lg:h-[600px]">
-                                <img src={slide.imageUrl} alt={`${slide.titlePart1} ${slide.titlePart2}`} className="w-full h-full object-cover" loading={index === 0 ? "eager" : "lazy"} />
-                                <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/55 to-transparent sm:from-black/80 sm:via-black/45 sm:to-transparent"></div>
-                                <div className="absolute inset-0 flex flex-col justify-center items-start text-left text-white p-6 sm:p-12 md:pl-20 lg:pl-28 font-montserrat z-10 max-w-3xl">
-                                    <div className="space-y-2.5 sm:space-y-4">
-                                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] sm:text-xs font-bold tracking-widest uppercase">
+                            <div key={index} className="relative w-full h-[520px] sm:h-[500px] md:h-[560px] lg:h-[600px]">
+                                <picture className="w-full h-full block">
+                                    <source media="(max-width: 767px)" srcSet={slide.mobileImageUrl} />
+                                    <img 
+                                        src={slide.imageUrl} 
+                                        alt={`${slide.titlePart1} ${slide.titlePart2}`} 
+                                        className="w-full h-full object-cover object-top sm:object-center" 
+                                        loading={index === 0 ? "eager" : "lazy"} 
+                                    />
+                                </picture>
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/55 to-transparent md:bg-gradient-to-r md:from-black/90 md:via-black/55 md:to-transparent pointer-events-none"></div>
+                                <div className="absolute inset-0 flex flex-col justify-end md:justify-center items-start text-left text-white p-5 pb-8 sm:p-10 sm:pb-10 md:p-12 md:pl-20 lg:pl-28 font-montserrat z-10 max-w-3xl">
+                                    <div className="space-y-2 sm:space-y-3 md:space-y-4">
+                                        <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] sm:text-xs font-bold tracking-widest uppercase">
                                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
                                             {slide.badge}
                                         </div>
-                                        <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight text-white drop-shadow-md">
+                                        <h1 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight text-white drop-shadow-md">
                                             <span className="font-serif italic font-light text-slate-100">{slide.titlePart1}</span><br />
                                             <span className="text-yellow-400 font-bold">{slide.titlePart2}</span>
                                         </h1>
-                                        <p className="text-xs sm:text-base md:text-lg text-slate-200 line-clamp-3 sm:line-clamp-none max-w-xl leading-relaxed">
+                                        <p className="text-xs sm:text-sm md:text-lg text-slate-200 line-clamp-2 sm:line-clamp-3 md:line-clamp-none max-w-xl leading-relaxed">
                                             {slide.subtitle}
                                         </p>
                                         <div className="hidden sm:flex flex-wrap items-center gap-2 pt-1">
@@ -644,17 +656,17 @@ Hello Krishna Flute Academy, I have an inquiry!
                                                 </span>
                                             ))}
                                         </div>
-                                        <div className="flex items-center gap-3 pt-2">
+                                        <div className="flex items-center gap-2.5 sm:gap-3 pt-1 sm:pt-2">
                                             <Link 
                                                 href={slide.primaryBtn.href} 
-                                                className="inline-flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-bold text-xs sm:text-sm shadow-lg hover:shadow-amber-500/20 transition-all transform hover:-translate-y-0.5"
+                                                className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-bold text-xs sm:text-sm shadow-lg hover:shadow-amber-500/20 transition-all transform hover:-translate-y-0.5"
                                             >
                                                 {slide.primaryBtn.label}
-                                                <ArrowRight className="w-4 h-4" />
+                                                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                             </Link>
                                             <Link 
                                                 href={slide.secondaryBtn.href} 
-                                                className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-xs sm:text-sm backdrop-blur-sm transition-all"
+                                                className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-xs sm:text-sm backdrop-blur-sm transition-all"
                                             >
                                                 {slide.secondaryBtn.label}
                                             </Link>
