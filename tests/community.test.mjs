@@ -1873,6 +1873,110 @@ test('74. Canonical Discussion URL Helper: constructs valid deep-links', () => {
     assert.equal(url6, '/community');
 });
 
+test('75. Dynamic Social Sharing Metadata: generates complete OpenGraph and Twitter card tags', async () => {
+    const mockCommunityCode = `
+        export const getCommunityPostBySlug = async (slug) => {
+            if (slug === "bigger-flute") {
+                return {
+                    id: "post-123",
+                    title: "How Do You Know When It’s Time to Move to a Bigger Flute?",
+                    slug: "bigger-flute",
+                    content: "<p>I have been practicing on G Bass for 6 months and wondering when to transition to E Bass.</p>",
+                    visibility: "public",
+                    created_at: "2026-03-01T10:00:00Z",
+                    updated_at: "2026-03-01T10:00:00Z",
+                    author: { display_name: "Riyaz Student" },
+                    category: { name: "Flute Questions" }
+                };
+            }
+            if (slug === "private-post") {
+                return {
+                    id: "post-priv",
+                    title: "Internal Class Notes",
+                    slug: "private-post",
+                    content: "<p>Classroom notes only.</p>",
+                    visibility: "students",
+                    created_at: "2026-03-01T10:00:00Z",
+                    updated_at: "2026-03-01T10:00:00Z"
+                };
+            }
+            return null;
+        };
+    `;
+    const mockCommunityUri = `data:text/javascript;base64,${Buffer.from(mockCommunityCode).toString('base64')}`;
+
+    const mockTextCode = `
+        export const htmlToPlainText = (s) => (s || "").replace(/<[^>]+>/g, " ").trim();
+        export const truncatePlainText = (s, n) => (s || "").slice(0, n);
+    `;
+    const mockTextUri = `data:text/javascript;base64,${Buffer.from(mockTextCode).toString('base64')}`;
+
+    let pageSource = await readFile(new URL('../app/community/discussion/[slug]/page.tsx', import.meta.url), 'utf8');
+    pageSource = pageSource.replaceAll("from '../../../../src/lib/community'", `from '${mockCommunityUri}'`);
+    pageSource = pageSource.replaceAll("from '../../../../src/lib/text-utils'", `from '${mockTextUri}'`);
+    pageSource = pageSource.replace(/export default async function DiscussionPage[\s\S]*$/, 'export default function DiscussionPage() { return null; }');
+
+    const { outputText } = ts.transpileModule(pageSource, {
+        compilerOptions: {
+            module: ts.ModuleKind.ES2022,
+            target: ts.ScriptTarget.ES2022,
+        },
+    });
+
+    const encodedModule = `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`;
+    const { generateMetadata } = await import(encodedModule);
+
+
+    // 1. Public discussion page metadata
+    const meta = await generateMetadata({ params: Promise.resolve({ slug: 'bigger-flute' }) });
+
+    assert.equal(meta.title, 'How Do You Know When It’s Time to Move to a Bigger Flute? | KFA Community');
+    assert.ok(meta.description.includes('I have been practicing on G Bass'));
+    assert.equal(meta.alternates.canonical, 'https://krishnafluteacademy.com/community/discussion/bigger-flute');
+    assert.deepEqual(meta.robots, { index: true, follow: true });
+
+    // OpenGraph article tags
+    assert.ok(meta.openGraph);
+    assert.equal(meta.openGraph.type, 'article');
+    assert.equal(meta.openGraph.title, 'How Do You Know When It’s Time to Move to a Bigger Flute? | KFA Community');
+    assert.equal(meta.openGraph.url, 'https://krishnafluteacademy.com/community/discussion/bigger-flute');
+    assert.equal(meta.openGraph.siteName, 'Krishna Flute Academy Community');
+    assert.equal(meta.openGraph.images.length, 1);
+    assert.equal(
+        meta.openGraph.images[0].url,
+        'https://krishnafluteacademy.com/community/discussion/bigger-flute/opengraph-image'
+    );
+    assert.equal(meta.openGraph.images[0].width, 1200);
+    assert.equal(meta.openGraph.images[0].height, 630);
+
+    // Twitter card tags
+    assert.ok(meta.twitter);
+    assert.equal(meta.twitter.card, 'summary_large_image');
+    assert.equal(meta.twitter.title, 'How Do You Know When It’s Time to Move to a Bigger Flute?');
+    assert.ok(meta.twitter.description.includes('I have been practicing on G Bass'));
+    assert.deepEqual(meta.twitter.images, [
+        'https://krishnafluteacademy.com/community/discussion/bigger-flute/opengraph-image'
+    ]);
+
+    // 2. Private discussion page metadata (does not expose private details to public crawlers)
+    const privMeta = await generateMetadata({ params: Promise.resolve({ slug: 'private-post' }) });
+    assert.deepEqual(privMeta.robots, { index: false, follow: false });
+    assert.equal(privMeta.openGraph, undefined);
+    assert.equal(privMeta.twitter, undefined);
+
+    // 3. Fallback when post is not found
+    const missingMeta = await generateMetadata({ params: Promise.resolve({ slug: 'non-existent' }) });
+    assert.equal(missingMeta.title, 'Discussion | KFA Community');
+    assert.ok(missingMeta.openGraph.title.includes('Krishna Flute Academy Community'));
+    assert.ok(missingMeta.openGraph.description.includes('Learn • Ask • Discuss • Grow'));
+    assert.equal(
+        missingMeta.openGraph.images[0].url,
+        'https://krishnafluteacademy.com/community/discussion/non-existent/opengraph-image'
+    );
+});
+
+
+
 
 
 
