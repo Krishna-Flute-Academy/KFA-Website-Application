@@ -2139,9 +2139,12 @@ export default function FeesManagementDashboard() {
                                                                                 </button>
                                                                             );
                                                                         } else if (metrics.validOutstandingMakeups > 0) {
+                                                                            const makeupLabel = metrics.regularFuture === 0
+                                                                                ? `via ${metrics.validOutstandingMakeups} makeup ${metrics.validOutstandingMakeups > 1 ? 'slots' : 'slot'}`
+                                                                                : `incl. ${metrics.validOutstandingMakeups} makeup ${metrics.validOutstandingMakeups > 1 ? 'slots' : 'slot'}`;
                                                                             subtitleNode = (
                                                                                 <span className="text-[10px] font-medium text-purple-600 dark:text-purple-400 leading-tight flex items-center gap-1">
-                                                                                    <span>{metrics.validOutstandingMakeups} makeup {metrics.validOutstandingMakeups > 1 ? 'slots' : 'slot'}</span>
+                                                                                    <span>{makeupLabel}</span>
                                                                                     <span className="text-slate-300 dark:text-slate-700">•</span>
                                                                                     <button
                                                                                         type="button"

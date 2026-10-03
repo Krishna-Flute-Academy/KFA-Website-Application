@@ -41,6 +41,7 @@ interface StudentProfile {
     fees_collection_date?: number | string;
     fees_amount?: number;
     fees_classes_paid?: number;
+    join_date?: string;
     created_at?: string;
     status?: string;
 }
@@ -204,7 +205,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
             // 1. Fetch Student Profile
             const { data: profileData, error: profileErr } = await supabaseAuth
                 .from('users')
-                .select('id, name, email, phone, profile_pic_url, fees_basis, fees_collection_date, fees_amount, fees_classes_paid, created_at, status')
+                .select('id, name, email, phone, profile_pic_url, fees_basis, fees_collection_date, fees_amount, fees_classes_paid, join_date, created_at, status')
                 .eq('id', studentId)
                 .single();
 
@@ -230,7 +231,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                 profile.fees_collection_date ? Number(profile.fees_collection_date) : undefined,
                 paymentsData || [],
                 new Date(),
-                profile.created_at,
+                profile.join_date || profile.created_at,
                 profile.status
             );
             setFeeStatus(derivedFeeStatus);

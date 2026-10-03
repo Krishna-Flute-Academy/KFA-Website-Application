@@ -9,6 +9,8 @@ export interface FeeStatusDetails {
     isPaused?: boolean;
     hasPrePauseDebt?: boolean;
     prePauseDueDate?: Date;
+    unpaidCyclesCount?: number;
+    earliestUnpaidDueDate?: Date;
 }
 
 /**
@@ -99,8 +101,258 @@ export function calculateResumedFeeDueDate(
     return targetDue;
 }
 
+export interface BillingCycleSlot {
+    index: number;
+    cycleStart: string;          // YYYY-MM-DD
+    cycleStartDate: Date;
+    cycleEnd: string;            // YYYY-MM-DD
+    nextDueDate: string;         // YYYY-MM-DD
+    dueDate: string;             // YYYY-MM-DD (collection due date for this cycle)
+    dueDateObj: Date;
+    isPaid: boolean;
+    isLate: boolean;
+    allocatedPayment?: any;
+    paymentStatus: 'paid_on_time' | 'paid_late' | 'overdue' | 'due' | 'upcoming' | 'future';
+}
+
 /**
- * Calculates a student's monthly fee due date and payment status.
+ * Helper to find which collection due date is closest to a given payment date.
+ */
+export function getClosestDueDate(pDate: Date, cDay: number): Date {
+    const pYear = pDate.getFullYear();
+    const pMonth = pDate.getMonth();
+    const options = [
+        getClampedMonthDate(pYear, pMonth - 1, cDay),
+        getClampedMonthDate(pYear, pMonth, cDay),
+        getClampedMonthDate(pYear, pMonth + 1, cDay)
+    ];
+    let closest = options[0];
+    let minDiff = Math.abs(pDate.getTime() - options[0].getTime());
+    for (let i = 1; i < options.length; i++) {
+        const diff = Math.abs(pDate.getTime() - options[i].getTime());
+        if (diff < minDiff) {
+            minDiff = diff;
+            closest = options[i];
+        }
+    }
+    closest.setHours(0, 0, 0, 0);
+    return closest;
+}
+
+/**
+ * Helper to get the cycle containing a given date.
+ * Half-open interval [cycleStart, nextDueDate).
+ */
+export function getCycleContainingDate(d: Date, collectionDay: number): { cycleStart: Date; nextDueDate: Date; dueDate: Date } {
+    const yr = d.getFullYear();
+    const mo = d.getMonth();
+    const day = d.getDate();
+
+    let cycleStart: Date;
+    let nextDueDate: Date;
+
+    if (day >= collectionDay) {
+        cycleStart = getClampedMonthDate(yr, mo, collectionDay);
+        nextDueDate = getClampedMonthDate(yr, mo + 1, collectionDay);
+    } else {
+        cycleStart = getClampedMonthDate(yr, mo - 1, collectionDay);
+        nextDueDate = getClampedMonthDate(yr, mo, collectionDay);
+    }
+    cycleStart.setHours(0, 0, 0, 0);
+    nextDueDate.setHours(0, 0, 0, 0);
+    const dueDate = new Date(cycleStart);
+    return { cycleStart, nextDueDate, dueDate };
+}
+
+/**
+ * Builds all chronological billing cycles for a student and allocates approved payments via FIFO.
+ * Oldest unpaid cycle is settled first before payments advance to subsequent cycles.
+ */
+export function buildStudentBillingCycles(
+    feesCollectionDay: number | null | undefined,
+    payments: { payment_date: string; status?: string; classes_added?: number; allocated_due_date?: string; notes?: string | null }[] = [],
+    today: Date = new Date(),
+    joinDate?: string | Date | null,
+    studentStatus?: string | null,
+    pauseEffectiveDate?: string | Date | null,
+    resumeDate?: string | Date | null
+): {
+    cycles: BillingCycleSlot[];
+    approvedPayments: typeof payments;
+    isPaused: boolean;
+    pauseDate: Date | null;
+    collectionDay: number;
+    todayZero: Date;
+} {
+    const isPaused = (studentStatus || '').toLowerCase().trim() === 'inactive' || (studentStatus || '').toLowerCase().trim() === 'paused';
+
+    let collectionDay = Number(feesCollectionDay);
+    if (!collectionDay || isNaN(collectionDay) || collectionDay < 1 || collectionDay > 31) {
+        if (joinDate) {
+            const jDate = new Date(joinDate);
+            collectionDay = !isNaN(jDate.getTime()) ? jDate.getDate() : 1;
+        } else {
+            collectionDay = 1;
+        }
+    }
+
+    const todayZero = new Date(today);
+    todayZero.setHours(0, 0, 0, 0);
+
+    const approvedPayments = payments
+        .filter(p => !p.status || p.status === 'approved')
+        .slice()
+        .sort((a, b) => new Date(a.payment_date).getTime() - new Date(b.payment_date).getTime());
+
+    // Determine current month's collection due date
+    const currDueDate = getClampedMonthDate(todayZero.getFullYear(), todayZero.getMonth(), collectionDay);
+    currDueDate.setHours(0, 0, 0, 0);
+
+    // Determine initial cycle start date
+    let startDue: Date;
+    if (resumeDate) {
+        startDue = calculateResumedFeeDueDate(resumeDate, collectionDay);
+    } else {
+        const candidateDates: Date[] = [];
+        let p0Due: Date | null = null;
+        if (approvedPayments.length > 0) {
+            const p0Date = new Date(approvedPayments[0].payment_date);
+            p0Date.setHours(0, 0, 0, 0);
+            p0Due = getClosestDueDate(p0Date, collectionDay);
+            candidateDates.push(p0Due);
+        }
+
+        if (joinDate) {
+            const jDate = new Date(joinDate);
+            if (!isNaN(jDate.getTime())) {
+                jDate.setHours(0, 0, 0, 0);
+                let jDue = getClampedMonthDate(jDate.getFullYear(), jDate.getMonth(), collectionDay);
+                jDue.setHours(0, 0, 0, 0);
+                if (jDue.getTime() < jDate.getTime()) {
+                    const hasEarlyPay = approvedPayments.some(p => {
+                        const pd = new Date(p.payment_date);
+                        pd.setHours(0, 0, 0, 0);
+                        return pd.getTime() <= jDue.getTime() + 15 * 86400000;
+                    });
+                    if (!hasEarlyPay) {
+                        jDue = getClampedMonthDate(jDue.getFullYear(), jDue.getMonth() + 1, collectionDay);
+                        jDue.setHours(0, 0, 0, 0);
+                    }
+                }
+                // Only consider joinDate as start if it is not excessively ancient relative to earliest payment
+                if (!p0Due || jDue.getTime() >= p0Due.getTime() - 62 * 86400000) {
+                    candidateDates.push(jDue);
+                }
+            }
+        }
+
+        if (candidateDates.length > 0) {
+            candidateDates.sort((a, b) => a.getTime() - b.getTime());
+            startDue = candidateDates[0];
+        } else {
+            startDue = currDueDate;
+        }
+    }
+
+    let curY = startDue.getFullYear();
+    let curM = startDue.getMonth();
+    const endY = Math.max(todayZero.getFullYear(), curY);
+    const endM = Math.max(todayZero.getMonth() + 2, curM + 2);
+
+    const cycles: BillingCycleSlot[] = [];
+    let cycleIndex = 0;
+    while ((curY * 12 + curM) <= (endY * 12 + endM)) {
+        const dueDate = getClampedMonthDate(curY, curM, collectionDay);
+        dueDate.setHours(0, 0, 0, 0);
+        const nextDueDate = getClampedMonthDate(curY, curM + 1, collectionDay);
+        nextDueDate.setHours(0, 0, 0, 0);
+
+        let cycleStart = dueDate;
+        if (cycleIndex === 0 && joinDate) {
+            const jDate = new Date(joinDate);
+            jDate.setHours(0, 0, 0, 0);
+            if (jDate.getTime() > cycleStart.getTime() && jDate.getTime() < nextDueDate.getTime()) {
+                cycleStart = jDate;
+            }
+        }
+
+        cycles.push({
+            index: cycleIndex++,
+            cycleStart: formatDateToYYYYMMDD(cycleStart),
+            cycleStartDate: cycleStart,
+            cycleEnd: formatDateToYYYYMMDD(nextDueDate),
+            nextDueDate: formatDateToYYYYMMDD(nextDueDate),
+            dueDate: formatDateToYYYYMMDD(dueDate),
+            dueDateObj: dueDate,
+            isPaid: false,
+            isLate: false,
+            paymentStatus: 'future'
+        });
+
+        curM++;
+        if (curM > 11) { curY++; curM = 0; }
+    }
+
+    let pauseDate: Date | null = null;
+    if (isPaused && pauseEffectiveDate) {
+        pauseDate = new Date(pauseEffectiveDate);
+        pauseDate.setHours(0, 0, 0, 0);
+    }
+
+    // Allocate approved payments chronologically using FIFO
+    for (const p of approvedPayments) {
+        const pDate = new Date(p.payment_date);
+        pDate.setHours(0, 0, 0, 0);
+
+        // 1. Check if payment explicitly targets a due date
+        let targetCycle: BillingCycleSlot | undefined;
+        const explicitTarget = (p as any).allocated_due_date || (p as any).billing_cycle_due_date;
+        if (explicitTarget) {
+            const expDateStr = String(explicitTarget).split('T')[0];
+            targetCycle = cycles.find(c => c.dueDate === expDateStr && !c.isPaid);
+        }
+
+        // 2. Otherwise allocate to earliest unallocated cycle (respecting pause constraints)
+        if (!targetCycle) {
+            targetCycle = cycles.find(c => !c.isPaid && (!pauseDate || c.dueDateObj.getTime() <= pauseDate.getTime()));
+        }
+
+        if (targetCycle) {
+            targetCycle.isPaid = true;
+            targetCycle.allocatedPayment = p;
+            if (pDate.getTime() > targetCycle.dueDateObj.getTime()) {
+                targetCycle.isLate = true;
+                targetCycle.paymentStatus = 'paid_late';
+            } else {
+                targetCycle.isLate = false;
+                targetCycle.paymentStatus = 'paid_on_time';
+            }
+        }
+    }
+
+    // Mark remaining unpaid cycles relative to today
+    for (const c of cycles) {
+        if (!c.isPaid) {
+            const diff = Math.ceil((c.dueDateObj.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24));
+            if (diff < 0) c.paymentStatus = 'overdue';
+            else if (diff === 0) c.paymentStatus = 'due';
+            else if (diff <= 3) c.paymentStatus = 'upcoming';
+            else c.paymentStatus = 'future';
+        }
+    }
+
+    return {
+        cycles,
+        approvedPayments,
+        isPaused,
+        pauseDate,
+        collectionDay,
+        todayZero
+    };
+}
+
+/**
+ * Calculates a student's monthly fee due date and payment status using FIFO cycle allocation.
  */
 export function getStudentFeeStatus(
     feesBasis: string | null | undefined,
@@ -115,194 +367,102 @@ export function getStudentFeeStatus(
         return null;
     }
 
-    const isPaused = (studentStatus || '').toLowerCase().trim() === 'inactive' || (studentStatus || '').toLowerCase().trim() === 'paused';
-
     if (!feesCollectionDay && !joinDate) {
         return null;
     }
 
-    // Determine collection day: if not explicitly set, derive from joinDate day, default to 1
-    let collectionDay = Number(feesCollectionDay);
-    if (!collectionDay || isNaN(collectionDay) || collectionDay < 1 || collectionDay > 31) {
-        if (joinDate) {
-            const jDate = new Date(joinDate);
-            if (!isNaN(jDate.getTime())) {
-                collectionDay = jDate.getDate();
-            } else {
-                collectionDay = 1;
-            }
-        } else {
-            collectionDay = 1;
-        }
-    }
+    const {
+        cycles,
+        isPaused,
+        pauseDate,
+        todayZero
+    } = buildStudentBillingCycles(
+        feesCollectionDay,
+        payments,
+        today,
+        joinDate,
+        studentStatus,
+        pauseEffectiveDate
+    );
 
-    // Check if there is any pending payment awaiting approval
     const hasPendingPayment = payments.some(p => p.status === 'pending_approval');
 
-    // Only consider approved payments for actual standing
-    const approvedPayments = payments.filter(p => !p.status || p.status === 'approved');
-
-    // Standardize today to midnight for precise date-only calculations
-    const todayZero = new Date(today);
-    todayZero.setHours(0, 0, 0, 0);
-
-    const year = todayZero.getFullYear();
-    const month = todayZero.getMonth(); 
-
-    const getClampedDate = (yr: number, mo: number, day: number) => {
-        const date = new Date(yr, mo, day);
-        if (date.getMonth() !== (mo + 12) % 12) {
-            return new Date(yr, mo + 1, 0);
-        }
-        return date;
-    };
-
-    const prevDueDate = getClampedDate(year, month - 1, collectionDay);
-    prevDueDate.setHours(0, 0, 0, 0);
-
-    let currDueDate = getClampedDate(year, month, collectionDay);
-    currDueDate.setHours(0, 0, 0, 0);
-
-    let nextDueDate = getClampedDate(year, month + 1, collectionDay);
-    nextDueDate.setHours(0, 0, 0, 0);
-
-    // If joinDate is present and student joined in current or future month, clamp currDueDate to joining month's collection date
-    if (joinDate) {
-        const jDate = new Date(joinDate);
-        jDate.setHours(0, 0, 0, 0);
-        if (!isNaN(jDate.getTime()) && jDate.getTime() > currDueDate.getTime()) {
-            const jYear = jDate.getFullYear();
-            const jMonth = jDate.getMonth();
-            currDueDate = getClampedDate(jYear, jMonth, collectionDay);
-            if (currDueDate.getTime() < jDate.getTime()) {
-                currDueDate = getClampedDate(jYear, jMonth + 1, collectionDay);
-            }
-            nextDueDate = getClampedDate(currDueDate.getFullYear(), currDueDate.getMonth() + 1, collectionDay);
-        }
-    }
-
-    // Helper to find which due date is closest to the payment date
-    const getClosestDueDate = (pDate: Date, cDay: number) => {
-        const pYear = pDate.getFullYear();
-        const pMonth = pDate.getMonth();
-        
-        const options = [
-            getClampedDate(pYear, pMonth - 1, cDay),
-            getClampedDate(pYear, pMonth, cDay),
-            getClampedDate(pYear, pMonth + 1, cDay)
-        ];
-        
-        let closest = options[0];
-        let minDiff = Math.abs(pDate.getTime() - options[0].getTime());
-        
-        for (let i = 1; i < options.length; i++) {
-            const diff = Math.abs(pDate.getTime() - options[i].getTime());
-            if (diff < minDiff) {
-                minDiff = diff;
-                closest = options[i];
-            }
-        }
-        closest.setHours(0, 0, 0, 0);
-        return closest;
-    };
-
-    const hasPaidCurr = approvedPayments.some(p => {
-        const pDate = new Date(p.payment_date);
-        pDate.setHours(0, 0, 0, 0);
-        const closestDue = getClosestDueDate(pDate, collectionDay);
-        return closestDue.getTime() === currDueDate.getTime();
-    });
-
-    let activeDueDate: Date;
-    if (hasPaidCurr) {
-        activeDueDate = nextDueDate;
-    } else {
-        activeDueDate = currDueDate;
-    }
- 
-    // Check for pre-pause debt if student is currently paused and pauseEffectiveDate is provided
-    let hasPrePauseDebt = false;
-    let prePauseDueDate: Date | undefined;
-
-    if (isPaused && pauseEffectiveDate) {
-        // Effective pause date determines when operational obligations stopped
-        const pDate = new Date(pauseEffectiveDate);
-        pDate.setHours(0, 0, 0, 0);
-
-        // Find collection due date on or immediately prior to pause date
-        const pYear = pDate.getFullYear();
-        const pMonth = pDate.getMonth();
-        let lastDueBeforePause = getClampedDate(pYear, pMonth, collectionDay);
-        lastDueBeforePause.setHours(0, 0, 0, 0);
-        if (lastDueBeforePause.getTime() > pDate.getTime()) {
-            lastDueBeforePause = getClampedDate(pYear, pMonth - 1, collectionDay);
-            lastDueBeforePause.setHours(0, 0, 0, 0);
-        }
-
-        // Student is only responsible for due dates on or after joining date
-        const jDateVal = joinDate ? new Date(joinDate) : null;
-        if (jDateVal) jDateVal.setHours(0, 0, 0, 0);
-        const isEligibleCycle = !jDateVal || jDateVal.getTime() <= lastDueBeforePause.getTime();
-
-        if (isEligibleCycle) {
-            const hasPaidPrePause = approvedPayments.some(p => {
-                const payD = new Date(p.payment_date);
-                payD.setHours(0, 0, 0, 0);
-                const closestDue = getClosestDueDate(payD, collectionDay);
-                return closestDue.getTime() === lastDueBeforePause.getTime();
-            });
-
-            if (!hasPaidPrePause) {
+    if (isPaused) {
+        let hasPrePauseDebt = false;
+        let prePauseDueDate: Date | undefined;
+        if (pauseDate) {
+            const unpaidPrePause = cycles.filter(c => !c.isPaid && c.dueDateObj.getTime() <= pauseDate.getTime());
+            if (unpaidPrePause.length > 0) {
                 hasPrePauseDebt = true;
-                prePauseDueDate = lastDueBeforePause;
+                prePauseDueDate = unpaidPrePause[0].dueDateObj;
             }
         }
-    }
 
-    const diffTime = activeDueDate.getTime() - todayZero.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    let status: 'good' | 'upcoming' | 'due' | 'overdue' | 'paused';
-    if (isPaused) {
-        status = 'paused';
-    } else if (hasPaidCurr) {
-        status = 'good';
-    } else {
-        if (diffDays < 0) {
-            status = 'overdue';
-        } else if (diffDays === 0) {
-            status = 'due';
-        } else if (diffDays <= 3) {
-            status = 'upcoming';
-        } else {
-            status = 'good';
-        }
-    }
-
-    const day = activeDueDate.getDate();
-    const monthName = activeDueDate.toLocaleString('en-US', { month: 'long' });
-    let formattedDueDate: string;
-    if (isPaused) {
+        let formattedDueDate = 'Billing Paused';
         if (hasPrePauseDebt && prePauseDueDate) {
             const preDay = prePauseDueDate.getDate();
             const preMonth = prePauseDueDate.toLocaleString('en-US', { month: 'long' });
             formattedDueDate = `Paused (Unpaid Pre-Pause Balance: Due ${preDay} ${preMonth})`;
-        } else {
-            formattedDueDate = 'Billing Paused';
         }
-    } else {
-        formattedDueDate = `${day} ${monthName}`;
+
+        return {
+            dueDate: prePauseDueDate || todayZero,
+            diffDays: 0,
+            status: 'paused',
+            formattedDueDate,
+            hasPendingPayment,
+            isPaused: true,
+            hasPrePauseDebt,
+            prePauseDueDate
+        };
     }
 
+    // Active student: Check for past unpaid billing cycles (FIFO debt detection)
+    const unpaidPastCycles = cycles.filter(c => !c.isPaid && c.dueDateObj.getTime() < todayZero.getTime());
+    if (unpaidPastCycles.length > 0) {
+        const earliest = unpaidPastCycles[0];
+        const diffDays = Math.ceil((earliest.dueDateObj.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24));
+        const day = earliest.dueDateObj.getDate();
+        const monthName = earliest.dueDateObj.toLocaleString('en-US', { month: 'long' });
+        return {
+            dueDate: earliest.dueDateObj,
+            diffDays,
+            status: 'overdue',
+            formattedDueDate: `${day} ${monthName}`,
+            hasPendingPayment,
+            isPaused: false,
+            unpaidCyclesCount: unpaidPastCycles.length,
+            earliestUnpaidDueDate: earliest.dueDateObj
+        };
+    }
+
+    // No past overdue cycles: evaluate next cycle to pay
+    const nextUnpaidCycle = cycles.find(c => !c.isPaid) || cycles[cycles.length - 1];
+    const diffTime = nextUnpaidCycle.dueDateObj.getTime() - todayZero.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    let status: 'good' | 'upcoming' | 'due' | 'overdue' = 'good';
+    if (diffDays < 0) {
+        status = 'overdue';
+    } else if (diffDays === 0) {
+        status = 'due';
+    } else if (diffDays <= 3) {
+        status = 'upcoming';
+    } else {
+        status = 'good';
+    }
+
+    const day = nextUnpaidCycle.dueDateObj.getDate();
+    const monthName = nextUnpaidCycle.dueDateObj.toLocaleString('en-US', { month: 'long' });
+
     return {
-        dueDate: isPaused && prePauseDueDate ? prePauseDueDate : activeDueDate,
-        diffDays: isPaused ? 0 : diffDays,
+        dueDate: nextUnpaidCycle.dueDateObj,
+        diffDays,
         status,
-        formattedDueDate,
+        formattedDueDate: `${day} ${monthName}`,
         hasPendingPayment,
-        isPaused,
-        hasPrePauseDebt,
-        prePauseDueDate
+        isPaused: false,
+        unpaidCyclesCount: 0
     };
 }
 
@@ -325,6 +485,7 @@ export interface StudentBillingCycle {
     cycleStart: string;          // YYYY-MM-DD
     cycleEnd: string;            // YYYY-MM-DD (nextDueDate)
     nextDueDate: string;         // YYYY-MM-DD
+    dueDate?: string;            // YYYY-MM-DD (collection due date for this cycle)
     formattedDueDate: string;    // e.g. "13 September"
     daysRemaining: number;
     feeStatus: 'good' | 'upcoming' | 'due' | 'overdue' | 'paused';
@@ -332,10 +493,14 @@ export interface StudentBillingCycle {
     isPaused?: boolean;
     hasPrePauseDebt?: boolean;
     prePauseDueDate?: string;
+    isPaid?: boolean;
+    isLatePayment?: boolean;
+    allocatedPayment?: any;
+    unpaidCyclesCount?: number;
 }
 
 /**
- * Derives the active half-open billing cycle [cycleStart, nextDueDate) for a student.
+ * Derives the active half-open billing cycle [cycleStart, nextDueDate) for a student using FIFO allocation.
  */
 export function getStudentBillingCycle(
     feesCollectionDay: number | null | undefined,
@@ -346,186 +511,96 @@ export function getStudentBillingCycle(
     pauseEffectiveDate?: string | Date | null,
     resumeDate?: string | Date | null
 ): StudentBillingCycle {
-    const isPaused = (studentStatus || '').toLowerCase().trim() === 'inactive' || (studentStatus || '').toLowerCase().trim() === 'paused';
+    const {
+        cycles,
+        isPaused,
+        pauseDate,
+        collectionDay,
+        todayZero
+    } = buildStudentBillingCycles(
+        feesCollectionDay,
+        payments,
+        today,
+        joinDate,
+        studentStatus,
+        pauseEffectiveDate,
+        resumeDate
+    );
 
-    let collectionDay = Number(feesCollectionDay);
-    if (!collectionDay || isNaN(collectionDay) || collectionDay < 1 || collectionDay > 31) {
-        if (joinDate) {
-            const jDate = new Date(joinDate);
-            if (!isNaN(jDate.getTime())) {
-                collectionDay = jDate.getDate();
-            } else {
-                collectionDay = 1;
-            }
-        } else {
-            collectionDay = 1;
-        }
-    }
+    const hasPendingPayment = payments.some(p => p.status === 'pending_approval');
 
-    const todayZero = new Date(today);
-    todayZero.setHours(0, 0, 0, 0);
-
-    const year = todayZero.getFullYear();
-    const month = todayZero.getMonth();
-
-    const prevDueDate = getClampedMonthDate(year, month - 1, collectionDay);
-    prevDueDate.setHours(0, 0, 0, 0);
-
-    let currDueDate = getClampedMonthDate(year, month, collectionDay);
-    currDueDate.setHours(0, 0, 0, 0);
-
-    let nextDueDate = getClampedMonthDate(year, month + 1, collectionDay);
-    nextDueDate.setHours(0, 0, 0, 0);
-
-    // If resumeDate or joinDate is present and student anchor is after currDueDate, shift cycle
-    const effectiveAnchor = resumeDate || joinDate;
-    if (effectiveAnchor) {
-        const aDate = new Date(effectiveAnchor);
-        aDate.setHours(0, 0, 0, 0);
-        if (!isNaN(aDate.getTime()) && aDate.getTime() > currDueDate.getTime()) {
-            const aYear = aDate.getFullYear();
-            const aMonth = aDate.getMonth();
-            currDueDate = getClampedMonthDate(aYear, aMonth, collectionDay);
-            if (currDueDate.getTime() < aDate.getTime()) {
-                currDueDate = getClampedMonthDate(aYear, aMonth + 1, collectionDay);
-            }
-            nextDueDate = getClampedMonthDate(currDueDate.getFullYear(), currDueDate.getMonth() + 1, collectionDay);
-        }
-    }
-
-    const approvedPayments = payments.filter(p => !p.status || p.status === 'approved');
-
-    const getClosestDueDate = (pDate: Date, cDay: number) => {
-        const pYear = pDate.getFullYear();
-        const pMonth = pDate.getMonth();
-        const options = [
-            getClampedMonthDate(pYear, pMonth - 1, cDay),
-            getClampedMonthDate(pYear, pMonth, cDay),
-            getClampedMonthDate(pYear, pMonth + 1, cDay)
-        ];
-        let closest = options[0];
-        let minDiff = Math.abs(pDate.getTime() - options[0].getTime());
-        for (let i = 1; i < options.length; i++) {
-            const diff = Math.abs(pDate.getTime() - options[i].getTime());
-            if (diff < minDiff) {
-                minDiff = diff;
-                closest = options[i];
-            }
-        }
-        closest.setHours(0, 0, 0, 0);
-        return closest;
-    };
-
-    const hasPaidCurr = approvedPayments.some(p => {
-        const pDate = new Date(p.payment_date);
-        pDate.setHours(0, 0, 0, 0);
-        const closestDue = getClosestDueDate(pDate, collectionDay);
-        return closestDue.getTime() === currDueDate.getTime();
-    });
-
-    let activeCycleStart: Date;
-    let activeDueDate: Date;
-
-    if (hasPaidCurr) {
-        activeCycleStart = currDueDate;
-        activeDueDate = nextDueDate;
-    } else {
-        activeCycleStart = prevDueDate;
-        activeDueDate = currDueDate;
-    }
-
-    // Clamp cycle start if student joined or resumed after activeCycleStart
-    if (effectiveAnchor) {
-        const aDate = new Date(effectiveAnchor);
-        aDate.setHours(0, 0, 0, 0);
-        if (!isNaN(aDate.getTime()) && aDate.getTime() > activeCycleStart.getTime() && aDate.getTime() <= activeDueDate.getTime()) {
-            activeCycleStart = aDate;
-        }
-    }
-
-    // Check for pre-pause debt if paused and pauseEffectiveDate is provided
-    let hasPrePauseDebt = false;
-    let prePauseDueDateStr: string | undefined;
-
-    if (isPaused && pauseEffectiveDate) {
-        const pDate = new Date(pauseEffectiveDate);
-        pDate.setHours(0, 0, 0, 0);
-
-        let lastDueBeforePause = getClampedMonthDate(pDate.getFullYear(), pDate.getMonth(), collectionDay);
-        lastDueBeforePause.setHours(0, 0, 0, 0);
-        if (lastDueBeforePause.getTime() > pDate.getTime()) {
-            lastDueBeforePause = getClampedMonthDate(pDate.getFullYear(), pDate.getMonth() - 1, collectionDay);
-            lastDueBeforePause.setHours(0, 0, 0, 0);
-        }
-
-        const jDateVal = joinDate ? new Date(joinDate) : null;
-        if (jDateVal) jDateVal.setHours(0, 0, 0, 0);
-        const isEligibleCycle = !jDateVal || jDateVal.getTime() <= lastDueBeforePause.getTime();
-
-        if (isEligibleCycle) {
-            const hasPaidPrePause = approvedPayments.some(p => {
-                const payD = new Date(p.payment_date);
-                payD.setHours(0, 0, 0, 0);
-                const closestDue = getClosestDueDate(payD, collectionDay);
-                return closestDue.getTime() === lastDueBeforePause.getTime();
-            });
-
-            if (!hasPaidPrePause) {
+    if (isPaused) {
+        let hasPrePauseDebt = false;
+        let prePauseDueDateStr: string | undefined;
+        if (pauseDate) {
+            const unpaidPrePause = cycles.filter(c => !c.isPaid && c.dueDateObj.getTime() <= pauseDate.getTime());
+            if (unpaidPrePause.length > 0) {
                 hasPrePauseDebt = true;
-                prePauseDueDateStr = formatDateToYYYYMMDD(lastDueBeforePause);
+                prePauseDueDateStr = unpaidPrePause[0].dueDate;
             }
         }
-    }
 
-    const diffTime = activeDueDate.getTime() - todayZero.getTime();
-    const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    let feeStatus: 'good' | 'upcoming' | 'due' | 'overdue' | 'paused';
-    if (isPaused) {
-        feeStatus = 'paused';
-    } else if (hasPaidCurr) {
-        feeStatus = 'good';
-    } else {
-        if (daysRemaining < 0) {
-            feeStatus = 'overdue';
-        } else if (daysRemaining === 0) {
-            feeStatus = 'due';
-        } else if (daysRemaining <= 3) {
-            feeStatus = 'upcoming';
-        } else {
-            feeStatus = 'good';
-        }
-    }
-
-    const day = activeDueDate.getDate();
-    const monthName = activeDueDate.toLocaleString('en-US', { month: 'long' });
-    let formattedDueDate: string;
-    if (isPaused) {
+        let formattedDueDate = 'Billing Paused';
         if (hasPrePauseDebt && prePauseDueDateStr) {
             const [pYr, pMo, pDa] = prePauseDueDateStr.split('-').map(Number);
             const pDateObj = new Date(pYr, pMo - 1, pDa);
             const pDay = pDateObj.getDate();
             const pMonth = pDateObj.toLocaleString('en-US', { month: 'long' });
             formattedDueDate = `Paused (Unpaid Pre-Pause Balance: Due ${pDay} ${pMonth})`;
-        } else {
-            formattedDueDate = 'Billing Paused';
         }
-    } else {
-        formattedDueDate = `${day} ${monthName}`;
+
+        const fallbackDue = getClampedMonthDate(todayZero.getFullYear(), todayZero.getMonth(), collectionDay);
+        const fallbackNext = getClampedMonthDate(todayZero.getFullYear(), todayZero.getMonth() + 1, collectionDay);
+
+        return {
+            cycleStart: formatDateToYYYYMMDD(fallbackDue),
+            cycleEnd: formatDateToYYYYMMDD(fallbackNext),
+            nextDueDate: formatDateToYYYYMMDD(fallbackNext),
+            dueDate: formatDateToYYYYMMDD(fallbackDue),
+            formattedDueDate,
+            daysRemaining: 0,
+            feeStatus: 'paused',
+            hasPendingPayment,
+            isPaused: true,
+            hasPrePauseDebt,
+            prePauseDueDate: prePauseDueDateStr
+        };
     }
-    const hasPendingPayment = payments.some(p => p.status === 'pending_approval');
+
+    // Active student: Select the billing cycle covering today
+    const currentCalCycle = getCycleContainingDate(todayZero, collectionDay);
+    const activeSlot = cycles.find(c => c.dueDateObj.getTime() === currentCalCycle.dueDate.getTime())
+        || cycles.find(c => c.cycleStartDate.getTime() <= todayZero.getTime() && todayZero.getTime() < new Date(c.nextDueDate).getTime())
+        || cycles[cycles.length - 1];
+
+    const statusDetails = getStudentFeeStatus(
+        'monthly',
+        collectionDay,
+        payments,
+        today,
+        joinDate,
+        studentStatus,
+        pauseEffectiveDate
+    );
+
+    const feeStatus = statusDetails ? statusDetails.status : 'good';
+    const formattedDueDate = statusDetails ? statusDetails.formattedDueDate : activeSlot.dueDate;
+    const daysRemaining = statusDetails ? statusDetails.diffDays : 0;
 
     return {
-        cycleStart: formatDateToYYYYMMDD(activeCycleStart),
-        cycleEnd: formatDateToYYYYMMDD(activeDueDate),
-        nextDueDate: formatDateToYYYYMMDD(activeDueDate),
+        cycleStart: activeSlot.cycleStart,
+        cycleEnd: activeSlot.nextDueDate,
+        nextDueDate: activeSlot.nextDueDate,
+        dueDate: activeSlot.dueDate,
         formattedDueDate,
-        daysRemaining: isPaused ? 0 : daysRemaining,
+        daysRemaining,
         feeStatus,
         hasPendingPayment,
-        isPaused,
-        hasPrePauseDebt,
-        prePauseDueDate: prePauseDueDateStr
+        isPaused: false,
+        isPaid: activeSlot.isPaid,
+        isLatePayment: activeSlot.isLate,
+        allocatedPayment: activeSlot.allocatedPayment,
+        unpaidCyclesCount: statusDetails?.unpaidCyclesCount || 0
     };
 }
 
@@ -563,6 +638,13 @@ export interface StudentFeeCycleMetrics {
     statusLabel: string;             // e.g. "1 Regular", "1 Makeup Pending", "Cycle Complete", "Attendance Review Needed"
     badgeVariant: 'good' | 'warning' | 'danger' | 'neutral';
     alertType?: 'unresolved' | 'due' | 'overdue';
+
+    // Financial Standing & Payment Info
+    isPaid?: boolean;
+    isLatePayment?: boolean;
+    paymentStatus?: 'good' | 'upcoming' | 'due' | 'overdue' | 'paused';
+    allocatedPayment?: any;
+    unpaidCyclesCount?: number;
 }
 
 export interface FeeCycleSessionItem {
@@ -615,6 +697,11 @@ export interface FeeCycleLedgerReport {
     nextDueDate: string;
     formattedDueDate: string;
     daysRemaining: number;
+    isPaid?: boolean;
+    isLatePayment?: boolean;
+    paymentStatus?: 'good' | 'upcoming' | 'due' | 'overdue' | 'paused';
+    allocatedPayment?: any;
+    unpaidCyclesCount?: number;
     metrics: StudentFeeCycleMetrics;
     sessions: FeeCycleSessionItem[];
     diagnostics: FeeCycleDiagnostic[];
@@ -756,11 +843,15 @@ export function evaluateStudentFeeCycle(
 
     // Monthly entitlement: 4 classes standard, or classes_added from cycle payment if specified
     let entitledClasses = 4;
-    const cyclePayments = payments.filter(
-        p => (!p.status || p.status === 'approved') && p.payment_date >= cycleStart && p.payment_date < nextDueDate
-    );
-    if (cyclePayments.length > 0 && typeof cyclePayments[0].classes_added === 'number' && cyclePayments[0].classes_added > 0) {
-        entitledClasses = cyclePayments[0].classes_added;
+    if (cycle.allocatedPayment && typeof cycle.allocatedPayment.classes_added === 'number' && cycle.allocatedPayment.classes_added > 0) {
+        entitledClasses = cycle.allocatedPayment.classes_added;
+    } else {
+        const cyclePayments = payments.filter(
+            p => (!p.status || p.status === 'approved') && p.payment_date >= cycleStart && p.payment_date < nextDueDate
+        );
+        if (cyclePayments.length > 0 && typeof cyclePayments[0].classes_added === 'number' && cyclePayments[0].classes_added > 0) {
+            entitledClasses = cyclePayments[0].classes_added;
+        }
     }
 
     // Classroom lookups
@@ -1377,7 +1468,12 @@ export function evaluateStudentFeeCycle(
         validOutstandingMakeups: validOutstandingMakeupEntitlements,
         statusLabel,
         badgeVariant,
-        alertType
+        alertType,
+        isPaid: cycle.isPaid,
+        isLatePayment: cycle.isLatePayment,
+        paymentStatus: cycle.feeStatus,
+        allocatedPayment: cycle.allocatedPayment,
+        unpaidCyclesCount: cycle.unpaidCyclesCount
     };
 
     return {
@@ -1387,6 +1483,11 @@ export function evaluateStudentFeeCycle(
         nextDueDate,
         formattedDueDate,
         daysRemaining,
+        isPaid: cycle.isPaid,
+        isLatePayment: cycle.isLatePayment,
+        paymentStatus: cycle.feeStatus,
+        allocatedPayment: cycle.allocatedPayment,
+        unpaidCyclesCount: cycle.unpaidCyclesCount,
         metrics,
         sessions,
         diagnostics,
