@@ -4,11 +4,12 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
 import { sendClassroomNotification } from '../../../../src/lib/notifications';
-import { Loader2, ArrowLeft, Search, UserPlus, Clock, Info, CheckCircle2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, UserPlus, Clock, Info, CheckCircle2, Video } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { fetchAcademyTeachers } from '../../../../src/lib/teachers';
 import { createSpecialSession } from '../../../../src/lib/special-sessions';
+import { serializeClassroomDescription, isValidMeetingUrl } from '../../../../src/lib/meeting-utils';
 
 interface Student {
     id: string;
@@ -33,6 +34,7 @@ export default function CreateClassPage() {
         name: '',
         description: '',
         deliveryFormat: 'offline',
+        meetingLink: '',
         type: 'permanent' as 'permanent' | 'temporary',
         purpose: 'makeup' as 'makeup' | 'extra_class' | 'revision' | 'practice' | 'other',
         creditTreatment: 'makeup' as 'complimentary' | 'makeup' | 'consume_credit',
@@ -288,8 +290,17 @@ export default function CreateClassPage() {
                     ? formData.selectedDays.map(d => DAY_LABELS[d]).join(', ') + ` • ${formatTime12hr(formData.startTime)}`
                     : `${formatTime12hr(formData.startTime)}`;
 
-                const formatTag = `[delivery_format:${formData.deliveryFormat}]`;
-                const finalDescription = `${(formData.description || '').trim()} ${formatTag}`;
+                if (formData.deliveryFormat === 'online' && formData.meetingLink && !isValidMeetingUrl(formData.meetingLink)) {
+                    alert('Please enter a valid meeting URL (e.g. https://meet.google.com/xyz or https://zoom.us/j/...)');
+                    setSubmitting(false);
+                    return;
+                }
+
+                const finalDescription = serializeClassroomDescription(
+                    formData.description,
+                    formData.deliveryFormat as 'offline' | 'online',
+                    formData.deliveryFormat === 'online' ? formData.meetingLink : undefined
+                );
 
                 // 1. Create Permanent Classroom
                 const { data: classroom, error: classroomError } = await supabaseAuth
@@ -372,12 +383,19 @@ export default function CreateClassPage() {
                     console.error('Error sending creation notifications:', notifyErr);
                 }
             } else {
+                if (formData.deliveryFormat === 'online' && formData.meetingLink && !isValidMeetingUrl(formData.meetingLink)) {
+                    alert('Please enter a valid meeting URL (e.g. https://meet.google.com/xyz or https://zoom.us/j/...)');
+                    setSubmitting(false);
+                    return;
+                }
+
                 // Canonical Special Session creation via shared service
                 await createSpecialSession(supabaseAuth, {
                     teacherId: formData.teacherId,
                     name: formData.name,
                     description: formData.description,
                     deliveryFormat: formData.deliveryFormat as 'offline' | 'online',
+                    meetingLink: formData.deliveryFormat === 'online' ? formData.meetingLink : undefined,
                     classDate: formData.classDate,
                     startTime: formData.startTime,
                     endTime: formData.endTime,
@@ -587,7 +605,7 @@ export default function CreateClassPage() {
                                     {/* Delivery Format */}
                                     <div>
                                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Delivery Format</label>
-                                        <div className="flex gap-4 max-w-xs">
+                                        <div className="flex gap-4 max-w-xs mb-4">
                                             <button
                                                 type="button"
                                                 onClick={() => setFormData({ ...formData, deliveryFormat: 'offline' })}
@@ -603,6 +621,25 @@ export default function CreateClassPage() {
                                                 Online
                                             </button>
                                         </div>
+
+                                        {formData.deliveryFormat === 'online' && (
+                                            <div className="p-4 rounded-xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800/40 space-y-2">
+                                                <label className="flex items-center gap-2 text-xs font-bold text-blue-900 dark:text-blue-300 uppercase tracking-wide">
+                                                    <Video className="size-4 text-blue-600 dark:text-blue-400" />
+                                                    Online Meeting Link (Optional)
+                                                </label>
+                                                <input
+                                                    type="url"
+                                                    value={formData.meetingLink}
+                                                    onChange={(e) => setFormData({ ...formData, meetingLink: e.target.value })}
+                                                    placeholder="e.g. https://meet.google.com/xyz-abcd-efg or Zoom link"
+                                                    className="w-full px-4 py-2.5 rounded-lg border border-blue-200 dark:border-blue-700/60 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all text-sm font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                                                />
+                                                <p className="text-[11px] text-blue-700 dark:text-blue-400 leading-relaxed">
+                                                    Saved as the reusable default link for this classroom. Students with authorized access can join class calls directly from their portal.
+                                                </p>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

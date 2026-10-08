@@ -7,12 +7,13 @@ import { htmlToPlainText } from '../../lib/text-utils';
 interface FeesTabProps {
     profile: any;
     payments: any[];
+    authoritativeFeeStatus?: any;
     notifications?: any[];
     directMessages?: any[];
     refreshData: () => void;
 }
 
-export default function FeesTab({ profile, payments, notifications = [], directMessages = [], refreshData }: FeesTabProps) {
+export default function FeesTab({ profile, payments, authoritativeFeeStatus, notifications = [], directMessages = [], refreshData }: FeesTabProps) {
     const [isReporting, setIsReporting] = useState(false);
     const [amount, setAmount] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('UPI');
@@ -77,7 +78,11 @@ export default function FeesTab({ profile, payments, notifications = [], directM
     }, [profile?.id, profile?.fees_basis, profile?.fees_collection_date, profile?.join_date, profile?.fees_classes_paid, profile?.fees_amount, payments]);
 
     const feeStatus = getStudentFeeStatus(profile?.fees_basis, profile?.fees_collection_date, payments);
-    const classesLeft = feeMetrics ? feeMetrics.classesAvailable : (profile?.fees_classes_paid || 0);
+    const classesLeft = authoritativeFeeStatus !== null && authoritativeFeeStatus !== undefined
+        ? authoritativeFeeStatus.effectiveBalance
+        : feeMetrics !== null && feeMetrics !== undefined
+            ? (feeMetrics.creditsRemaining !== undefined ? feeMetrics.creditsRemaining : feeMetrics.classesAvailable)
+            : (profile?.fees_classes_paid ?? 0);
     const monthlyFee = profile?.fees_amount || 0;
     
     // Sort payments by date descending
@@ -193,36 +198,6 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                 </div>
             )}
 
-            {classesLeft <= 0 && feeMetrics && feeMetrics.basis === 'monthly' && feeMetrics.unresolvedSessions > 0 ? (
-                <div className="bg-amber-50 border-2 border-amber-200 text-amber-800 px-5 py-4 rounded-2xl flex items-start gap-4 shadow-sm animate-in slide-in-from-top-4 duration-300 text-left">
-                    <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0 mt-0.5">
-                        <Clock className="w-5 h-5" />
-                    </div>
-                    <div className="space-y-1">
-                        <span className="bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md inline-block">
-                            Attendance Verification In Progress
-                        </span>
-                        <p className="text-xs sm:text-sm font-bold text-slate-800 leading-relaxed">
-                            Your attendance for a recent scheduled session is being recorded by your teacher. Once updated, your classes left balance will refresh.
-                        </p>
-                    </div>
-                </div>
-            ) : classesLeft <= 0 ? (
-                <div className="bg-red-50 border-2 border-red-200 text-red-700 px-5 py-4 rounded-2xl flex items-start gap-4 shadow-sm animate-in slide-in-from-top-4 duration-300 text-left">
-                    <div className="w-9 h-9 rounded-xl bg-red-100 border border-red-200 flex items-center justify-center text-red-600 shrink-0 mt-0.5">
-                        <AlertTriangle className="w-5 h-5" />
-                    </div>
-                    <div className="space-y-1">
-                        <span className="bg-red-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md inline-block">
-                            Prepaid Credit Expired
-                        </span>
-                        <p className="text-xs sm:text-sm font-bold text-slate-800 leading-relaxed">
-                            This is a quick note to let you know that your prepaid class credits have now expired. To keep your learning momentum going and book your next session, please complete the fee payment in advance.
-                        </p>
-                    </div>
-                </div>
-            ) : null}
-
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
                 {/* Left Column: Status & Balance */}
                 <div className="lg:col-span-1 space-y-6">
@@ -275,14 +250,18 @@ export default function FeesTab({ profile, payments, notifications = [], directM
 
                             {classesLeft <= 1 && !feeStatus?.hasPendingPayment && (
                                 <div className={`mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border ${
-                                    classesLeft <= 0 
-                                        ? (profile?.fees_basis === 'class' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-rose-50 text-rose-700 border-rose-200')
-                                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                                    classesLeft < 0 
+                                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                        : classesLeft === 0
+                                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                            : 'bg-amber-50 text-amber-700 border-amber-200'
                                 }`}>
                                     <AlertTriangle className="w-3.5 h-3.5" /> 
-                                    {classesLeft <= 0 
-                                        ? (profile?.fees_basis === 'class' ? 'Advance Booking Required — Pay for 1 Class' : 'Overdue - Please Pay')
-                                        : (profile?.fees_basis === 'class' ? '1 Class Available' : 'Due Soon - 1 Class Left')}
+                                    {classesLeft < 0 
+                                        ? 'Fee Payment Pending' 
+                                        : classesLeft === 0 
+                                            ? 'Fee Payment Due' 
+                                            : '1 Class Remaining'}
                                 </div>
                             )}
                         </div>
@@ -290,10 +269,10 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                         {!isReporting ? (
                             <button 
                                 onClick={() => setIsReporting(true)}
-                                className="mt-8 w-full bg-[#ecb613] hover:bg-[#d4a000] text-slate-900 font-bold py-3.5 rounded-xl transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+                                className="mt-8 w-full bg-[#ecb613] hover:bg-[#d4a000] text-slate-900 font-bold py-3.5 rounded-xl transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider text-xs"
                             >
                                 <CheckCircle className="w-4 h-4" /> 
-                                {profile?.fees_basis === 'class' ? 'Book / Pay for Next Class' : 'Report Payment'}
+                                {profile?.fees_basis === 'class' ? 'Pay Fees' : 'Report Payment'}
                             </button>
                         ) : (
                             <button 

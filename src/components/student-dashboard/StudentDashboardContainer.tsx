@@ -9,7 +9,7 @@ import {
     Clock, Video, Play, Music, Award, Users, Search, PlayCircle,
     Send, X, ClipboardList, Info, BarChart2, Plus, Volume2,
     HelpCircle, ChevronRight, Download, LogOut, Check, Menu,
-    Sparkles, AlertTriangle, CreditCard, Scroll, User, ArrowRight, Copy, Globe
+    Sparkles, AlertTriangle, AlertCircle, CreditCard, Scroll, User, ArrowRight, Copy, Globe
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -34,13 +34,14 @@ const HowToGuideViewer = dynamic(() => import('../HowToGuideViewer'), { ssr: fal
 import SubmitTaskModal from './SubmitTaskModal';
 import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
 import BlogNotification from './BlogNotification';
-import { getStudentFeeStatus } from '../../lib/fee-utils';
+import { getStudentFeeStatus, calculateAuthoritativeFeeStatus } from '../../lib/fee-utils';
 import { htmlToPlainText, truncatePlainText } from '../../lib/text-utils';
 import ProfileCompletionModal from '../common/ProfileCompletionModal';
 import { INITIAL_MODULES } from '../../../app/teacher-dashboard/inventory/initial-data';
 import { getStudentAccess } from '../../lib/student-lifecycle';
 import { fetchEffectiveClassroomParticipants } from '../../lib/classroom-participants';
 import { trackToolEvent } from '../../lib/analytics';
+import { resolveClassroomMeetingInfo } from '../../lib/meeting-utils';
 
 interface StudentProfile {
     id: string;
@@ -103,6 +104,7 @@ interface AttendanceRecord {
     date: string;
     status: 'present' | 'absent' | 'late' | 'excused';
     classroom_id?: string;
+    on_behalf_of_date?: string | null;
 }
 
 interface Broadcast {
@@ -172,8 +174,11 @@ export default function StudentDashboardContainer() {
     // Active live classroom resolution across student's primary/overridden classrooms
     const liveClassroom = useMemo(() => {
         if (!lifecycleAccess.canAccessLiveClass) return null;
-        const onlineRoom = (activeRooms || []).find(r => r.is_live && r.live_meeting_link)
-            || (classroom?.is_live && classroom?.live_meeting_link ? classroom : null);
+        const onlineRoom = (activeRooms || []).find(r => {
+            if (!r.is_live) return false;
+            const info = resolveClassroomMeetingInfo(r);
+            return Boolean(info.effectiveMeetingLink);
+        }) || (classroom?.is_live && resolveClassroomMeetingInfo(classroom).effectiveMeetingLink ? classroom : null);
         return onlineRoom || null;
     }, [activeRooms, classroom, lifecycleAccess.canAccessLiveClass]);
 
@@ -203,21 +208,6 @@ export default function StudentDashboardContainer() {
             setDismissedPopupSessionKey(liveSessionKey);
         }
     }, [liveSessionKey]);
-
-    const handleJoinLiveClass = useCallback(() => {
-        if (liveClassroom?.live_meeting_link) {
-            window.open(liveClassroom.live_meeting_link, '_blank', 'noopener,noreferrer');
-            handleDismissLivePopup();
-        }
-    }, [liveClassroom?.live_meeting_link, handleDismissLivePopup]);
-
-    const handleCopyLiveMeetingLink = useCallback(() => {
-        if (liveClassroom?.live_meeting_link && typeof navigator !== 'undefined') {
-            navigator.clipboard.writeText(liveClassroom.live_meeting_link);
-            setCopiedMeetingLink(true);
-            setTimeout(() => setCopiedMeetingLink(false), 2500);
-        }
-    }, [liveClassroom?.live_meeting_link]);
 
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
@@ -443,6 +433,22 @@ export default function StudentDashboardContainer() {
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
 
+    // Leave requests and Authoritative Fee Status calculation
+    const [myLeaveRequests, setMyLeaveRequests] = useState<any[]>([]);
+
+    const authoritativeFeeStatus = useMemo(() => {
+        if (!profile) return null;
+        return calculateAuthoritativeFeeStatus({
+            studentId: profile.id,
+            student: profile,
+            payments,
+            attendance,
+            overrides: makeupSchedules,
+            leaveRequests: myLeaveRequests,
+            today: new Date()
+        });
+    }, [profile, payments, attendance, makeupSchedules, myLeaveRequests]);
+
     // Fee Notification State
     const feeStatus = useMemo(() => {
         if (!profile || !feeDataLoaded) return null;
@@ -459,11 +465,77 @@ export default function StudentDashboardContainer() {
 
     // Excuse Request Modal states
     const [showExcuseModal, setShowExcuseModal] = useState(false);
+    const [showPaymentPendingModal, setShowPaymentPendingModal] = useState(false);
     const [excuseDate, setExcuseDate] = useState('');
     const [excuseReason, setExcuseReason] = useState('');
     const [isSubmittingExcuse, setIsSubmittingExcuse] = useState(false);
     const [excuseError, setExcuseError] = useState<string | null>(null);
-    const [myLeaveRequests, setMyLeaveRequests] = useState<any[]>([]);
+
+    const handleOpenPaymentFromModal = useCallback(() => {
+        setShowPaymentPendingModal(false);
+        setActiveTab('fees');
+    }, []);
+
+    const handleJoinLiveClass = useCallback(async () => {
+        if (!liveClassroom) return;
+        // Check authoritative financial standing
+        if (authoritativeFeeStatus && !authoritativeFeeStatus.canJoinLiveClass) {
+            setShowPaymentPendingModal(true);
+            return;
+        }
+
+        try {
+            const { data: { session } } = await supabaseAuth.auth.getSession();
+            const token = session?.access_token;
+            if (token) {
+                const res = await fetch('/api/classrooms/live-access', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ classroomId: liveClassroom.id })
+                });
+
+                if (res.status === 403) {
+                    setShowPaymentPendingModal(true);
+                    return;
+                }
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.canJoinLiveClass && data.liveMeetingLink) {
+                        window.open(data.liveMeetingLink, '_blank', 'noopener,noreferrer');
+                        handleDismissLivePopup();
+                        return;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Error verifying live class access:', e);
+        }
+
+        // Fallback to client-side permission
+        const effectiveLink = liveClassroom ? resolveClassroomMeetingInfo(liveClassroom).effectiveMeetingLink : null;
+        if (authoritativeFeeStatus?.canJoinLiveClass !== false && effectiveLink) {
+            window.open(effectiveLink, '_blank', 'noopener,noreferrer');
+            handleDismissLivePopup();
+        } else {
+            setShowPaymentPendingModal(true);
+        }
+    }, [liveClassroom, authoritativeFeeStatus, handleDismissLivePopup]);
+
+    const handleCopyLiveMeetingLink = useCallback(() => {
+        if (authoritativeFeeStatus && !authoritativeFeeStatus.canJoinLiveClass) {
+            setShowPaymentPendingModal(true);
+            return;
+        }
+        if (liveClassroom?.live_meeting_link && typeof navigator !== 'undefined') {
+            navigator.clipboard.writeText(liveClassroom.live_meeting_link);
+            setCopiedMeetingLink(true);
+            setTimeout(() => setCopiedMeetingLink(false), 2500);
+        }
+    }, [liveClassroom?.live_meeting_link, authoritativeFeeStatus]);
 
     const fetchStudentLeaveRequests = useCallback(async () => {
         const studentId = profile?.id;
@@ -1747,7 +1819,8 @@ export default function StudentDashboardContainer() {
                 session_type: log?.session_type || null,
                 status: att?.status || 'unmarked',
                 classroom_id: targetClassroomId || null,
-                classroom_name: targetClassroomId ? (roomNameMap.get(targetClassroomId) || 'Classroom') : 'Classroom'
+                classroom_name: targetClassroomId ? (roomNameMap.get(targetClassroomId) || 'Classroom') : 'Classroom',
+                on_behalf_of_date: att?.on_behalf_of_date || null
             };
         });
     }, [sessionLogs, attendance, activeRooms]);
@@ -2185,6 +2258,21 @@ export default function StudentDashboardContainer() {
         setIsSubmittingExcuse(true);
 
         try {
+            // Check if this date was already fulfilled early as an alternative class
+            const fulfilledEarly = attendance.find(a => {
+                if (!a.on_behalf_of_date || !a.date) return false;
+                const actClean = a.date.split('T')[0].split(' ')[0];
+                const behalfClean = a.on_behalf_of_date.split('T')[0].split(' ')[0];
+                return behalfClean === dateStr && actClean !== dateStr && ['present', 'late', 'absent', 'excused'].includes((a.status || '').toLowerCase());
+            });
+
+            if (fulfilledEarly) {
+                const actDateClean = fulfilledEarly.date.split('T')[0].split(' ')[0];
+                setExcuseError(`This class was already fulfilled early on ${actDateClean} as an alternative class. No attendance is required and no leave request is needed.`);
+                setIsSubmittingExcuse(false);
+                return;
+            }
+
             // Get student's active classroom IDs
             const currentAllIds = classroomIdsRef.current.length > 0
                 ? classroomIdsRef.current
@@ -3290,47 +3378,30 @@ export default function StudentDashboardContainer() {
                                     const classesLeft = profile.fees_classes_paid || 0;
 
                                     // Hide notifications if there is a pending payment reported by the student
-                                    if (feeStatus.hasPendingPayment) return null;
+                                    if (feeStatus?.hasPendingPayment) return null;
 
-                                    let bannerType: 'overdue' | 'due' | 'warning' | 'upcoming' | null = null;
+                                    let bannerType: 'overdue' | 'due' | null = null;
                                     let bannerTitle = '';
                                     let bannerMessage: React.ReactNode = '';
-                                    let showButton = true;
-                                    let buttonText = 'Pay Now';
+                                    let buttonText = 'PAY FEES';
 
-                                    if (feeStatus.status === 'due' || feeStatus.status === 'overdue') {
-                                        const isDue = feeStatus.status === 'due';
-                                        bannerType = isDue ? 'due' : 'overdue';
-                                        buttonText = 'Pay Fees';
-                                        
-                                        if (classesLeft > 0) {
-                                            bannerTitle = isDue ? 'Monthly Fee Due Today' : 'Monthly Fee Overdue';
-                                            bannerMessage = (
-                                                <span className="block leading-relaxed">
-                                                    Your monthly fee is {isDue ? 'due today' : 'overdue'}. Please submit your fee payment.
-                                                    <br />
-                                                    You still have <strong className="font-black">{classesLeft} pending class{classesLeft > 1 ? 'es' : ''}</strong> from your current cycle. These classes must be completed within the applicable month and <strong className="font-black">do not extend or postpone your next fee payment date</strong>.
-                                                </span>
-                                            );
-                                        } else {
-                                            bannerTitle = isDue ? 'Monthly Fee Due Today' : 'Monthly Fee Overdue';
-                                            bannerMessage = `Your monthly fee is ${isDue ? 'due today' : 'overdue'}. Please submit your fee payment.`;
-                                        }
-                                    } else if (classesLeft <= 0) {
+                                    const authFinState = authoritativeFeeStatus?.financialState;
+                                    const effectiveBal = authoritativeFeeStatus !== null && authoritativeFeeStatus !== undefined
+                                        ? authoritativeFeeStatus.effectiveBalance
+                                        : classesLeft;
+
+                                    // Canonical State Rules:
+                                    // balance < 0 -> PAYMENT_OVERDUE (red warning, live class blocked)
+                                    // balance = 0 -> FEE_DUE (amber warning, live class allowed)
+                                    // balance > 0 -> GOOD_STANDING (no warning banner)
+                                    if (authFinState === 'PAYMENT_OVERDUE' || effectiveBal < 0) {
                                         bannerType = 'overdue';
-                                        bannerTitle = 'Action Required: 4 Classes Completed';
-                                        bannerMessage = 'Your 4 classes are complete. Please submit your fee payment.';
-                                        buttonText = 'Pay Fees';
-                                    } else if (classesLeft === 1) {
-                                        bannerType = 'warning';
-                                        bannerTitle = 'Reminder: 1 Class Remaining';
-                                        bannerMessage = 'You have exactly 1 class left in your balance.';
-                                        showButton = false;
-                                    } else if (feeStatus.status === 'upcoming') {
-                                        bannerType = 'upcoming';
-                                        bannerTitle = 'Upcoming Fee Payment';
-                                        bannerMessage = `Your monthly fee is due on ${feeStatus.formattedDueDate}.`;
-                                        buttonText = 'Pay Fees';
+                                        bannerTitle = 'Fee Payment Pending';
+                                        bannerMessage = 'Your fee payment is pending. Please complete the payment to continue your classes. Live class access is paused until payment is completed.';
+                                    } else if (authFinState === 'FEE_DUE' || effectiveBal === 0) {
+                                        bannerType = 'due';
+                                        bannerTitle = 'Fee Payment Due';
+                                        bannerMessage = 'Your current class package has been completed. Please complete your next fee payment to continue your classes. You can still join your upcoming class.';
                                     }
 
                                     if (!bannerType) return null;
@@ -3343,7 +3414,7 @@ export default function StudentDashboardContainer() {
                                     let iconColor = '';
                                     let Icon = Clock;
 
-                                    if (bannerType === 'overdue' || bannerType === 'due') {
+                                    if (bannerType === 'overdue') {
                                         bgClass = 'bg-rose-50';
                                         borderClass = 'border-rose-500';
                                         titleColor = 'text-rose-800';
@@ -3351,7 +3422,7 @@ export default function StudentDashboardContainer() {
                                         btnClass = 'bg-rose-600 hover:bg-rose-700 text-white';
                                         iconColor = 'text-rose-600 bg-rose-100';
                                         Icon = AlertTriangle;
-                                    } else if (bannerType === 'warning') {
+                                    } else { // due (amber)
                                         bgClass = 'bg-amber-50';
                                         borderClass = 'border-amber-500';
                                         titleColor = 'text-amber-800';
@@ -3359,37 +3430,27 @@ export default function StudentDashboardContainer() {
                                         btnClass = 'bg-amber-600 hover:bg-amber-700 text-white';
                                         iconColor = 'text-amber-600 bg-amber-100';
                                         Icon = Clock;
-                                    } else { // upcoming
-                                        bgClass = 'bg-[#FAF5EE]';
-                                        borderClass = 'border-amber-300';
-                                        titleColor = 'text-amber-900';
-                                        msgColor = 'text-amber-700/90';
-                                        btnClass = 'bg-[#a15912] hover:bg-[#8a4b0f] text-white';
-                                        iconColor = 'text-amber-700 bg-amber-50 border border-amber-100';
-                                        Icon = Clock;
                                     }
 
                                     return (
-                                        <div className={`${bgClass} border border-l-4 ${borderClass} py-3 px-4 rounded-xl flex ${bannerType === 'due' || bannerType === 'overdue' ? 'items-start' : 'items-center'} justify-between gap-4 shadow-xs relative overflow-hidden`}>
-                                            <div className="flex items-center gap-3 min-w-0 text-left">
-                                                <div className={`p-1.5 ${iconColor} rounded-full shrink-0 relative z-10`}>
-                                                    <Icon className="w-4 h-4" />
+                                        <div className={`${bgClass} border border-l-4 ${borderClass} p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs relative overflow-hidden`}>
+                                            <div className="flex items-start sm:items-center gap-3.5 min-w-0 text-left">
+                                                <div className={`p-2 sm:p-2.5 ${iconColor} rounded-xl shrink-0 relative z-10 mt-0.5 sm:mt-0`}>
+                                                    <Icon className="w-5 h-5" />
                                                 </div>
-                                                <div className="min-w-0">
-                                                    <p className={`text-xs font-bold ${titleColor} leading-none`}>{bannerTitle}</p>
-                                                    <p className={`text-[11px] mt-0.5 font-medium ${bannerType === 'due' || bannerType === 'overdue' ? '' : 'truncate'} ${msgColor}`}>
+                                                <div className="min-w-0 space-y-1">
+                                                    <p className={`text-lg sm:text-xl font-semibold ${titleColor} leading-snug`}>{bannerTitle}</p>
+                                                    <p className={`text-sm sm:text-base font-normal leading-relaxed ${msgColor} break-words`}>
                                                         {bannerMessage}
                                                     </p>
                                                 </div>
                                             </div>
-                                            {showButton && (
-                                                <button
-                                                    onClick={() => setActiveTab('fees')}
-                                                    className={`text-[10px] font-black px-3.5 py-1.5 rounded-lg transition-all active:scale-95 shadow-xs shrink-0 inline-flex items-center gap-1 uppercase tracking-wider ${btnClass}`}
-                                                >
-                                                    {buttonText} <ChevronRight className="w-3 h-3" />
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={() => setActiveTab('fees')}
+                                                className={`w-full sm:w-auto min-h-[44px] text-[15px] sm:text-base font-semibold px-5 py-2.5 rounded-xl transition-all active:scale-95 shadow-xs shrink-0 inline-flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer ${btnClass}`}
+                                            >
+                                                {buttonText} <ChevronRight className="w-4 h-4" />
+                                            </button>
                                         </div>
                                     );
                                 })()}
@@ -3427,15 +3488,25 @@ export default function StudentDashboardContainer() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2 sm:self-center w-full sm:w-auto shrink-0">
-                                    <a
-                                        href={liveClassroom.live_meeting_link}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="w-full sm:w-auto px-6 py-3 bg-white text-red-600 hover:bg-slate-50 hover:text-red-700 transition-all font-black rounded-xl text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 font-sans tracking-wide cursor-pointer min-h-[44px]"
-                                    >
-                                        <span>Join Class</span>
-                                        <ArrowRight className="w-4 h-4" />
-                                    </a>
+                                    {authoritativeFeeStatus && !authoritativeFeeStatus.canJoinLiveClass ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPaymentPendingModal(true)}
+                                            className="w-full sm:w-auto px-6 py-3 bg-white/90 text-amber-800 hover:bg-white transition-all font-black rounded-xl text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 font-sans tracking-wide cursor-pointer min-h-[44px]"
+                                        >
+                                            <AlertCircle className="w-4 h-4 text-amber-600" />
+                                            <span>Payment Overdue</span>
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={handleJoinLiveClass}
+                                            className="w-full sm:w-auto px-6 py-3 bg-white text-red-600 hover:bg-slate-50 hover:text-red-700 transition-all font-black rounded-xl text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 font-sans tracking-wide cursor-pointer min-h-[44px]"
+                                        >
+                                            <span>Join Class</span>
+                                            <ArrowRight className="w-4 h-4" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -3504,6 +3575,9 @@ export default function StudentDashboardContainer() {
                                     hasUnreadClassroomMessages={unreadClassroomChatCount > 0}
                                     onMarkClassroomChatAsRead={handleMarkClassroomChatAsRead}
                                     onMarkClassroomBroadcastAsRead={handleMarkClassroomBroadcastAsRead}
+                                    attendance={attendance}
+                                    canJoinLiveClass={authoritativeFeeStatus?.canJoinLiveClass ?? true}
+                                    onRestrictedLiveAccessClick={() => setShowPaymentPendingModal(true)}
                                 />
                             </div>
                         )}
@@ -3618,6 +3692,7 @@ export default function StudentDashboardContainer() {
                                 <FeesTab
                                     profile={profile}
                                     payments={payments}
+                                    authoritativeFeeStatus={authoritativeFeeStatus}
                                     notifications={notifications}
                                     directMessages={directMessages}
                                     refreshData={refreshData}
@@ -4073,6 +4148,72 @@ export default function StudentDashboardContainer() {
                                             <span>Copy Meeting Link</span>
                                         </>
                                     )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Payment Overdue Restriction Modal ────────────────────── */}
+            {showPaymentPendingModal && (
+                <div 
+                    className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-200"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) setShowPaymentPendingModal(false);
+                    }}
+                >
+                    <div 
+                        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-amber-500/30 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 text-left relative"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="bg-gradient-to-r from-amber-600 to-rose-600 p-6 text-white text-center relative overflow-hidden">
+                            <button
+                                type="button"
+                                onClick={() => setShowPaymentPendingModal(false)}
+                                className="absolute top-4 right-4 p-1.5 text-white/80 hover:text-white bg-black/20 hover:bg-black/30 rounded-full transition-colors cursor-pointer"
+                                title="Close"
+                                aria-label="Close"
+                            >
+                                <X className="size-4" />
+                            </button>
+
+                            <div className="size-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mx-auto mb-3 shadow-inner">
+                                <AlertCircle className="size-8 text-white" />
+                            </div>
+
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-black/30 text-white mb-2 backdrop-blur-xs font-mono">
+                                PAYMENT PENDING
+                            </div>
+                            <h3 className="text-xl font-display font-black tracking-tight text-white">Live Class Access Restricted</h3>
+                        </div>
+
+                        <div className="p-6 space-y-4 text-center">
+                            <div className="space-y-1.5">
+                                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                                    Your fee payment is pending.
+                                </p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    Please complete your fee payment to continue attending live classes. Your dashboard, recordings, and learning materials remain accessible.
+                                </p>
+                            </div>
+
+                            <div className="pt-2 flex flex-col gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={handleOpenPaymentFromModal}
+                                    className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-600 to-rose-600 hover:brightness-105 text-white font-black rounded-xl text-sm shadow-lg shadow-amber-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider min-h-[44px]"
+                                >
+                                    <span>Pay Fees Now</span>
+                                    <ArrowRight className="size-4" />
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPaymentPendingModal(false)}
+                                    className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer min-h-[40px]"
+                                >
+                                    Close
                                 </button>
                             </div>
                         </div>

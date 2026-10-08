@@ -25,6 +25,7 @@ interface SettingsTabProps {
         description: string;
         status: string;
         delivery_format?: 'online' | 'offline';
+        meeting_link?: string;
         class_date?: string;
         start_time?: string;
         end_time?: string;
@@ -392,6 +393,25 @@ export default function SettingsTab({
                                     ))}
                                 </div>
                             </div>
+
+                            {/* Reusable Meeting Link for Online Classrooms */}
+                            {metadataForm.delivery_format === 'online' && (
+                                <div className="space-y-1.5 text-left animate-in fade-in duration-200">
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1">
+                                        Reusable Meeting Link (Google Meet, Zoom, etc.)
+                                    </label>
+                                    <input
+                                        type="url"
+                                        value={metadataForm.meeting_link || ''}
+                                        onChange={e => setMetadataForm((prev: any) => ({ ...prev, meeting_link: e.target.value }))}
+                                        placeholder="https://meet.google.com/..."
+                                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none text-slate-800 dark:text-slate-100"
+                                    />
+                                    <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1">
+                                        Default recurring meeting URL reused for classes. Session-specific links take precedence.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Status */}
                             <div className="space-y-1.5">

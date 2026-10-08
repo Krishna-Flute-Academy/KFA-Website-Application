@@ -15,6 +15,7 @@ import {
     CheckCircle2,
     XCircle 
 } from 'lucide-react';
+import { formatLocalDateStr, getFulfillmentForTargetDate } from '../../lib/on-behalf-attendance';
 
 interface AttendanceTabProps {
     attendanceStats: {
@@ -172,6 +173,24 @@ export default function AttendanceTab({
                     const existing = map.get(norm);
                     if (!existing || existing.status === 'unmarked' || existing.status === 'absent') {
                         map.set(norm, { status: 'excused', info: r.classrooms?.name || 'Leave Excused' });
+                    }
+                }
+            }
+        });
+
+        // 4. Process on-behalf-of fulfilled dates (classes completed early on an alternative date)
+        (attendanceRecords || []).forEach(a => {
+            if (a.on_behalf_of_date && a.date) {
+                const actualNorm = normalizeDateStr(a.date);
+                const targetNorm = normalizeDateStr(a.on_behalf_of_date);
+                if (actualNorm && targetNorm && actualNorm !== targetNorm) {
+                    const existing = map.get(targetNorm);
+                    // Do not mark absent or expected; show fulfilled status
+                    if (!existing || existing.status === 'unmarked' || existing.status === 'absent') {
+                        map.set(targetNorm, {
+                            status: 'present',
+                            info: `Already Completed — Taken on ${formatLocalDateStr(actualNorm, true)}`
+                        });
                     }
                 }
             }
@@ -708,42 +727,85 @@ export default function AttendanceTab({
                                                 : `${durationMins} min${durationMins !== 1 ? 's' : ''}`;
                                         }
 
-                                        return (
-                                            <tr key={row.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-850/10">
-                                                <td className="px-5 py-3.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-                                                    <div>{formattedDate}</div>
-                                                    {formattedTime && (
-                                                        <div className="text-[10px] text-slate-400 dark:text-slate-555 font-semibold mt-0.5">at {formattedTime}</div>
-                                                    )}
-                                                </td>
-                                                <td className="px-5 py-3.5 text-xs text-slate-700 dark:text-slate-350 font-semibold">
-                                                    {row.classroom_name}
-                                                </td>
-                                                <td className="px-5 py-3.5 text-xs">
-                                                    {row.session_type === 'online' ? (
-                                                        <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30 rounded-full font-black text-[9px] uppercase tracking-wider">
-                                                            Online Video Class
-                                                        </span>
-                                                    ) : row.session_type === 'offline' ? (
-                                                        <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 rounded-full font-black text-[9px] uppercase tracking-wider">
-                                                            In-Person Class
-                                                        </span>
-                                                    ) : (
-                                                        <span className="px-2 py-0.5 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-750 rounded-full font-black text-[9px] uppercase tracking-wider">
-                                                            Manual Entry
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="px-5 py-3.5 text-xs font-bold text-slate-600 dark:text-slate-400">
-                                                    {durationStr}
-                                                </td>
-                                                <td className="px-5 py-3.5">
-                                                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${badgeClass}`}>
-                                                        {row.status}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        );
+                                         const cleanRowDate = normalizeDateStr(row.date) || row.date;
+                                         // Check 1: Was this actual class taken as an alternative class for another date?
+                                         const isAlternativeForTargetDate = row.on_behalf_of_date && normalizeDateStr(row.on_behalf_of_date) !== cleanRowDate
+                                             ? normalizeDateStr(row.on_behalf_of_date)
+                                             : null;
+
+                                         // Check 2: Was this date fulfilled by an alternative class taken earlier?
+                                         const fulfilledByAtt = !isAlternativeForTargetDate
+                                             ? getFulfillmentForTargetDate(attendanceRecords, cleanRowDate)
+                                             : null;
+
+                                         return (
+                                             <tr key={row.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-850/10">
+                                                 <td className="px-5 py-3.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                     <div>{formattedDate}</div>
+                                                     {formattedTime && (
+                                                         <div className="text-[10px] text-slate-400 dark:text-slate-555 font-semibold mt-0.5">at {formattedTime}</div>
+                                                     )}
+                                                     {isAlternativeForTargetDate && (
+                                                         <div className="mt-1">
+                                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                                                 Alternative Class for {formatLocalDateStr(isAlternativeForTargetDate, true)}
+                                                             </span>
+                                                         </div>
+                                                     )}
+                                                     {fulfilledByAtt && (
+                                                         <div className="mt-1">
+                                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                                 Already Completed — Taken on {formatLocalDateStr(fulfilledByAtt.actualDate, true)}
+                                                             </span>
+                                                         </div>
+                                                     )}
+                                                 </td>
+                                                 <td className="px-5 py-3.5 text-xs text-slate-700 dark:text-slate-350 font-semibold">
+                                                     {row.classroom_name}
+                                                 </td>
+                                                 <td className="px-5 py-3.5 text-xs">
+                                                     {row.session_type === 'online' ? (
+                                                         <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30 rounded-full font-black text-[9px] uppercase tracking-wider">
+                                                             Online Video Class
+                                                         </span>
+                                                     ) : row.session_type === 'offline' ? (
+                                                         <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 rounded-full font-black text-[9px] uppercase tracking-wider">
+                                                             In-Person Class
+                                                         </span>
+                                                     ) : (
+                                                         <span className="px-2 py-0.5 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-750 rounded-full font-black text-[9px] uppercase tracking-wider">
+                                                             Manual Entry
+                                                         </span>
+                                                     )}
+                                                 </td>
+                                                 <td className="px-5 py-3.5 text-xs font-bold text-slate-600 dark:text-slate-400">
+                                                     {durationStr}
+                                                 </td>
+                                                 <td className="px-5 py-3.5">
+                                                     {fulfilledByAtt ? (
+                                                         <div className="flex flex-col gap-1 items-start">
+                                                             <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/30">
+                                                                 Already Completed
+                                                             </span>
+                                                             <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                                                 Taken on {formatLocalDateStr(fulfilledByAtt.actualDate, true)}
+                                                             </span>
+                                                         </div>
+                                                     ) : (
+                                                         <div className="flex flex-col gap-1 items-start">
+                                                             <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${badgeClass}`}>
+                                                                 {row.status}
+                                                             </span>
+                                                             {isAlternativeForTargetDate && (
+                                                                 <span className="text-[10px] text-purple-700 dark:text-purple-300 font-semibold">
+                                                                     Alternative for {formatLocalDateStr(isAlternativeForTargetDate, true)}
+                                                                 </span>
+                                                             )}
+                                                         </div>
+                                                     )}
+                                                 </td>
+                                             </tr>
+                                         );
                                     })}
                                 </tbody>
                             </table>

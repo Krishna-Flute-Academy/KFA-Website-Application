@@ -20,7 +20,7 @@ import {
     Percent
 } from 'lucide-react';
 import { supabaseAuth } from '../../../lib/supabase-auth';
-import { getStudentFeeStatus, FeeStatusDetails } from '../../../lib/fee-utils';
+import { getStudentFeeStatus, FeeStatusDetails, calculateAuthoritativeFeeStatus, AuthoritativeFeeStatus } from '../../../lib/fee-utils';
 import { isStudentPaused } from '../../../lib/student-lifecycle';
 
 export interface StudentAttendanceModalProps {
@@ -136,6 +136,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
     const [permanentClassrooms, setPermanentClassrooms] = useState<ClassroomInfo[]>([]);
     const [feeStatus, setFeeStatus] = useState<FeeStatusDetails | null>(null);
+    const [authoritativeFeeStatus, setAuthoritativeFeeStatus] = useState<AuthoritativeFeeStatus | null>(null);
     const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
     const [completedMakeupsCount, setCompletedMakeupsCount] = useState(0);
     const [pendingMakeupsCount, setPendingMakeupsCount] = useState(0);
@@ -219,20 +220,53 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
             };
             setStudentProfile(profile);
 
-            // 2. Fetch Payments to derive Fee Due status using canonical getStudentFeeStatus
-            const { data: paymentsData } = await supabaseAuth
-                .from('fees_payments')
-                .select('id, student_id, payment_date, amount, status, created_at')
-                .eq('student_id', studentId)
-                .order('payment_date', { ascending: false });
+            // 2. Fetch Payments, All Attendance & Overrides to derive Authoritative Balance & Fee Due status
+            const [paymentsRes, allAttRes, leavesRes] = await Promise.all([
+                supabaseAuth
+                    .from('fees_payments')
+                    .select('id, student_id, payment_date, amount, status, created_at, classes_added')
+                    .eq('student_id', studentId)
+                    .order('payment_date', { ascending: false }),
+                supabaseAuth
+                    .from('attendance')
+                    .select('id, student_id, classroom_id, date, status, on_behalf_of_date')
+                    .eq('student_id', studentId),
+                supabaseAuth
+                    .from('leave_requests')
+                    .select('id, student_id, classroom_id, class_date, status')
+                    .eq('student_id', studentId)
+                    .eq('status', 'approved')
+            ]);
+
+            const paymentsData = paymentsRes.data || [];
+            const allStudentAttendance = allAttRes.data || [];
+            const studentLeaves = leavesRes.data || [];
+
+            // Compute Authoritative Class-Credit Status (Lifetime Matching Scope)
+            const authStatus = calculateAuthoritativeFeeStatus({
+                studentId,
+                student: {
+                    ...profile,
+                    fees_collection_date: profile.fees_collection_date ? Number(profile.fees_collection_date) : undefined,
+                    fees_amount: profile.fees_amount ? Number(profile.fees_amount) : undefined
+                },
+                payments: paymentsData,
+                attendance: allStudentAttendance,
+                leaveRequests: studentLeaves,
+                today: new Date()
+            });
+            setAuthoritativeFeeStatus(authStatus);
 
             const derivedFeeStatus = getStudentFeeStatus(
                 profile.fees_basis,
                 profile.fees_collection_date ? Number(profile.fees_collection_date) : undefined,
-                paymentsData || [],
+                paymentsData,
                 new Date(),
                 profile.join_date || profile.created_at,
-                profile.status
+                profile.status,
+                null,
+                null,
+                authStatus.effectiveBalance
             );
             setFeeStatus(derivedFeeStatus);
 
@@ -458,23 +492,28 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
         const ordinal = getOrdinalSuffix(collectionDay);
         const dayLabel = `${collectionDay}${ordinal} of every month`;
 
+        // A. Financial State: strictly derived from authoritative class-credit balance
+        const effectiveBal = authoritativeFeeStatus?.effectiveBalance ?? (studentProfile.fees_classes_paid || 0);
+        const finState = authoritativeFeeStatus?.financialState || (effectiveBal > 0 ? 'GOOD_STANDING' : (effectiveBal === 0 ? 'FEE_DUE' : 'PAYMENT_OVERDUE'));
+
         let statusBg = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800';
         let statusText = 'Paid / Good Standing';
 
         if (feeStatus?.hasPendingPayment) {
             statusBg = 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-200 dark:border-amber-800';
             statusText = 'Pending Approval';
-        } else if (feeStatus?.status === 'overdue') {
+        } else if (finState === 'PAYMENT_OVERDUE') {
             statusBg = 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 border-rose-200 dark:border-rose-800';
-            statusText = 'Overdue';
-        } else if (feeStatus?.status === 'due') {
+            statusText = 'Payment Overdue';
+        } else if (finState === 'FEE_DUE') {
             statusBg = 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-200 dark:border-amber-800';
-            statusText = 'Due Today';
-        } else if (feeStatus?.status === 'upcoming') {
-            statusBg = 'bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border-blue-200 dark:border-blue-800';
-            statusText = 'Upcoming Due';
+            statusText = 'Fee Due';
+        } else if (finState === 'GOOD_STANDING') {
+            statusBg = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800';
+            statusText = effectiveBal === 1 ? '1 Class Left' : `${effectiveBal} Classes Left`;
         }
 
+        // B. Scheduled Billing Date: derived from billing cycle metadata
         const displayDueDate = feeStatus?.dueDate ? `${feeStatus.dueDate.getDate()} ${feeStatus.dueDate.toLocaleString('en-US', { month: 'short', year: 'numeric' })}` : feeStatus?.formattedDueDate;
 
         feeBadgeContent = (

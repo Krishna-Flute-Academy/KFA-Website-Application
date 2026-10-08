@@ -164,8 +164,62 @@ test('On-Behalf-Of Attendance: Absent and Excused on behalf of target date', () 
 
 const {
     isQualifyingAlternativeAttendance,
-    buildCoveredAttendanceMap
+    buildCoveredAttendanceMap,
+    getFulfillmentForTargetDate,
+    getAlternativeClassTargetDate,
+    formatLocalDateStr
 } = jiti('../src/lib/on-behalf-attendance.ts');
+
+test('Student Portal On-Behalf: getAlternativeClassTargetDate and formatLocalDateStr', () => {
+    // Record with alternative target date
+    const recWithTarget = {
+        id: 'att-1',
+        date: '2026-09-28',
+        on_behalf_of_date: '2026-10-19',
+        status: 'present'
+    };
+    assert.equal(getAlternativeClassTargetDate(recWithTarget), '2026-10-19');
+
+    // Record without target date or self-matching target
+    assert.equal(getAlternativeClassTargetDate({ id: 'att-2', date: '2026-09-28', status: 'present' }), null);
+    assert.equal(getAlternativeClassTargetDate({ id: 'att-3', date: '2026-09-28', on_behalf_of_date: '2026-09-28', status: 'present' }), null);
+
+    // formatLocalDateStr
+    assert.equal(formatLocalDateStr('2026-10-19', false), '19 Oct');
+    assert.equal(formatLocalDateStr('2026-10-19', true), '19 Oct 2026');
+    assert.equal(formatLocalDateStr('', false), '');
+});
+
+test('Student Portal On-Behalf: getFulfillmentForTargetDate identifies fulfilling sessions', () => {
+    const studentAttendance = [
+        // Actual class on 28 Sept taken on behalf of 19 Oct
+        { id: 'att-fulfilled', date: '2026-09-28', on_behalf_of_date: '2026-10-19', status: 'present' },
+        // Regular session on 05 Oct
+        { id: 'att-regular', date: '2026-10-05', status: 'present' },
+        // Self-matching edge case
+        { id: 'att-self', date: '2026-10-12', on_behalf_of_date: '2026-10-12', status: 'present' }
+    ];
+
+    // Checking target date 19 Oct: should match 28 Sept
+    const fulfillment19Oct = getFulfillmentForTargetDate(studentAttendance, '2026-10-19');
+    assert.ok(fulfillment19Oct, 'Should find fulfillment for 19 Oct');
+    assert.equal(fulfillment19Oct.actualDate, '2026-09-28');
+    assert.equal(fulfillment19Oct.status, 'present');
+    assert.equal(fulfillment19Oct.id, 'att-fulfilled');
+
+    // Checking 05 Oct: no alternative class was taken on behalf of 05 Oct
+    const fulfillment05Oct = getFulfillmentForTargetDate(studentAttendance, '2026-10-05');
+    assert.equal(fulfillment05Oct, null);
+
+    // Checking 12 Oct: self-matching record should NOT qualify
+    const fulfillment12Oct = getFulfillmentForTargetDate(studentAttendance, '2026-10-12');
+    assert.equal(fulfillment12Oct, null);
+
+    // Checking with empty or null list
+    assert.equal(getFulfillmentForTargetDate(null, '2026-10-19'), null);
+    assert.equal(getFulfillmentForTargetDate([], '2026-10-19'), null);
+});
+
 
 test('On-Behalf-Of Lock: Recorded statuses (present, late, absent, excused) lock target date', () => {
     const scheduledDate = '2026-09-12';

@@ -5,9 +5,16 @@ import Link from 'next/link';
 import {
     MessageSquare, Video, Loader2, Send, Share2, Users,
     TrendingUp, Clock, Star, Trash2, UserPlus, Search,
-    Calendar, User, Zap, FileText
+    Calendar, User, Zap, FileText, Copy, ExternalLink, Edit3, Check
 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
+import { 
+    resolveClassroomMeetingInfo, 
+    extractClassroomMetadata, 
+    serializeClassroomDescription, 
+    isValidMeetingUrl 
+} from '../../lib/meeting-utils';
+import { sendClassroomNotification } from '../../lib/notifications';
 
 interface EnrolledStudent {
     id: string;
@@ -274,6 +281,96 @@ export default function OverviewTab({
         handleSendClassMessage(e);
     };
 
+    // Meeting Details Section State for Teacher
+    const meetingInfo = resolveClassroomMeetingInfo(classroom);
+    const [isEditingMeetingLink, setIsEditingMeetingLink] = useState(false);
+    const [editLinkValue, setEditLinkValue] = useState('');
+    const [isSavingLink, setIsSavingLink] = useState(false);
+    const [copiedLink, setCopiedLink] = useState(false);
+    const [linkActionMsg, setLinkActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    const handleCopyMeetingLink = (url: string) => {
+        if (typeof navigator !== 'undefined') {
+            navigator.clipboard.writeText(url);
+            setCopiedLink(true);
+            setTimeout(() => setCopiedLink(false), 2000);
+        }
+    };
+
+    const handleSaveMeetingLink = async (newUrl: string | null) => {
+        if (newUrl && !isValidMeetingUrl(newUrl)) {
+            setLinkActionMsg({ type: 'error', text: 'Please enter a valid URL starting with http:// or https://' });
+            return;
+        }
+        setIsSavingLink(true);
+        setLinkActionMsg(null);
+        try {
+            // If the class is actively live, update live_meeting_link
+            // Also update reusable meeting link in description so future sessions and refreshes retain it
+            const currentMeta = extractClassroomMetadata(classroom?.description);
+            const updatedDesc = serializeClassroomDescription(
+                currentMeta.cleanDescription,
+                currentMeta.deliveryFormat,
+                newUrl || null
+            );
+
+            const updatePayload: any = { description: updatedDesc };
+            if (classroom?.is_live) {
+                updatePayload.live_meeting_link = newUrl || null;
+            }
+
+            const { error } = await supabaseAuth
+                .from('classrooms')
+                .update(updatePayload)
+                .eq('id', classroomId);
+
+            if (error) throw error;
+
+            // Update local classroom object
+            if (classroom) {
+                classroom.description = updatedDesc;
+                if (classroom.is_live) {
+                    classroom.live_meeting_link = newUrl || null;
+                }
+            }
+
+            setIsEditingMeetingLink(false);
+            setLinkActionMsg({ type: 'success', text: newUrl ? 'Meeting link saved successfully!' : 'Meeting link removed.' });
+            setTimeout(() => setLinkActionMsg(null), 3000);
+        } catch (err: any) {
+            console.error('Failed to update meeting link:', err);
+            setLinkActionMsg({ type: 'error', text: err.message || 'Failed to update meeting link.' });
+        } finally {
+            setIsSavingLink(false);
+        }
+    };
+
+    const handleShareMeetingLink = async (url: string) => {
+        const studentIds = students.map(s => s.student_id);
+        if (studentIds.length === 0) {
+            setLinkActionMsg({ type: 'error', text: 'No enrolled students to notify.' });
+            return;
+        }
+        setIsSavingLink(true);
+        try {
+            await sendClassroomNotification({
+                teacherId: classroom?.teacher_id,
+                recipients: [{ id: classroomId, name: classroom?.name || 'Classroom', type: 'class' }],
+                title: `Meeting Link Available: ${classroom?.name || 'Classroom'}`,
+                message: `The meeting link for "${classroom?.name || 'your class'}" has been updated. Open your classroom portal to view details and join.`,
+                studentIds,
+                type: 'live_class'
+            });
+            setLinkActionMsg({ type: 'success', text: 'Meeting link shared with enrolled students!' });
+            setTimeout(() => setLinkActionMsg(null), 3000);
+        } catch (err: any) {
+            console.error('Failed to share meeting link notification:', err);
+            setLinkActionMsg({ type: 'error', text: 'Failed to broadcast notification.' });
+        } finally {
+            setIsSavingLink(false);
+        }
+    };
+
     return (
         <div className="flex flex-col gap-6 text-left">
             {!isMeetingView && (
@@ -333,8 +430,11 @@ export default function OverviewTab({
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        const meetLink = "Join Google Meet: https://meet.google.com/abc-defg-hij";
-                                        setMessageContent(prev => prev ? `${prev}\n\n${meetLink}` : meetLink);
+                                        const linkToShare = meetingInfo.effectiveMeetingLink;
+                                        const meetText = linkToShare
+                                            ? `Join class session online in your student portal, or via: ${linkToShare}`
+                                            : `Please check your classroom Meeting Details section to join the session.`;
+                                        setMessageContent(prev => prev ? `${prev}\n\n${meetText}` : meetText);
                                     }}
                                     className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 rounded-xl text-[10px] font-bold transition-all flex items-center gap-1 hover:scale-[1.02] border border-blue-200/50 dark:border-blue-900/30 cursor-pointer"
                                 >
@@ -620,6 +720,170 @@ export default function OverviewTab({
 
                 {/* Right Column: Quick Actions, Schedules, and Announcements */}
                 <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
+                    {/* ── Meeting Details Section ── */}
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-left space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                                    <Video className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Meeting Details</h4>
+                                    <span className="text-[10px] font-mono font-bold text-slate-400 block">
+                                        {meetingInfo.deliveryFormat === 'online' ? 'Online Classroom' : 'In-Person (Offline)'}
+                                    </span>
+                                </div>
+                            </div>
+                            {meetingInfo.deliveryFormat === 'online' && !isEditingMeetingLink && (
+                                <button
+                                    onClick={() => {
+                                        setEditLinkValue(meetingInfo.effectiveMeetingLink || '');
+                                        setIsEditingMeetingLink(true);
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                    title="Edit meeting link"
+                                >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+
+                        {linkActionMsg && (
+                            <div className={`text-xs px-3 py-2 rounded-xl font-medium animate-in fade-in duration-200 ${
+                                linkActionMsg.type === 'success'
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200/50'
+                                    : 'bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 border border-rose-200/50'
+                            }`}>
+                                {linkActionMsg.text}
+                            </div>
+                        )}
+
+                        {meetingInfo.deliveryFormat === 'offline' ? (
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    This is an in-person offline class. Instructions and attendance are conducted physically at the academy.
+                                </p>
+                            </div>
+                        ) : isEditingMeetingLink ? (
+                            <div className="space-y-3 pt-1 animate-in fade-in duration-150">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                                        Meeting URL
+                                    </label>
+                                    <input
+                                        type="url"
+                                        value={editLinkValue}
+                                        onChange={e => setEditLinkValue(e.target.value)}
+                                        placeholder="https://meet.google.com/..."
+                                        className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-[#ecb613] outline-none font-mono text-slate-800 dark:text-slate-100"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={isSavingLink}
+                                        onClick={() => handleSaveMeetingLink(editLinkValue.trim() || null)}
+                                        className="flex-1 py-2 bg-[#ecb613] hover:bg-amber-600 text-slate-900 font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
+                                    >
+                                        {isSavingLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save Link'}
+                                    </button>
+                                    {meetingInfo.effectiveMeetingLink && (
+                                        <button
+                                            type="button"
+                                            disabled={isSavingLink}
+                                            onClick={() => {
+                                                if (window.confirm('Are you sure you want to remove the saved meeting link for this classroom?')) {
+                                                    handleSaveMeetingLink(null);
+                                                }
+                                            }}
+                                            className="px-3 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/20 dark:text-rose-400 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                                            title="Remove link"
+                                        >
+                                            Remove
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        disabled={isSavingLink}
+                                        onClick={() => setIsEditingMeetingLink(false)}
+                                        className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ) : meetingInfo.effectiveMeetingLink ? (
+                            <div className="space-y-3">
+                                <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 rounded-xl border border-blue-100 dark:border-blue-900/30 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-400 font-mono">
+                                            Platform: {meetingInfo.platform}
+                                        </span>
+                                        {classroom?.is_live && (
+                                            <span className="text-[9px] font-mono font-extrabold uppercase bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse">
+                                                Active Live
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-700 dark:text-slate-300 font-mono break-all truncate">
+                                        {meetingInfo.effectiveMeetingLink}
+                                    </p>
+                                    <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                                        <span>Type: {meetingInfo.sessionMeetingLink ? 'Session-specific override' : 'Reusable class link'}</span>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCopyMeetingLink(meetingInfo.effectiveMeetingLink!)}
+                                        className="py-2 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                        title="Copy meeting link"
+                                    >
+                                        {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                        <span>{copiedLink ? 'Copied' : 'Copy'}</span>
+                                    </button>
+
+                                    <a
+                                        href={meetingInfo.effectiveMeetingLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="py-2 px-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all text-center"
+                                        title="Open meeting"
+                                    >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                        <span>Join</span>
+                                    </a>
+
+                                    <button
+                                        type="button"
+                                        disabled={isSavingLink}
+                                        onClick={() => handleShareMeetingLink(meetingInfo.effectiveMeetingLink!)}
+                                        className="py-2 px-2 bg-[#ecb613]/15 hover:bg-[#ecb613]/30 text-amber-800 dark:text-[#ecb613] rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                        title="Share with enrolled students"
+                                    >
+                                        <Share2 className="w-3.5 h-3.5" />
+                                        <span>Share</span>
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2">
+                                <p className="text-xs text-slate-400">No meeting link saved for this classroom yet.</p>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setEditLinkValue('');
+                                        setIsEditingMeetingLink(true);
+                                    }}
+                                    className="px-3 py-1.5 bg-[#ecb613] hover:bg-amber-600 text-slate-900 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                    <Video className="w-3.5 h-3.5" /> Add Meeting Link
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
                     {!isMeetingView && (
                         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
                             <div className="flex justify-between items-center mb-4">

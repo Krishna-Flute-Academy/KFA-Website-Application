@@ -1,14 +1,17 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     Calendar, Users, MessageSquare, Clock, ChevronLeft, ChevronRight, 
     User, CheckCircle, Info, AlertTriangle, Play, FileText, Download,
-    BookOpen, Megaphone, ArrowRight
+    BookOpen, Megaphone, ArrowRight, Video, Lock, ExternalLink, Loader2
 } from 'lucide-react';
 import ClassroomChatTab from '../classroom/ClassroomChatTab';
 import { sanitizeHtml } from '../../lib/text-utils';
 import AutoLinkText from '../common/AutoLinkText';
+import { formatLocalDateStr, getFulfillmentForTargetDate } from '../../lib/on-behalf-attendance';
+import { resolveClassroomMeetingInfo } from '../../lib/meeting-utils';
+import { supabaseAuth } from '../../lib/supabase-auth';
 
 interface StudentProfile {
     id: string;
@@ -75,6 +78,9 @@ interface ClassroomTabProps {
     hasUnreadClassroomMessages?: boolean;
     onMarkClassroomChatAsRead?: () => void;
     onMarkClassroomBroadcastAsRead?: (ids: string[]) => void;
+    attendance?: any[];
+    canJoinLiveClass?: boolean;
+    onRestrictedLiveAccessClick?: () => void;
 }
 
 export default function ClassroomTab({
@@ -96,7 +102,10 @@ export default function ClassroomTab({
     onSelectAssignment,
     hasUnreadClassroomMessages = false,
     onMarkClassroomChatAsRead,
-    onMarkClassroomBroadcastAsRead
+    onMarkClassroomBroadcastAsRead,
+    attendance = [],
+    canJoinLiveClass = true,
+    onRestrictedLiveAccessClick
 }: ClassroomTabProps) {
     const [subTab, setSubTab] = useState<'calendar' | 'logs' | 'notes' | 'assignments' | 'messages'>('calendar');
     const [messageTab, setMessageTab] = useState<'broadcasts' | 'chat'>('broadcasts');
@@ -134,6 +143,58 @@ export default function ClassroomTab({
             )
             .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }, [broadcasts, classroom?.id]);
+
+    // Meeting details state & authorized joining
+    const meetingInfo = useMemo(() => resolveClassroomMeetingInfo(classroom), [classroom]);
+    const [isJoiningCall, setIsJoiningCall] = useState(false);
+
+    const handleJoinSession = useCallback(async () => {
+        if (!classroom?.id) return;
+        if (!canJoinLiveClass) {
+            onRestrictedLiveAccessClick?.();
+            return;
+        }
+
+        setIsJoiningCall(true);
+        try {
+            const { data: { session } } = await supabaseAuth.auth.getSession();
+            const token = session?.access_token;
+            if (token) {
+                const res = await fetch('/api/classrooms/live-access', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ classroomId: classroom.id })
+                });
+
+                if (res.status === 403) {
+                    onRestrictedLiveAccessClick?.();
+                    return;
+                }
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.canJoinLiveClass && data.liveMeetingLink) {
+                        window.open(data.liveMeetingLink, '_blank', 'noopener,noreferrer');
+                        return;
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Error getting authorized live class access:', err);
+        } finally {
+            setIsJoiningCall(false);
+        }
+
+        // Fallback if API returned but valid link exists on client
+        if (canJoinLiveClass && meetingInfo.effectiveMeetingLink) {
+            window.open(meetingInfo.effectiveMeetingLink, '_blank', 'noopener,noreferrer');
+        } else {
+            onRestrictedLiveAccessClick?.();
+        }
+    }, [classroom?.id, canJoinLiveClass, onRestrictedLiveAccessClick, meetingInfo.effectiveMeetingLink]);
 
     const hasUnreadBroadcasts = useMemo(() => {
         if (classroomBroadcasts.length === 0) return false;
@@ -237,15 +298,25 @@ export default function ClassroomTab({
     // Calculate today's classes
     const todayClasses = useMemo(() => {
         const today = new Date();
-        return getSchedulesForDate(today);
-    }, [batchSchedules, makeupSchedules, classroom]);
+        const dateStr = getLocalYYYYMMDD(today);
+        const fulfilled = getFulfillmentForTargetDate(attendance, dateStr);
+        return getSchedulesForDate(today).map(c => ({
+            ...c,
+            fulfilled: fulfilled ? { actualDate: fulfilled.actualDate } : null
+        }));
+    }, [batchSchedules, makeupSchedules, classroom, attendance]);
 
     // Calculate tomorrow's classes and later classes
     const tomorrowClasses = useMemo(() => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
-        return getSchedulesForDate(tomorrow);
-    }, [batchSchedules, makeupSchedules, classroom]);
+        const dateStr = getLocalYYYYMMDD(tomorrow);
+        const fulfilled = getFulfillmentForTargetDate(attendance, dateStr);
+        return getSchedulesForDate(tomorrow).map(c => ({
+            ...c,
+            fulfilled: fulfilled ? { actualDate: fulfilled.actualDate } : null
+        }));
+    }, [batchSchedules, makeupSchedules, classroom, attendance]);
 
     const upcomingClassesLater = useMemo(() => {
         const classes: any[] = [];
@@ -255,11 +326,16 @@ export default function ClassroomTab({
         for (let i = 2; i <= 7; i++) {
             const date = new Date();
             date.setDate(today.getDate() + i);
-            const dayClasses = getSchedulesForDate(date);
+            const dateStr = getLocalYYYYMMDD(date);
+            const fulfilled = getFulfillmentForTargetDate(attendance, dateStr);
+            const dayClasses = getSchedulesForDate(date).map(c => ({
+                ...c,
+                fulfilled: fulfilled ? { actualDate: fulfilled.actualDate } : null
+            }));
             classes.push(...dayClasses);
         }
         return classes.sort((a, b) => a.date.getTime() - b.date.getTime());
-    }, [batchSchedules, makeupSchedules, classroom]);
+    }, [batchSchedules, makeupSchedules, classroom, attendance]);
 
     // Format local date strings
     const formatLocalDate = (dateStr: string): Date => {
@@ -292,6 +368,7 @@ export default function ClassroomTab({
             schedules: any[];
             makeups: any[];
             assignments: any[];
+            fulfilledAlternative?: any;
         }> = [];
 
         // Previous month fill-in
@@ -337,6 +414,8 @@ export default function ClassroomTab({
                 return asgDatePart === dateStr;
             });
 
+            const fulfilledAlternative = getFulfillmentForTargetDate(attendance, dateStr);
+
             days.push({
                 dayNum: d,
                 dateStr,
@@ -344,7 +423,8 @@ export default function ClassroomTab({
                 isToday: dateStr === todayStr,
                 schedules: matchedSchedules,
                 makeups: matchedMakeups,
-                assignments: matchedAssignments
+                assignments: matchedAssignments,
+                fulfilledAlternative
             });
         }
 
@@ -366,12 +446,13 @@ export default function ClassroomTab({
                 isToday: false,
                 schedules: [],
                 makeups: [],
-                assignments: matchedAssignments
+                assignments: matchedAssignments,
+                fulfilledAlternative: null
             });
         }
 
         return days;
-    }, [currentDate, batchSchedules, makeupSchedules, assignments]);
+    }, [currentDate, batchSchedules, makeupSchedules, assignments, attendance]);
 
     const handlePrevMonth = () => {
         setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -423,17 +504,32 @@ export default function ClassroomTab({
                             <p className="text-xs text-slate-500 dark:text-slate-400">Join the live call to participate in instructions and class questions.</p>
                         </div>
                     </div>
-                    {classroom.live_meeting_link && (
-                        <a 
-                            href={classroom.live_meeting_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 hover:scale-102 active:scale-98 shadow-sm cursor-pointer tracking-wider min-h-[44px]"
-                        >
-                            <Play className="w-3.5 h-3.5 fill-current" />
-                            <span>Join Class</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                        </a>
+                    {(classroom.live_meeting_link || meetingInfo.effectiveMeetingLink) && (
+                        !canJoinLiveClass ? (
+                            <button
+                                type="button"
+                                onClick={onRestrictedLiveAccessClick}
+                                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer tracking-wider min-h-[44px]"
+                            >
+                                <span className="material-symbols-outlined text-base">lock</span>
+                                <span>Payment Overdue</span>
+                            </button>
+                        ) : (
+                            <button 
+                                type="button"
+                                disabled={isJoiningCall}
+                                onClick={handleJoinSession}
+                                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 hover:scale-102 active:scale-98 shadow-sm cursor-pointer tracking-wider min-h-[44px]"
+                            >
+                                {isJoiningCall ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                    <Play className="w-3.5 h-3.5 fill-current" />
+                                )}
+                                <span>Join Class</span>
+                                <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                        )
                     )}
                 </div>
             )}
@@ -641,7 +737,15 @@ export default function ClassroomTab({
 
                                         {hasEvents && cell.isCurrentMonth && (
                                             <div className="space-y-1">
-                                                {cell.schedules.map((regularClass, sIdx) => (
+                                                {cell.fulfilledAlternative && (
+                                                    <div 
+                                                        className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 truncate" 
+                                                        title={`Completed early on ${formatLocalDateStr(cell.fulfilledAlternative.actualDate, true)} as an alternative class.`}
+                                                    >
+                                                        ✓ Completed ({formatLocalDateStr(cell.fulfilledAlternative.actualDate)})
+                                                    </div>
+                                                )}
+                                                {!cell.fulfilledAlternative && cell.schedules.map((regularClass, sIdx) => (
                                                     <div key={`reg-${sIdx}`} className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 truncate" title={`Weekly Class: ${formatTime12hr(regularClass.start_time.slice(0, 5))}`}>
                                                         🏫 {formatTime12hr(regularClass.start_time.slice(0, 5))} Class
                                                     </div>
@@ -681,8 +785,82 @@ export default function ClassroomTab({
                         <div className="space-y-4">
                             <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Schedule Information</h3>
                             
+                            {/* ── Meeting Details Section for Student ── */}
+                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                            <Video className="w-3.5 h-3.5" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xs font-black text-slate-900 dark:text-white">Meeting Details</h4>
+                                            <span className="text-[9px] font-mono font-bold text-slate-400 block">
+                                                {meetingInfo.deliveryFormat === 'online' ? 'Online Instruction' : 'In-Person Class'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {classroom?.is_live && (
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-black uppercase bg-red-500 text-white animate-pulse">
+                                            Live
+                                        </span>
+                                    )}
+                                </div>
+
+                                {meetingInfo.deliveryFormat === 'offline' ? (
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                                        This classroom meets in-person at the academy premises. No video conference link is needed.
+                                    </p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between text-[11px]">
+                                            <span className="text-slate-400 font-medium">Platform:</span>
+                                            <span className="font-bold text-slate-700 dark:text-slate-200 font-mono">
+                                                {meetingInfo.platform}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-[11px]">
+                                            <span className="text-slate-400 font-medium">Link Status:</span>
+                                            <span className="font-bold text-slate-700 dark:text-slate-200 font-mono">
+                                                {meetingInfo.effectiveMeetingLink ? 'Configured & Available' : 'Pending Instructor'}
+                                            </span>
+                                        </div>
+
+                                        {/* Join Button if link available and permitted */}
+                                        {meetingInfo.effectiveMeetingLink && (
+                                            <div className="pt-1">
+                                                {!canJoinLiveClass ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={onRestrictedLiveAccessClick}
+                                                        className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer min-h-[40px]"
+                                                    >
+                                                        <Lock className="w-3.5 h-3.5" />
+                                                        <span>Join Locked (Fee Pending)</span>
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        disabled={isJoiningCall}
+                                                        onClick={handleJoinSession}
+                                                        className="w-full py-2.5 px-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer min-h-[40px]"
+                                                    >
+                                                        {isJoiningCall ? (
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                        ) : (
+                                                            <Play className="w-3.5 h-3.5 fill-current" />
+                                                        )}
+                                                        <span>Join Class Call</span>
+                                                        <ArrowRight className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="space-y-4">
-                                {/* Today's Classes */}
+                                 {/* Today's Classes */}
                                 <div>
                                     <span className="text-xs font-black text-rose-600 dark:text-rose-450 uppercase tracking-widest font-mono">Today's Classes</span>
                                     {todayClasses.length === 0 ? (
@@ -690,24 +868,39 @@ export default function ClassroomTab({
                                     ) : (
                                         <div className="space-y-2 mt-2">
                                             {todayClasses.map((c, idx) => (
-                                                <div key={idx} className="p-3 bg-rose-50/40 dark:bg-rose-950/10 border border-rose-200/50 dark:border-rose-900/30 rounded-xl space-y-1">
+                                                <div key={idx} className={`p-3 rounded-xl space-y-1.5 ${
+                                                    c.fulfilled 
+                                                        ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/40' 
+                                                        : 'bg-rose-50/40 dark:bg-rose-950/10 border border-rose-200/50 dark:border-rose-900/30'
+                                                }`}>
                                                     <div className="flex items-center justify-between gap-2">
                                                         <p className="font-extrabold text-xs text-slate-800 dark:text-slate-200 truncate">{c.title}</p>
-                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                                                            c.type === 'temporary' 
-                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' 
-                                                                : 'bg-blue-100 text-blue-805 dark:bg-blue-955/40 dark:text-blue-400'
-                                                        }`}>
-                                                            {c.type === 'temporary' ? 'Temporary' : 'Permanent'}
-                                                        </span>
+                                                        <div className="flex items-center gap-1">
+                                                            {c.fulfilled && (
+                                                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400">
+                                                                    Already Completed
+                                                                </span>
+                                                            )}
+                                                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                                                c.type === 'temporary' 
+                                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' 
+                                                                    : 'bg-blue-100 text-blue-805 dark:bg-blue-955/40 dark:text-blue-400'
+                                                            }`}>
+                                                                {c.type === 'temporary' ? 'Temporary' : 'Permanent'}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                     <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold flex items-center gap-1">
                                                         <Clock className="w-3.5 h-3.5 text-slate-400" />
                                                         {c.start_time ? formatTime12hr(c.start_time.slice(0, 5)) : ''} - {c.end_time ? formatTime12hr(c.end_time.slice(0, 5)) : ''}
                                                     </p>
-                                                    {c.reason && (
+                                                    {c.fulfilled ? (
+                                                        <p className="text-[9px] text-emerald-700 dark:text-emerald-400 font-semibold leading-snug">
+                                                            This class was completed early on {formatLocalDateStr(c.fulfilled.actualDate, true)} as an alternative class. No class is required today.
+                                                        </p>
+                                                    ) : c.reason ? (
                                                         <p className="text-[9px] text-slate-400 italic">Reason: {c.reason}</p>
-                                                    )}
+                                                    ) : null}
                                                 </div>
                                             ))}
                                         </div>
@@ -722,24 +915,39 @@ export default function ClassroomTab({
                                     ) : (
                                         <div className="space-y-2 mt-2">
                                             {tomorrowClasses.map((c, idx) => (
-                                                <div key={idx} className="p-3 bg-amber-50/40 dark:bg-amber-955/10 border border-amber-200/50 dark:border-amber-900/30 rounded-xl space-y-1">
+                                                <div key={idx} className={`p-3 rounded-xl space-y-1.5 ${
+                                                    c.fulfilled 
+                                                        ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/40' 
+                                                        : 'bg-amber-50/40 dark:bg-amber-955/10 border border-amber-200/50 dark:border-amber-900/30'
+                                                }`}>
                                                     <div className="flex items-center justify-between gap-2">
                                                         <p className="font-extrabold text-xs text-slate-800 dark:text-slate-200 truncate">{c.title}</p>
-                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                                                            c.type === 'temporary' 
-                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' 
-                                                                : 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400'
-                                                        }`}>
-                                                            {c.type === 'temporary' ? 'Temporary' : 'Permanent'}
-                                                        </span>
+                                                        <div className="flex items-center gap-1">
+                                                            {c.fulfilled && (
+                                                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400">
+                                                                    Already Completed
+                                                                </span>
+                                                            )}
+                                                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                                                c.type === 'temporary' 
+                                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' 
+                                                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400'
+                                                            }`}>
+                                                                {c.type === 'temporary' ? 'Temporary' : 'Permanent'}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                     <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold flex items-center gap-1">
                                                         <Clock className="w-3.5 h-3.5 text-slate-400" />
                                                         {c.start_time ? formatTime12hr(c.start_time.slice(0, 5)) : ''} - {c.end_time ? formatTime12hr(c.end_time.slice(0, 5)) : ''}
                                                     </p>
-                                                    {c.reason && (
+                                                    {c.fulfilled ? (
+                                                        <p className="text-[9px] text-emerald-700 dark:text-emerald-400 font-semibold leading-snug">
+                                                            This class was completed early on {formatLocalDateStr(c.fulfilled.actualDate, true)} as an alternative class. No class is required tomorrow.
+                                                        </p>
+                                                    ) : c.reason ? (
                                                         <p className="text-[9px] text-slate-400 italic">Reason: {c.reason}</p>
-                                                    )}
+                                                    ) : null}
                                                 </div>
                                             ))}
                                         </div>
@@ -754,22 +962,38 @@ export default function ClassroomTab({
                                     ) : (
                                         <div className="space-y-2 mt-2 max-h-[180px] overflow-y-auto pr-1">
                                             {upcomingClassesLater.map((c, idx) => (
-                                                <div key={idx} className="p-2.5 bg-slate-50/50 dark:bg-slate-850/50 border border-slate-200/50 dark:border-slate-800 rounded-xl space-y-1">
+                                                <div key={idx} className={`p-2.5 rounded-xl space-y-1 ${
+                                                    c.fulfilled 
+                                                        ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-900/40' 
+                                                        : 'bg-slate-50/50 dark:bg-slate-850/50 border border-slate-200/50 dark:border-slate-800'
+                                                }`}>
                                                     <div className="flex items-center justify-between gap-2">
                                                         <p className="font-bold text-xs text-slate-800 dark:text-slate-250 truncate">{c.title}</p>
-                                                        <span className={`px-1 py-0.2 rounded text-[7px] font-black uppercase tracking-wider ${
-                                                            c.type === 'temporary' 
-                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' 
-                                                                : 'bg-blue-100 text-blue-805 dark:bg-blue-955/40 dark:text-blue-400'
-                                                        }`}>
-                                                            {c.type === 'temporary' ? 'Temp' : 'Perm'}
-                                                        </span>
+                                                        <div className="flex items-center gap-1">
+                                                            {c.fulfilled && (
+                                                                <span className="px-1 py-0.2 rounded text-[7px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400">
+                                                                    Already Completed
+                                                                </span>
+                                                            )}
+                                                            <span className={`px-1 py-0.2 rounded text-[7px] font-black uppercase tracking-wider ${
+                                                                c.type === 'temporary' 
+                                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' 
+                                                                    : 'bg-blue-100 text-blue-805 dark:bg-blue-955/40 dark:text-blue-400'
+                                                            }`}>
+                                                                {c.type === 'temporary' ? 'Temp' : 'Perm'}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                     <p className="text-[10px] text-slate-550 dark:text-slate-400 font-semibold flex items-center gap-1 flex-wrap">
                                                         <span>{c.date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</span>
                                                         <span>•</span>
                                                         <span>{c.start_time ? formatTime12hr(c.start_time.slice(0, 5)) : ''} - {c.end_time ? formatTime12hr(c.end_time.slice(0, 5)) : ''}</span>
                                                     </p>
+                                                    {c.fulfilled && (
+                                                        <p className="text-[9px] text-emerald-700 dark:text-emerald-400 font-semibold leading-snug">
+                                                            Completed early on {formatLocalDateStr(c.fulfilled.actualDate, true)} as an alternative class.
+                                                        </p>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -877,46 +1101,70 @@ export default function ClassroomTab({
                                             ? `${Math.round(log.duration_seconds / 60)} mins`
                                             : '—';
 
-                                        const isTempLog = log.classroom_id && log.classroom_id !== classroom?.id;
+                                         const isTempLog = log.classroom_id && log.classroom_id !== classroom?.id;
+                                         const logCleanDate = log.date ? log.date.split('T')[0].split(' ')[0] : '';
+                                         const logOnBehalfClean = log.on_behalf_of_date ? log.on_behalf_of_date.split('T')[0].split(' ')[0] : null;
+                                         const isAlternativeLog = Boolean(logOnBehalfClean && logOnBehalfClean !== logCleanDate);
+                                         const fulfilledLog = !isAlternativeLog ? getFulfillmentForTargetDate(attendance, logCleanDate) : null;
 
-                                        const statusColors = {
-                                            present: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-500/20',
-                                            absent: 'bg-rose-105 text-rose-700 dark:bg-rose-955/20 dark:text-rose-400 border border-rose-500/20',
-                                            late: 'bg-amber-100 text-amber-700 dark:bg-amber-955/20 dark:text-amber-400 border border-amber-500/20',
-                                            excused: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-202/60',
-                                            unmarked: 'bg-slate-50 text-slate-400 dark:bg-slate-900 border border-slate-200/50'
-                                        };
+                                         const statusColors = {
+                                             present: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-500/20',
+                                             absent: 'bg-rose-105 text-rose-700 dark:bg-rose-955/20 dark:text-rose-400 border border-rose-500/20',
+                                             late: 'bg-amber-100 text-amber-700 dark:bg-amber-955/20 dark:text-amber-400 border border-amber-500/20',
+                                             excused: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-202/60',
+                                             unmarked: 'bg-slate-50 text-slate-400 dark:bg-slate-900 border border-slate-200/50'
+                                         };
 
-                                        return (
-                                            <tr key={idx} className="hover:bg-slate-50/40 dark:hover:bg-slate-850/20 transition-colors">
-                                                <td className="py-4 text-left">
-                                                    <p className="font-bold text-slate-800 dark:text-white">{dateLabel}</p>
-                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">{log.classroom_name || 'Classroom'}</p>
-                                                </td>
-                                                <td className="py-4 text-slate-505 dark:text-slate-400">{startTimeLabel}</td>
-                                                <td className="py-4">
-                                                    {log.session_type === 'online' ? (
-                                                        <span className="text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/15 font-black">Online</span>
-                                                    ) : log.session_type === 'offline' ? (
-                                                        <span className="text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/15 font-black">Offline</span>
-                                                    ) : (
-                                                        <span className="text-slate-400">—</span>
-                                                    )}
-                                                </td>
-                                                <td className="py-4">
-                                                    {isTempLog ? (
-                                                        <span className="text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/15 font-black">Temporary</span>
-                                                    ) : (
-                                                        <span className="text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/15 font-black">Permanent</span>
-                                                    )}
-                                                </td>
-                                                <td className="py-4 font-mono font-semibold text-slate-505 dark:text-slate-400">{durationMinutes}</td>
-                                                <td className="py-4 text-right">
-                                                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${statusColors[log.status as keyof typeof statusColors] || statusColors.unmarked}`}>
-                                                        {log.status}
-                                                    </span>
-                                                </td>
-                                            </tr>
+                                         return (
+                                             <tr key={idx} className="hover:bg-slate-50/40 dark:hover:bg-slate-850/20 transition-colors">
+                                                 <td className="py-4 text-left">
+                                                     <p className="font-bold text-slate-800 dark:text-white">{dateLabel}</p>
+                                                     <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">{log.classroom_name || 'Classroom'}</p>
+                                                     {isAlternativeLog && logOnBehalfClean && (
+                                                         <div className="mt-1">
+                                                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                                                 Alternative Class for {formatLocalDateStr(logOnBehalfClean, true)}
+                                                             </span>
+                                                         </div>
+                                                     )}
+                                                     {fulfilledLog && (
+                                                         <div className="mt-1">
+                                                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                                 Already Completed — Taken on {formatLocalDateStr(fulfilledLog.actualDate, true)}
+                                                             </span>
+                                                         </div>
+                                                     )}
+                                                 </td>
+                                                 <td className="py-4 text-slate-505 dark:text-slate-400">{startTimeLabel}</td>
+                                                 <td className="py-4">
+                                                     {log.session_type === 'online' ? (
+                                                         <span className="text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/15 font-black">Online</span>
+                                                     ) : log.session_type === 'offline' ? (
+                                                         <span className="text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/15 font-black">Offline</span>
+                                                     ) : (
+                                                         <span className="text-slate-400">—</span>
+                                                     )}
+                                                 </td>
+                                                 <td className="py-4">
+                                                     {isTempLog ? (
+                                                         <span className="text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/15 font-black">Temporary</span>
+                                                     ) : (
+                                                         <span className="text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/15 font-black">Permanent</span>
+                                                     )}
+                                                 </td>
+                                                 <td className="py-4 font-mono font-semibold text-slate-505 dark:text-slate-400">{durationMinutes}</td>
+                                                 <td className="py-4 text-right">
+                                                     {fulfilledLog ? (
+                                                         <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-500/20">
+                                                             Already Completed
+                                                         </span>
+                                                     ) : (
+                                                         <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${statusColors[log.status as keyof typeof statusColors] || statusColors.unmarked}`}>
+                                                             {log.status}
+                                                         </span>
+                                                     )}
+                                                 </td>
+                                             </tr>
                                         );
                                     })}
                                 </tbody>

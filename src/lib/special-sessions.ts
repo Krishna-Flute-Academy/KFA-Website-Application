@@ -1,4 +1,5 @@
 import { sendClassroomNotification } from './notifications';
+import { serializeClassroomDescription, extractClassroomMetadata } from './meeting-utils';
 
 export type SpecialSessionPurpose = 'makeup' | 'extra_class' | 'revision' | 'practice' | 'other';
 export type SpecialSessionCreditTreatment = 'complimentary' | 'makeup' | 'consume_credit';
@@ -12,6 +13,7 @@ export interface CreateSpecialSessionInput {
     startTime: string;
     endTime: string;
     deliveryFormat?: 'online' | 'offline';
+    meetingLink?: string;
     purpose?: SpecialSessionPurpose;
     creditTreatment?: SpecialSessionCreditTreatment;
     selectedStudents: string[];
@@ -22,6 +24,7 @@ export interface UpdateSpecialSessionInput {
     classroomId: string; // Canonical classroom ID
     name?: string;
     description?: string;
+    meetingLink?: string;
     teacherId?: string;
     classDate?: string;
     startTime?: string;
@@ -90,8 +93,7 @@ export async function createSpecialSession(
     if (endTime <= startTime) throw new Error('End time must be after start time.');
 
     const creditTreatment = input.creditTreatment || getDefaultCreditTreatment(purpose);
-    const formatTag = `[delivery_format:${deliveryFormat}]`;
-    const finalDescription = `${(description || 'Special session').trim()} ${formatTag}`;
+    const finalDescription = serializeClassroomDescription(description || 'Special session', deliveryFormat, input.meetingLink);
 
     // 1. Create shadow classroom
     const { data: classroom, error: classError } = await supabaseClient
@@ -243,13 +245,30 @@ export async function updateSpecialSession(
     if (!classroomId) throw new Error('Classroom ID is required.');
 
     // 1. Update classroom row if name or description or delivery format changed
-    if (input.name !== undefined || input.description !== undefined || input.deliveryFormat !== undefined) {
+    if (input.name !== undefined || input.description !== undefined || input.deliveryFormat !== undefined || input.meetingLink !== undefined) {
         const updates: any = {};
         if (input.name !== undefined) updates.name = input.name.trim();
 
-        if (input.description !== undefined || input.deliveryFormat !== undefined) {
-            const formatTag = `[delivery_format:${input.deliveryFormat || 'offline'}]`;
-            updates.description = `${(input.description || '').replace(/\[delivery_format:(online|offline)\]/g, '').trim()} ${formatTag}`;
+        if (input.description !== undefined || input.deliveryFormat !== undefined || input.meetingLink !== undefined) {
+            // Fetch current classroom description if partial update to preserve existing tags
+            let currentDesc = input.description;
+            let currentFormat = input.deliveryFormat;
+            let currentLink = input.meetingLink;
+
+            if (currentDesc === undefined || currentFormat === undefined || currentLink === undefined) {
+                const { data: existingClass } = await supabaseClient
+                    .from('classrooms')
+                    .select('description')
+                    .eq('id', classroomId)
+                    .maybeSingle();
+
+                const meta = extractClassroomMetadata(existingClass?.description || '');
+                if (currentDesc === undefined) currentDesc = meta.cleanDescription;
+                if (currentFormat === undefined) currentFormat = meta.deliveryFormat;
+                if (currentLink === undefined) currentLink = meta.reusableMeetingLink;
+            }
+
+            updates.description = serializeClassroomDescription(currentDesc || '', currentFormat, currentLink);
         }
 
         if (Object.keys(updates).length > 0) {

@@ -463,63 +463,24 @@ export default function FeesManagementDashboard() {
                         studentPaymentsMap[p.student_id].push(p);
                     });
 
-                    // Determine overall cycle boundaries across all students
-                    let minDateStr = '';
-                    let maxDateStr = '';
                     const now = new Date();
 
-                    formatted.forEach(s => {
-                        if (s.fees_basis === 'monthly') {
-                            const cycle = getStudentBillingCycle(
-                                s.fees_collection_date,
-                                studentPaymentsMap[s.id] || [],
-                                now,
-                                s.join_date
-                            );
-                            if (!minDateStr || cycle.cycleStart < minDateStr) minDateStr = cycle.cycleStart;
-                            if (!maxDateStr || cycle.nextDueDate > maxDateStr) maxDateStr = cycle.nextDueDate;
-                        }
-                    });
-
-                    if (!minDateStr) {
-                        const d = new Date();
-                        d.setDate(d.getDate() - 45);
-                        minDateStr = d.toISOString().split('T')[0];
-                    } else {
-                        const d = new Date(minDateStr);
-                        d.setDate(d.getDate() - 35);
-                        minDateStr = d.toISOString().split('T')[0];
-                    }
-                    if (!maxDateStr) {
-                        const d = new Date();
-                        d.setDate(d.getDate() + 45);
-                        maxDateStr = d.toISOString().split('T')[0];
-                    } else {
-                        const d = new Date(maxDateStr);
-                        d.setDate(d.getDate() + 35);
-                        maxDateStr = d.toISOString().split('T')[0];
-                    }
-
+                    // Batch-fetch all operational records for the loaded students without artificial rolling lower-bound
+                    // to ensure authoritative ledger calculation has symmetrical lifetime payment and attendance scope.
                     const [attRes, ovRes, lvsRes, schedRes] = await Promise.all([
                         supabaseAuth
                             .from('attendance')
                             .select('*')
-                            .in('student_id', allStudentIds)
-                            .gte('date', minDateStr)
-                            .lte('date', maxDateStr),
+                            .in('student_id', allStudentIds),
                         supabaseAuth
                             .from('session_student_overrides')
                             .select('id, student_id, target_classroom_id, override_date, reason')
-                            .in('student_id', allStudentIds)
-                            .gte('override_date', minDateStr)
-                            .lte('override_date', maxDateStr),
+                            .in('student_id', allStudentIds),
                         supabaseAuth
                             .from('leave_requests')
                             .select('id, student_id, classroom_id, class_date, status')
                             .in('student_id', allStudentIds)
-                            .eq('status', 'approved')
-                            .gte('class_date', minDateStr)
-                            .lte('class_date', maxDateStr),
+                            .eq('status', 'approved'),
                         supabaseAuth
                             .from('batch_schedules')
                             .select('id, classroom_id, day_of_week, start_time, end_time')
@@ -633,49 +594,22 @@ export default function FeesManagementDashboard() {
     const getStudentStatus = useCallback((student: StudentFeesData) => {
         if (student.fees_amount <= 0) return 'setup_required';
         const metrics = studentMetricsMap[student.id];
-        const classesCompleted = metrics
-            ? metrics.classesAvailable <= 0
-            : student.fees_classes_paid <= 0;
-        
+
         const studentPayments = paymentsMap[student.id] || [];
         const hasPending = studentPayments.some(p => p.status === 'pending_approval');
         if (hasPending) return 'pending_verification';
 
-        if (student.fees_basis === 'class') {
-            const available = metrics ? metrics.classesAvailable : student.fees_classes_paid;
-            if (available < 0) return 'overdue';
-            if (available === 0) return 'due_classes';
+        if (metrics?.financialState) {
+            if (metrics.financialState === 'PAYMENT_OVERDUE') return 'overdue';
+            if (metrics.financialState === 'FEE_DUE') return 'due_classes';
             return 'good';
         }
 
-        if (student.fees_basis === 'monthly' && student.fees_collection_date) {
-            const feeStatus = getStudentFeeStatus(
-                student.fees_basis,
-                Number(student.fees_collection_date),
-                studentPayments,
-                activePeriodDate,
-                student.join_date
-            );
-
-            if (feeStatus) {
-                const dateIsDue = feeStatus.status === 'overdue' || feeStatus.status === 'due';
-                if (dateIsDue && classesCompleted) {
-                    return 'overdue';
-                } else if (classesCompleted) {
-                    return 'due_classes';
-                } else if (feeStatus.status === 'overdue') {
-                    return 'overdue';
-                } else if (feeStatus.status === 'due') {
-                    return 'due_date';
-                } else {
-                    return 'good';
-                }
-            }
-        }
-
-        // Fallback
-        return classesCompleted ? 'due_classes' : 'good';
-    }, [paymentsMap, activePeriodDate, studentMetricsMap]);
+        const effectiveCredits = metrics !== undefined ? metrics.creditsRemaining : (student.fees_classes_paid ?? 0);
+        if (effectiveCredits > 0) return 'good';
+        if (effectiveCredits === 0) return 'due_classes';
+        return 'overdue';
+    }, [paymentsMap, studentMetricsMap]);
 
     const handleHeaderSort = (field: SortField) => {
         if (sortField === field) {
@@ -899,7 +833,6 @@ export default function FeesManagementDashboard() {
             const status = getStudentStatus(s);
             if (status === 'overdue') overdueCount++;
             else if (status === 'due_classes') dueClassesCount++;
-            else if (status === 'due_date') dueDateCount++;
             else if (status === 'setup_required') setupCount++;
             else if (status === 'pending_verification') pendingCount++;
             else goodCount++;
@@ -1009,10 +942,8 @@ export default function FeesManagementDashboard() {
             }
 
             // 2. Update Student User classes balance (PRESERVE fees_amount standard fee)
-            // For class-basis: payment books/covers 1 class in advance (does not endlessly accumulate to 2, 3...)
-            const newClassesPaid = selectedStudent.fees_basis === 'class'
-                ? Math.min(cls, Math.max(0, selectedStudent.fees_classes_paid) + cls)
-                : selectedStudent.fees_classes_paid + cls;
+            // Strict arithmetic addition: payment adds credits directly to current balance (e.g. -1 + 4 = 3)
+            const newClassesPaid = (selectedStudent.fees_classes_paid || 0) + cls;
             const { error: studentUpdateError } = await supabaseAuth
                 .from('users')
                 .update({
@@ -1101,35 +1032,22 @@ export default function FeesManagementDashboard() {
                 student.join_date
             );
 
-            // Targeted single-student fetch with ±35 days buffer to capture advance on-behalf-of classes
-            const startD = new Date(cycle.cycleStart);
-            startD.setDate(startD.getDate() - 35);
-            const extendedStart = startD.toISOString().split('T')[0];
-
-            const endD = new Date(cycle.nextDueDate);
-            endD.setDate(endD.getDate() + 35);
-            const extendedEnd = endD.toISOString().split('T')[0];
-
+            // Fetch complete student history without artificial rolling lower-bound to guarantee
+            // symmetrical payment and attendance scope for authoritative fee cycle ledger evaluation
             const [attRes, ovRes, lvsRes, schedRes] = await Promise.all([
                 supabaseAuth
                     .from('attendance')
                     .select('*')
-                    .eq('student_id', student.id)
-                    .gte('date', extendedStart)
-                    .lte('date', extendedEnd),
+                    .eq('student_id', student.id),
                 supabaseAuth
                     .from('session_student_overrides')
                     .select('id, student_id, target_classroom_id, override_date, reason')
-                    .eq('student_id', student.id)
-                    .gte('override_date', extendedStart)
-                    .lte('override_date', extendedEnd),
+                    .eq('student_id', student.id),
                 supabaseAuth
                     .from('leave_requests')
                     .select('id, student_id, classroom_id, class_date, status')
                     .eq('student_id', student.id)
-                    .eq('status', 'approved')
-                    .gte('class_date', extendedStart)
-                    .lte('class_date', extendedEnd),
+                    .eq('status', 'approved'),
                 supabaseAuth
                     .from('batch_schedules')
                     .select('id, classroom_id, day_of_week, start_time, end_time')
@@ -1311,9 +1229,7 @@ export default function FeesManagementDashboard() {
 
             // Update student balance
             const currentClasses = student ? student.fees_classes_paid : (selectedStudent?.fees_classes_paid || 0);
-            const newClassesPaid = studentFeesBasis === 'class'
-                ? Math.min(classesToAdd, Math.max(0, currentClasses) + classesToAdd)
-                : currentClasses + classesToAdd;
+            const newClassesPaid = (currentClasses || 0) + classesToAdd;
             
             const { error: studentUpdateError } = await supabaseAuth
                 .from('users')
@@ -1453,8 +1369,8 @@ export default function FeesManagementDashboard() {
                                     <button
                                         onClick={() => {
                                             const statusTextMap: Record<string, string> = {
-                                                overdue: 'Overdue',
-                                                due_classes: 'Classes Expired',
+                                                overdue: 'Payment Overdue',
+                                                due_classes: 'Fee Due',
                                                 due_date: 'Due Today',
                                                 pending_verification: 'Pending Review',
                                                 setup_required: 'Setup Required',
@@ -1590,9 +1506,9 @@ export default function FeesManagementDashboard() {
                                         <AlertTriangle className="size-6" />
                                     </div>
                                     <div>
-                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Classes Expired</p>
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Fee Due</p>
                                         <p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1 leading-none">{statsSummary.dueClassesCount}</p>
-                                        <p className="text-[10px] font-semibold text-slate-400 mt-1">Prepaid classes used up</p>
+                                        <p className="text-[10px] font-semibold text-slate-400 mt-1">Class package completed</p>
                                     </div>
                                 </div>
 
@@ -1880,7 +1796,7 @@ export default function FeesManagementDashboard() {
                                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700">Overdue</span>
                                                             )}
                                                             {status === 'due_classes' && (
-                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700">Classes Expired</span>
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700">Fee Due</span>
                                                             )}
                                                         </div>
                                                         <div className="flex items-center gap-2">
@@ -2217,20 +2133,15 @@ export default function FeesManagementDashboard() {
                                                             <td className="px-4 py-3.5 text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                                                                 {(() => {
                                                                     if (student.fees_amount <= 0) return <span className="text-slate-400 italic font-medium text-xs">Setup Required</span>;
-                                                                    if (student.fees_basis === 'monthly') {
-                                                                        if (student.fees_collection_date) {
-                                                                            const studentPayments = paymentsMap[student.id] || [];
-                                                                            const feeStatus = getStudentFeeStatus(
-                                                                                student.fees_basis,
-                                                                                Number(student.fees_collection_date),
-                                                                                studentPayments,
-                                                                                activePeriodDate,
-                                                                                student.join_date
-                                                                            );
-                                                                            return feeStatus ? feeStatus.formattedDueDate : 'N/A';
-                                                                        }
+                                                                    const metrics = studentMetricsMap[student.id];
+                                                                    const remCredits = metrics !== undefined ? metrics.creditsRemaining : (student.fees_classes_paid ?? 0);
+                                                                    if (remCredits > 0) {
+                                                                        return <span className="text-emerald-700 dark:text-emerald-400 font-semibold">{remCredits === 1 ? 'After 1 class' : `After ${remCredits} classes`}</span>;
                                                                     }
-                                                                    return <span className="text-slate-400 text-xs font-medium">On usage</span>;
+                                                                    if (remCredits === 0) {
+                                                                        return <span className="text-amber-600 dark:text-amber-400 font-bold">Fee Due</span>;
+                                                                    }
+                                                                    return <span className="text-rose-600 dark:text-rose-400 font-bold">Payment Overdue</span>;
                                                                 })()}
                                                             </td>
 
@@ -2249,25 +2160,19 @@ export default function FeesManagementDashboard() {
                                                                 {status === 'good' && (
                                                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                                                                         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                                                                        Active / Paid
+                                                                        Good Standing
                                                                     </span>
                                                                 )}
                                                                 {status === 'due_classes' && (
                                                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                                                                         <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
-                                                                        Classes Expired
-                                                                    </span>
-                                                                )}
-                                                                {status === 'due_date' && (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                                                                        <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
-                                                                        Due Date Arrived
+                                                                        Fee Due
                                                                     </span>
                                                                 )}
                                                                 {status === 'overdue' && (
                                                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
                                                                         <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"></span>
-                                                                        Overdue
+                                                                        Payment Overdue
                                                                     </span>
                                                                 )}
                                                                 {status === 'pending_verification' && (() => {

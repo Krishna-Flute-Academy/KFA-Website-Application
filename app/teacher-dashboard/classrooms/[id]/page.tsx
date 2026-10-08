@@ -26,6 +26,13 @@ import { isStudentOperationallyActive, isStudentEnrolledOnDate } from '../../../
 import { matchesSearchTokens, getSearchTokens, normalizeSearchText } from '../../../../src/lib/search-utils';
 import { CoveredAttendanceRecord, buildCoveredAttendanceMap } from '../../../../src/lib/on-behalf-attendance';
 import { endActiveClass } from '../../../../src/lib/class-session-lifecycle';
+import { 
+    extractClassroomMetadata, 
+    serializeClassroomDescription, 
+    resolveClassroomMeetingInfo,
+    identifyMeetingPlatform,
+    isValidMeetingUrl 
+} from '../../../../src/lib/meeting-utils';
 
 import dynamic from 'next/dynamic';
 import TaskCreateDialog from '../../../../src/components/teacher-dashboard/tasks/TaskCreateDialog';
@@ -841,6 +848,7 @@ export default function ClassroomDashboardPage({
         name: string;
         description: string;
         delivery_format: 'online' | 'offline';
+        meeting_link?: string;
         status: string;
         class_date: string;
         start_time: string;
@@ -1606,15 +1614,13 @@ export default function ClassroomDashboardPage({
                 setClassroom(classroomData);
 
                 // Process metadata edit form
-                const cleanDesc = (roomData.description || '')
-                    .replace(/\[delivery_format:(online|offline)\]/g, '')
-                    .trim();
-                const format = ((roomData.description || '').includes('[delivery_format:online]') ? 'online' : 'offline') as 'online' | 'offline';
+                const meta = extractClassroomMetadata(roomData.description);
 
                 setMetadataForm({
                     name: roomData.name || '',
-                    description: cleanDesc,
-                    delivery_format: format,
+                    description: meta.cleanDescription,
+                    delivery_format: meta.deliveryFormat,
+                    meeting_link: meta.reusableMeetingLink || '',
                     status: roomData.status || 'active',
                     class_date: classroomData.class_date || '',
                     start_time: classroomData.start_time ? classroomData.start_time.slice(0, 5) : '10:00',
@@ -4942,8 +4948,11 @@ export default function ClassroomDashboardPage({
         setMetadataError('');
         setMetadataSaved(false);
         try {
-            const formatTag = `[delivery_format:${(metadataForm as any).delivery_format || 'offline'}]`;
-            const finalDesc = `${metadataForm.description.trim()} ${formatTag}`;
+            const finalDesc = serializeClassroomDescription(
+                metadataForm.description,
+                (metadataForm as any).delivery_format || 'offline',
+                (metadataForm as any).meeting_link || null
+            );
 
             let { error } = await supabaseAuth
                 .from('classrooms')
@@ -5000,7 +5009,7 @@ export default function ClassroomDashboardPage({
             setClassroom(prev => prev ? {
                 ...prev,
                 name: metadataForm.name.trim(),
-                description: metadataForm.description.trim(),
+                description: finalDesc,
                 status: metadataForm.status,
                 class_date: classroom?.type === 'temporary' ? (metadataForm as any).class_date : prev.class_date,
                 start_time: classroom?.type === 'temporary' ? (metadataForm as any).start_time : prev.start_time,

@@ -13,6 +13,8 @@ import { sendClassroomNotification } from '../../../../../src/lib/notifications'
 import { isStudentOperationallyActive } from '../../../../../src/lib/student-lifecycle';
 import { CoveredAttendanceRecord, buildCoveredAttendanceMap } from '../../../../../src/lib/on-behalf-attendance';
 import { startActiveClass, endActiveClass } from '../../../../../src/lib/class-session-lifecycle';
+import { handleFeeBalanceTransitionNotifications } from '../../../../../src/lib/fee-notifications';
+import { extractClassroomMetadata } from '../../../../../src/lib/meeting-utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionType = 'online' | 'offline';
@@ -45,7 +47,7 @@ export default function MeetingPage() {
     const [step, setStep] = useState<Step>(1);
     const [sessionType, setSessionType] = useState<SessionType | null>(null);
     const [sessionDate, setSessionDate] = useState<string>(new Date().toISOString().split('T')[0]);
-    const [meetingLink, setMeetingLink] = useState('https://meet.google.com/abc-defg-hij');
+    const [meetingLink, setMeetingLink] = useState('');
     const isFirstRender = useRef(true);
 
     // Unified Hub states
@@ -62,7 +64,7 @@ export default function MeetingPage() {
 
                 const [profileRes, classroomRes] = await Promise.all([
                     supabaseAuth.from('users').select('id, name, email').eq('id', session.user.id).single(),
-                    supabaseAuth.from('classrooms').select('name, type, is_live, live_meeting_link, live_session_started_at').eq('id', classroomId).single()
+                    supabaseAuth.from('classrooms').select('name, type, description, is_live, live_meeting_link, live_session_started_at').eq('id', classroomId).single()
                 ]);
 
                 setTeacherProfile(profileRes.data);
@@ -71,6 +73,15 @@ export default function MeetingPage() {
                 let roster: any[] = [];
                 if (classroom) {
                     setClassroomName(classroom.name);
+
+                    // Pre-fill meeting link and delivery format from metadata or active live session
+                    const meta = extractClassroomMetadata(classroom.description);
+                    if (meta.reusableMeetingLink) {
+                        setMeetingLink(meta.reusableMeetingLink);
+                    }
+                    if (meta.deliveryFormat) {
+                        setSessionType(meta.deliveryFormat);
+                    }
 
                     // Fetch roster, overrides, pre-existing attendance, and covered alternative attendance concurrently
                     const [rosterRes, overrideRes, attendanceRes, coveredRes] = await Promise.all([
@@ -401,8 +412,8 @@ export default function MeetingPage() {
             if (!wasAlreadyLive && targetStudentIds.length > 0) {
                 const isOnline = (sessionType || 'online') === 'online';
                 const notifTitle = `Class Started: ${classroomName}`;
-                const notifMessage = isOnline && meetingLink
-                    ? `The online class for "${classroomName}" has started. Join here: ${meetingLink}`
+                const notifMessage = isOnline
+                    ? `The online class for "${classroomName}" has started. Open your student classroom to join the live session.`
                     : `The class for "${classroomName}" has started.`;
 
                 sendClassroomNotification({
@@ -414,6 +425,15 @@ export default function MeetingPage() {
                     type: 'live_class'
                 }).catch(err => console.error('Failed to send classroom notifications:', err));
             }
+
+            // Trigger idempotent fee balance transition check for marked students
+            rowsToUpsert.forEach(r => {
+                handleFeeBalanceTransitionNotifications({
+                    studentId: r.student_id,
+                    teacherId: teacherProfile?.id,
+                    supabase: supabaseAuth
+                }).catch(err => console.error('Error checking fee balance transition:', err));
+            });
 
             setIsLiveSession(true);
             setStep(3);

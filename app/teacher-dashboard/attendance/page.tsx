@@ -40,6 +40,7 @@ import { ArrangeMakeupModal } from '../../../src/components/makeup/ArrangeMakeup
 import { StudentAttendanceModal } from '../../../src/components/teacher-dashboard/attendance/StudentAttendanceModal';
 import { isStudentOperationallyActive, isStudentEnrolledOnDate } from '../../../src/lib/student-lifecycle';
 import { CoveredAttendanceRecord, buildCoveredAttendanceMap } from '../../../src/lib/on-behalf-attendance';
+import { handleFeeBalanceTransitionNotifications } from '../../../src/lib/fee-notifications';
 import { 
     derivePendingAttendanceSessions, 
     calculatePendingSummary, 
@@ -1210,6 +1211,12 @@ export default function AttendancePage() {
 
             if (error) throw error;
 
+            handleFeeBalanceTransitionNotifications({
+                studentId,
+                teacherId: teacherProfile?.id,
+                supabase: supabaseAuth
+            }).catch(e => console.error('Error checking fee balance transition:', e));
+
             // Recalculate summary stats for this batch header dynamically
             // Read the previous status from the batchAttendanceMap state before the optimistic update
             const prevRecords = batchAttendanceMap[batchId] || {};
@@ -1526,6 +1533,12 @@ export default function AttendancePage() {
                     marked_by: teacherProfile.id
                 }, { onConflict: 'student_id,classroom_id,date' });
             if (error) throw error;
+
+            handleFeeBalanceTransitionNotifications({
+                studentId,
+                teacherId: teacherProfile?.id,
+                supabase: supabaseAuth
+            }).catch(e => console.error('Error checking fee balance transition:', e));
             // Also sync batchAttendanceMap if batch is expanded
             setBatchAttendanceMap(prev => {
                 const currentBatch = prev[classroomId] || {};

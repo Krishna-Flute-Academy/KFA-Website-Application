@@ -1,4 +1,17 @@
-// Shared utilities for student fee status and due date calculations.
+export type FinancialState = 'GOOD_STANDING' | 'FEE_DUE' | 'PAYMENT_OVERDUE';
+
+export interface AuthoritativeFeeStatus {
+    studentId: string;
+    totalPurchasedCredits: number;
+    totalConsumedCredits: number;
+    effectiveBalance: number;
+    financialState: FinancialState;
+    canJoinLiveClass: boolean;
+    lastPaymentDate?: string;
+    lastPaymentAmount?: number;
+    needsReconciliation?: boolean;
+    reconciliationReason?: string;
+}
 
 export interface FeeStatusDetails {
     dueDate: Date;         // The active due date being tracked
@@ -11,6 +24,9 @@ export interface FeeStatusDetails {
     prePauseDueDate?: Date;
     unpaidCyclesCount?: number;
     earliestUnpaidDueDate?: Date;
+    financialState?: FinancialState;
+    effectiveBalance?: number;
+    canJoinLiveClass?: boolean;
 }
 
 /**
@@ -111,8 +127,9 @@ export interface BillingCycleSlot {
     dueDateObj: Date;
     isPaid: boolean;
     isLate: boolean;
+    isPaused?: boolean;
     allocatedPayment?: any;
-    paymentStatus: 'paid_on_time' | 'paid_late' | 'overdue' | 'due' | 'upcoming' | 'future';
+    paymentStatus: 'paid_on_time' | 'paid_late' | 'overdue' | 'due' | 'upcoming' | 'future' | 'paused';
 }
 
 /**
@@ -294,9 +311,27 @@ export function buildStudentBillingCycles(
     }
 
     let pauseDate: Date | null = null;
-    if (isPaused && pauseEffectiveDate) {
+    if (pauseEffectiveDate) {
         pauseDate = new Date(pauseEffectiveDate);
         pauseDate.setHours(0, 0, 0, 0);
+    }
+
+    const rTime = resumeDate ? new Date(resumeDate).getTime() : null;
+    const pTime = pauseDate ? pauseDate.getTime() : null;
+
+    // Suppress cycles that fall within a paused interval
+    for (const c of cycles) {
+        if (pTime !== null && rTime !== null) {
+            if (c.dueDateObj.getTime() >= pTime && c.dueDateObj.getTime() < rTime) {
+                c.isPaused = true;
+                c.paymentStatus = 'paused';
+            }
+        } else if (pTime !== null && isPaused) {
+            if (c.dueDateObj.getTime() >= pTime) {
+                c.isPaused = true;
+                c.paymentStatus = 'paused';
+            }
+        }
     }
 
     // Allocate approved payments chronologically using FIFO
@@ -312,9 +347,17 @@ export function buildStudentBillingCycles(
             targetCycle = cycles.find(c => c.dueDate === expDateStr && !c.isPaid);
         }
 
-        // 2. Otherwise allocate to earliest unallocated cycle (respecting pause constraints)
+        // 2. Otherwise allocate to earliest unallocated cycle (respecting pause and resume constraints)
         if (!targetCycle) {
-            targetCycle = cycles.find(c => !c.isPaid && (!pauseDate || c.dueDateObj.getTime() <= pauseDate.getTime()));
+            if (rTime !== null && pDate.getTime() >= rTime) {
+                // Payments made on or after resume date must allocate to cycles on or after resume date (never to pre-resume paused periods)
+                targetCycle = cycles.find(c => !c.isPaid && !c.isPaused && c.dueDateObj.getTime() >= rTime);
+                if (!targetCycle) {
+                    targetCycle = cycles.find(c => !c.isPaid && !c.isPaused);
+                }
+            } else {
+                targetCycle = cycles.find(c => !c.isPaid && !c.isPaused && (!pauseDate || c.dueDateObj.getTime() <= pauseDate.getTime()));
+            }
         }
 
         if (targetCycle) {
@@ -332,7 +375,7 @@ export function buildStudentBillingCycles(
 
     // Mark remaining unpaid cycles relative to today
     for (const c of cycles) {
-        if (!c.isPaid) {
+        if (!c.isPaid && !c.isPaused) {
             const diff = Math.ceil((c.dueDateObj.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24));
             if (diff < 0) c.paymentStatus = 'overdue';
             else if (diff === 0) c.paymentStatus = 'due';
@@ -361,7 +404,9 @@ export function getStudentFeeStatus(
     today: Date = new Date(),
     joinDate?: string | Date | null,
     studentStatus?: string | null,
-    pauseEffectiveDate?: string | Date | null
+    pauseEffectiveDate?: string | Date | null,
+    resumeDate?: string | Date | null,
+    effectiveBalance?: number
 ): FeeStatusDetails | null {
     if (feesBasis !== 'monthly') {
         return null;
@@ -382,10 +427,28 @@ export function getStudentFeeStatus(
         today,
         joinDate,
         studentStatus,
-        pauseEffectiveDate
+        pauseEffectiveDate,
+        resumeDate
     );
 
     const hasPendingPayment = payments.some(p => p.status === 'pending_approval');
+
+    // Authoritative class-credit integration: If balance is positive, student is in good standing!
+    if (typeof effectiveBalance === 'number' && effectiveBalance > 0) {
+        const nextUnpaidCycle = cycles.find(c => !c.isPaid) || cycles[cycles.length - 1];
+        const nextDueObj = nextUnpaidCycle ? nextUnpaidCycle.dueDateObj : todayZero;
+        const day = nextDueObj.getDate();
+        const monthName = nextDueObj.toLocaleString('en-US', { month: 'long' });
+        return {
+            dueDate: nextDueObj,
+            diffDays: Math.ceil((nextDueObj.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24)),
+            status: 'good',
+            formattedDueDate: `${day} ${monthName}`,
+            hasPendingPayment,
+            isPaused: false,
+            unpaidCyclesCount: 0
+        };
+    }
 
     if (isPaused) {
         let hasPrePauseDebt = false;
@@ -418,7 +481,15 @@ export function getStudentFeeStatus(
     }
 
     // Active student: Check for past unpaid billing cycles (FIFO debt detection)
-    const unpaidPastCycles = cycles.filter(c => !c.isPaid && c.dueDateObj.getTime() < todayZero.getTime());
+    // Filter out cycles that occurred during a paused period or before resumeDate
+    const rTime = resumeDate ? new Date(resumeDate).getTime() : null;
+    const unpaidPastCycles = cycles.filter(c => 
+        !c.isPaid && 
+        !c.isPaused && 
+        c.paymentStatus !== 'paused' && 
+        c.dueDateObj.getTime() < todayZero.getTime() &&
+        (!rTime || c.dueDateObj.getTime() >= rTime)
+    );
     if (unpaidPastCycles.length > 0) {
         const earliest = unpaidPastCycles[0];
         const diffDays = Math.ceil((earliest.dueDateObj.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24));
@@ -509,7 +580,8 @@ export function getStudentBillingCycle(
     joinDate?: string | Date | null,
     studentStatus?: string | null,
     pauseEffectiveDate?: string | Date | null,
-    resumeDate?: string | Date | null
+    resumeDate?: string | Date | null,
+    effectiveBalance?: number
 ): StudentBillingCycle {
     const {
         cycles,
@@ -580,7 +652,9 @@ export function getStudentBillingCycle(
         today,
         joinDate,
         studentStatus,
-        pauseEffectiveDate
+        pauseEffectiveDate,
+        resumeDate,
+        effectiveBalance
     );
 
     const feeStatus = statusDetails ? statusDetails.status : 'good';
@@ -638,6 +712,13 @@ export interface StudentFeeCycleMetrics {
     statusLabel: string;             // e.g. "1 Regular", "1 Makeup Pending", "Cycle Complete", "Attendance Review Needed"
     badgeVariant: 'good' | 'warning' | 'danger' | 'neutral';
     alertType?: 'unresolved' | 'due' | 'overdue';
+
+    // Authoritative Financial Standing & Access
+    effectiveBalance?: number;
+    financialState?: FinancialState;
+    canJoinLiveClass?: boolean;
+    needsReconciliation?: boolean;
+    reconciliationReason?: string;
 
     // Financial Standing & Payment Info
     isPaid?: boolean;
@@ -702,6 +783,7 @@ export interface FeeCycleLedgerReport {
     paymentStatus?: 'good' | 'upcoming' | 'due' | 'overdue' | 'paused';
     allocatedPayment?: any;
     unpaidCyclesCount?: number;
+    canJoinLiveClass?: boolean;
     metrics: StudentFeeCycleMetrics;
     sessions: FeeCycleSessionItem[];
     diagnostics: FeeCycleDiagnostic[];
@@ -709,6 +791,10 @@ export interface FeeCycleLedgerReport {
         entitledClasses: number;
         consumedClasses: number;       // regularAttended + unexcusedMissed + makeupsCompleted
         creditsRemaining: number;      // Financial unused credits (entitled - consumed)
+        effectiveBalance?: number;
+        financialState?: FinancialState;
+        canJoinLiveClass?: boolean;
+        needsReconciliation?: boolean;
         operationalOpportunities: number; // regularFuture + makeupsPending + makeupsScheduled
         unresolvedSessions: number;    // Past scheduled sessions without attendance/cancellation
         classesAvailable: number;      // min(creditsRemaining, operationalOpportunities)
@@ -740,6 +826,7 @@ export interface StudentCycleCalculationInput {
     cancelledSessions?: { id?: string; classroom_id?: string; date: string; session_date?: string; reason?: string }[];
     payments?: { payment_date: string; amount?: number; status?: string; classes_added?: number }[];
     today?: Date;
+    attendanceScopeStartDate?: string;
 }
 
 const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -750,6 +837,170 @@ function formatPrettyDate(d: Date): string {
     const mon = MONTH_SHORT_NAMES[d.getMonth()];
     const yr = d.getFullYear();
     return `${day} ${mon} ${yr}`;
+}
+
+/**
+ * Authoritative, server-side class-credit and financial standing engine.
+ * Rule: Payments are the ONLY source of credits (+4 standard).
+ * Consumption: Present (-1), Late (-1), Absent (-1).
+ * Excused (0), Makeup (1). Net for excused + makeup pair = 1.
+ * Balance = totalPurchased - totalConsumed.
+ * Balance > 0 -> GOOD_STANDING (canJoinLiveClass = true)
+ * Balance = 0 -> FEE_DUE (canJoinLiveClass = true, NOT blocked, operational status ACTIVE)
+ * Balance < 0 -> PAYMENT_OVERDUE (canJoinLiveClass = false)
+ */
+export function calculateAuthoritativeFeeStatus(input: {
+    studentId: string;
+    student?: {
+        id?: string;
+        fees_amount?: number | null;
+        fees_basis?: string | null;
+        fees_classes_paid?: number | null;
+        fees_collection_date?: number | null;
+        join_date?: string | Date | null;
+        status?: string | null;
+    };
+    payments?: { payment_date: string; amount?: number; classes_added?: number; status?: string }[];
+    attendance?: { id?: string; student_id?: string; classroom_id?: string; date?: string; session_date?: string; status: string; on_behalf_of_date?: string | null; classroom_name?: string }[];
+    overrides?: { id?: string; student_id?: string; target_classroom_id?: string; override_date: string; missed_session_date?: string | null; reason?: string | null }[];
+    leaveRequests?: { id?: string; student_id?: string; classroom_id?: string; class_date: string; status: string }[];
+    today?: Date;
+    attendanceScopeStartDate?: string;
+}): AuthoritativeFeeStatus {
+    const {
+        studentId,
+        student,
+        payments = [],
+        attendance = [],
+        overrides = [],
+        leaveRequests = []
+    } = input;
+
+    // 1. Total Purchased Credits from actual approved payments
+    const approvedPayments = payments
+        .filter(p => !p.status || p.status === 'approved')
+        .sort((a, b) => a.payment_date.localeCompare(b.payment_date));
+
+    let totalPurchasedCredits = 0;
+    let lastPaymentDate: string | undefined;
+    let lastPaymentAmount: number | undefined;
+
+    for (const p of approvedPayments) {
+        const credits = (typeof p.classes_added === 'number' && p.classes_added > 0)
+            ? p.classes_added
+            : (p.amount && p.amount > 0 && student?.fees_amount
+                ? calculateClassesAdded(p.amount, student.fees_amount, student.fees_basis || 'monthly')
+                : 4);
+        totalPurchasedCredits += credits;
+        lastPaymentDate = p.payment_date;
+        lastPaymentAmount = p.amount;
+    }
+
+    // 2. Attendance & Makeup Reconciliation
+    const studentAtt = attendance.filter(a => !a.student_id || a.student_id === studentId);
+    const studentLvs = leaveRequests.filter(l => (!l.student_id || l.student_id === studentId) && l.status === 'approved');
+    const studentOvr = overrides.filter(o => !o.student_id || o.student_id === studentId);
+
+    const approvedLeaveDates = new Set(
+        studentLvs.map(l => (l.class_date || '').split('T')[0])
+    );
+
+    // Identify makeup sessions linked to missed/excused dates
+    const overrideByDate = new Map<string, typeof studentOvr[0]>();
+    for (const ov of studentOvr) {
+        const oDate = (ov.override_date || '').split('T')[0];
+        overrideByDate.set(oDate, ov);
+    }
+
+    let totalConsumedCredits = 0;
+    const consumedSlots = new Set<string>();
+
+    for (const att of studentAtt) {
+        const physicalDate = (att.date || att.session_date || '').split('T')[0];
+        const onBehalfOf = att.on_behalf_of_date ? att.on_behalf_of_date.split('T')[0] : null;
+        const status = (att.status || '').toLowerCase().trim();
+
+        // Excused absences (or approved leaves) consume 0 credits
+        if (status === 'excused' || approvedLeaveDates.has(physicalDate)) {
+            continue;
+        }
+
+        // Attendance statuses that consume credit: present, late, absent
+        if (status === 'present' || status === 'late' || status === 'absent') {
+            const ov = overrideByDate.get(physicalDate);
+            let missedDate = ov?.missed_session_date;
+            if (!missedDate && ov?.reason) {
+                const match = ov.reason.match(/\[MissedDate:([^\]]+)\]/);
+                if (match) missedDate = match[1];
+            }
+
+            const effectiveDate = onBehalfOf || missedDate || physicalDate;
+
+            // If an evaluation date (today) is provided, classes taken on behalf of a future date do not consume until that target date or today arrives
+            if (input.today) {
+                const todayStr = formatDateToYYYYMMDD(input.today);
+                if (effectiveDate > todayStr) {
+                    continue;
+                }
+            }
+
+            if (!consumedSlots.has(effectiveDate)) {
+                consumedSlots.add(effectiveDate);
+                totalConsumedCredits++;
+            }
+        }
+    }
+
+    // 3. Authoritative Balance
+    const effectiveBalance = totalPurchasedCredits - totalConsumedCredits;
+
+    // 4. Financial State
+    let financialState: FinancialState = 'GOOD_STANDING';
+    if (effectiveBalance === 0) {
+        financialState = 'FEE_DUE';
+    } else if (effectiveBalance < 0) {
+        financialState = 'PAYMENT_OVERDUE';
+    }
+
+    // 5. Live Class Access: Allowed at balance >= 0; Restricted ONLY at balance < 0
+    const canJoinLiveClass = effectiveBalance >= 0;
+
+    // 6. Reconciliation Discrepancy & Scope Symmetry Detection
+    const stored = typeof student?.fees_classes_paid === 'number' ? student.fees_classes_paid : undefined;
+    // For per-class students without payment records, stored fees_classes_paid is their baseline entitlement
+    const isPerClassWithoutPayments = student?.fees_basis === 'class' && approvedPayments.length === 0;
+
+    // Invariant: Enforce symmetrical data scope. If an attendance window start is declared,
+    // ensure historical payments do not precede that window without attendance history.
+    let hasScopeAsymmetry = false;
+    let scopeAsymmetryReason: string | undefined;
+    if (input.attendanceScopeStartDate && approvedPayments.length > 0) {
+        const earliestPaymentDate = approvedPayments[0].payment_date;
+        if (earliestPaymentDate < input.attendanceScopeStartDate) {
+            hasScopeAsymmetry = true;
+            scopeAsymmetryReason = `Asymmetric ledger scope: earliest payment (${earliestPaymentDate}) precedes attendance window start (${input.attendanceScopeStartDate})`;
+        }
+    }
+
+    const needsReconciliation = (!isPerClassWithoutPayments && stored !== undefined && stored !== effectiveBalance) || hasScopeAsymmetry;
+    const reconciliationReason = hasScopeAsymmetry
+        ? scopeAsymmetryReason
+        : needsReconciliation
+        ? `Stored balance (${stored}) differs from authoritative calculated balance (${effectiveBalance})`
+        : undefined;
+
+    return {
+        studentId,
+        totalPurchasedCredits,
+        totalConsumedCredits,
+        effectiveBalance,
+        financialState,
+        canJoinLiveClass,
+        lastPaymentDate,
+        lastPaymentAmount,
+        needsReconciliation,
+        reconciliationReason
+    };
 }
 
 /**
@@ -776,10 +1027,27 @@ export function evaluateStudentFeeCycle(
     const feesBasis = (student.fees_basis === 'class' ? 'class' : 'monthly') as 'monthly' | 'class';
     const todayStr = formatDateToYYYYMMDD(today);
 
+    // Run authoritative fee calculation
+    const authStatus = calculateAuthoritativeFeeStatus({
+        studentId,
+        student,
+        payments,
+        attendance,
+        overrides,
+        leaveRequests,
+        today,
+        attendanceScopeStartDate: input.attendanceScopeStartDate
+    });
+
     // 1. Handling per-class students
     if (feesBasis === 'class') {
-        const storedCredits = typeof student.fees_classes_paid === 'number' ? student.fees_classes_paid : 0;
-        const available = Math.max(0, storedCredits);
+        const totalPurchased = authStatus.totalPurchasedCredits > 0
+            ? authStatus.totalPurchasedCredits
+            : (typeof student.fees_classes_paid === 'number' ? student.fees_classes_paid : 0);
+        const effectiveBal = authStatus.totalPurchasedCredits > 0
+            ? authStatus.effectiveBalance
+            : (typeof student.fees_classes_paid === 'number' ? student.fees_classes_paid : 0);
+        const available = Math.max(0, effectiveBal);
 
         const metrics: StudentFeeCycleMetrics = {
             studentId,
@@ -788,8 +1056,13 @@ export function evaluateStudentFeeCycle(
             cycleStart: '',
             nextDueDate: '',
             formattedDueDate: 'Per-Class Prepaid',
-            entitledClasses: available,
-            creditsRemaining: available,
+            entitledClasses: totalPurchased,
+            creditsRemaining: effectiveBal,
+            effectiveBalance: effectiveBal,
+            financialState: effectiveBal > 0 ? 'GOOD_STANDING' : (effectiveBal === 0 ? 'FEE_DUE' : 'PAYMENT_OVERDUE'),
+            canJoinLiveClass: effectiveBal >= 0,
+            needsReconciliation: authStatus.needsReconciliation,
+            reconciliationReason: authStatus.reconciliationReason,
             classesAvailable: available,
             regularAttended: 0,
             unexcusedMissed: 0,
@@ -802,8 +1075,8 @@ export function evaluateStudentFeeCycle(
             makeupsCompleted: 0,
             makeupsExpired: 0,
             validOutstandingMakeups: 0,
-            statusLabel: available === 0 ? 'No Prepaid Credits' : `${available} Prepaid`,
-            badgeVariant: available > 2 ? 'good' : available > 0 ? 'warning' : 'danger'
+            statusLabel: `${available} Prepaid Class${available === 1 ? '' : 'es'} Available`,
+            badgeVariant: available > 0 ? 'good' : 'warning'
         };
 
         return {
@@ -817,16 +1090,29 @@ export function evaluateStudentFeeCycle(
             sessions: [],
             diagnostics: [],
             summary: {
-                entitledClasses: available,
-                consumedClasses: 0,
-                creditsRemaining: available,
+                entitledClasses: totalPurchased,
+                consumedClasses: authStatus.totalConsumedCredits,
+                creditsRemaining: effectiveBal,
+                effectiveBalance: effectiveBal,
+                financialState: metrics.financialState,
+                canJoinLiveClass: metrics.canJoinLiveClass,
+                needsReconciliation: authStatus.needsReconciliation,
                 operationalOpportunities: available,
                 unresolvedSessions: 0,
                 classesAvailable: available,
-                hasDiscrepancy: false
+                hasDiscrepancy: authStatus.needsReconciliation || false
             }
         };
     }
+
+    const effectiveResumeDate = input.resumeDate 
+        || (student as any).resume_date 
+        || (student as any).notes?.match(/\[Resumed\s+([0-9]{4}-[0-9]{2}-[0-9]{2})/)?.[1]
+        || null;
+    const effectivePauseDate = input.pauseEffectiveDate 
+        || (student as any).pause_effective_date 
+        || (student as any).notes?.match(/\[Paused\s+([0-9]{4}-[0-9]{2}-[0-9]{2})/)?.[1]
+        || null;
 
     // 2. Derive half-open billing cycle [cycleStart <= date < nextDueDate)
     const cycle = getStudentBillingCycle(
@@ -835,22 +1121,26 @@ export function evaluateStudentFeeCycle(
         today,
         student.join_date,
         student.status,
-        input.pauseEffectiveDate || (student as any).pause_effective_date,
-        input.resumeDate || (student as any).resume_date
+        effectivePauseDate,
+        effectiveResumeDate
     );
 
     const { cycleStart, nextDueDate, formattedDueDate, daysRemaining } = cycle;
 
-    // Monthly entitlement: 4 classes standard, or classes_added from cycle payment if specified
-    let entitledClasses = 4;
+    // Monthly entitlement from actual cycle payment, or 0 if unpaid (never manufacture fictitious 4 credits)
+    let entitledClasses = 0;
     if (cycle.allocatedPayment && typeof cycle.allocatedPayment.classes_added === 'number' && cycle.allocatedPayment.classes_added > 0) {
         entitledClasses = cycle.allocatedPayment.classes_added;
+    } else if (cycle.allocatedPayment) {
+        entitledClasses = 4;
     } else {
         const cyclePayments = payments.filter(
             p => (!p.status || p.status === 'approved') && p.payment_date >= cycleStart && p.payment_date < nextDueDate
         );
-        if (cyclePayments.length > 0 && typeof cyclePayments[0].classes_added === 'number' && cyclePayments[0].classes_added > 0) {
-            entitledClasses = cyclePayments[0].classes_added;
+        if (cyclePayments.length > 0) {
+            entitledClasses = typeof cyclePayments[0].classes_added === 'number' && cyclePayments[0].classes_added > 0
+                ? cyclePayments[0].classes_added
+                : 4;
         }
     }
 
@@ -1380,21 +1670,28 @@ export function evaluateStudentFeeCycle(
     // Sort sessions chronologically
     sessions.sort((a, b) => a.date.localeCompare(b.date));
 
-    // 5. Entitlement Capping Formula (User Requirement #1)
-    const creditsRemaining = Math.max(
-        0,
-        entitledClasses - regularAttended - unexcusedMissed - makeupsCompleted
-    );
-
+    // 5. Authoritative Credit & Balance Integration
+    // Financial creditsRemaining comes strictly from the authoritative ledger balance
+    const creditsRemaining = authStatus.effectiveBalance;
     const validOutstandingMakeupEntitlements = makeupsPending + makeupsScheduled;
     const operationalOpportunities = regularFuture + validOutstandingMakeupEntitlements;
-    const classesAvailable = Math.min(creditsRemaining, operationalOpportunities);
-
-    // Adjustment #2: Distinguish financial credits from operational availability
+    // Operational availability is capped by operational opportunities when there are unresolved sessions,
+    // otherwise reflects positive balance (calendar boundaries do not zero out purchased credits)
+    const classesAvailable = unresolvedSessions > 0
+        ? Math.min(creditsRemaining, operationalOpportunities)
+        : Math.max(0, creditsRemaining);
     const consumedClasses = regularAttended + unexcusedMissed + makeupsCompleted;
-    const hasDiscrepancy = creditsRemaining > 0 && classesAvailable === 0 && unresolvedSessions > 0;
 
-    if (hasDiscrepancy) {
+    const hasDiscrepancy = (authStatus.needsReconciliation || false) || (creditsRemaining > 0 && unresolvedSessions > 0);
+
+    if (authStatus.needsReconciliation && authStatus.reconciliationReason) {
+        diagnostics.unshift({
+            type: 'calculation_mismatch',
+            severity: 'danger',
+            title: 'Reconciliation Needed',
+            detail: authStatus.reconciliationReason
+        });
+    } else if (hasDiscrepancy && unresolvedSessions > 0) {
         diagnostics.unshift({
             type: 'calculation_mismatch',
             severity: 'warning',
@@ -1405,7 +1702,7 @@ export function evaluateStudentFeeCycle(
 
     // 6. Visual status label & badge variant
     const isPausedStudent = cycle.isPaused || (student.status || '').toLowerCase().trim() === 'inactive' || (student.status || '').toLowerCase().trim() === 'paused';
-    let statusLabel = isPausedStudent ? 'Learning Paused · Billing Paused' : 'Cycle Complete';
+    let statusLabel = 'Good Standing';
     let badgeVariant: 'good' | 'warning' | 'danger' | 'neutral' = 'neutral';
     let alertType: 'unresolved' | 'due' | 'overdue' | undefined;
 
@@ -1419,17 +1716,26 @@ export function evaluateStudentFeeCycle(
             badgeVariant = 'neutral';
             alertType = undefined;
         }
+    } else if (authStatus.needsReconciliation) {
+        statusLabel = 'Reconciliation Needed';
+        badgeVariant = 'danger';
+        alertType = 'overdue';
+    } else if (authStatus.financialState === 'PAYMENT_OVERDUE') {
+        statusLabel = 'Payment Overdue';
+        badgeVariant = 'danger';
+        alertType = 'overdue';
     } else if (unresolvedSessions > 0) {
         statusLabel = `Attendance Review Needed (${unresolvedSessions} unresolved)`;
         badgeVariant = 'warning';
         alertType = 'unresolved';
-    } else if (classesAvailable === 0) {
+    } else if (authStatus.financialState === 'FEE_DUE') {
         if (unexcusedMissed > 0 && regularAttended + unexcusedMissed >= entitledClasses) {
             statusLabel = 'Cycle Complete · Forfeited';
         } else {
-            statusLabel = 'Cycle Complete';
+            statusLabel = 'Cycle Complete / Fee Due';
         }
-        badgeVariant = 'neutral';
+        badgeVariant = 'warning';
+        alertType = 'due';
     } else {
         const parts: string[] = [];
         if (regularFuture > 0) {
@@ -1441,9 +1747,13 @@ export function evaluateStudentFeeCycle(
         if (makeupsScheduled > 0) {
             parts.push(`${makeupsScheduled} Makeup Scheduled`);
         }
-        statusLabel = parts.join(' · ') || `${classesAvailable} Classes Left`;
-        badgeVariant = classesAvailable === 1 ? 'warning' : 'good';
+        statusLabel = parts.join(' · ') || (classesAvailable === 1 ? '1 Class Remaining' : `${classesAvailable} Classes Remaining`);
+        badgeVariant = 'good';
     }
+
+    const displayDueDate = creditsRemaining > 0
+        ? `After ${creditsRemaining} ${creditsRemaining === 1 ? 'class' : 'classes'}`
+        : (creditsRemaining === 0 ? 'Fee Due' : 'Payment Overdue');
 
     const metrics: StudentFeeCycleMetrics = {
         studentId,
@@ -1451,9 +1761,14 @@ export function evaluateStudentFeeCycle(
         basis: 'monthly',
         cycleStart,
         nextDueDate,
-        formattedDueDate,
-        entitledClasses,
+        formattedDueDate: displayDueDate,
+        entitledClasses: entitledClasses || authStatus.totalPurchasedCredits,
         creditsRemaining,
+        effectiveBalance: authStatus.effectiveBalance,
+        financialState: authStatus.financialState,
+        canJoinLiveClass: authStatus.canJoinLiveClass,
+        needsReconciliation: authStatus.needsReconciliation,
+        reconciliationReason: authStatus.reconciliationReason,
         classesAvailable,
         regularAttended,
         unexcusedMissed,
@@ -1481,20 +1796,25 @@ export function evaluateStudentFeeCycle(
         feesBasis: 'monthly',
         cycleStart,
         nextDueDate,
-        formattedDueDate,
-        daysRemaining,
+        formattedDueDate: displayDueDate,
+        daysRemaining: Math.max(0, creditsRemaining),
         isPaid: cycle.isPaid,
         isLatePayment: cycle.isLatePayment,
         paymentStatus: cycle.feeStatus,
         allocatedPayment: cycle.allocatedPayment,
         unpaidCyclesCount: cycle.unpaidCyclesCount,
+        canJoinLiveClass: authStatus.canJoinLiveClass,
         metrics,
         sessions,
         diagnostics,
         summary: {
-            entitledClasses,
+            entitledClasses: entitledClasses || authStatus.totalPurchasedCredits,
             consumedClasses,
             creditsRemaining,
+            effectiveBalance: authStatus.effectiveBalance,
+            financialState: authStatus.financialState,
+            canJoinLiveClass: authStatus.canJoinLiveClass,
+            needsReconciliation: authStatus.needsReconciliation,
             operationalOpportunities,
             unresolvedSessions,
             classesAvailable,

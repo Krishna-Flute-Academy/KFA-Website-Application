@@ -12,6 +12,7 @@ import { supabaseAuth } from '../../lib/supabase-auth';
 import { stripHtml } from '../../lib/text-utils';
 import { getCurriculumMediaInfo } from '../../lib/curriculum-media';
 import { getStudentAccess } from '../../lib/student-lifecycle';
+import { formatLocalDateStr, getFulfillmentForTargetDate } from '../../lib/on-behalf-attendance';
 
 interface StudentProfile {
     id: string;
@@ -465,6 +466,14 @@ export default function OverviewTab({
         for (let i = 0; i <= 7; i++) {
             const d = new Date();
             d.setDate(now.getDate() + i);
+            const dateStr = getLocalYYYYMMDD(d);
+
+            // Skip if this scheduled date was already fulfilled early by an alternative class
+            const fulfilledByAtt = getFulfillmentForTargetDate(attendance, dateStr);
+            if (fulfilledByAtt) {
+                continue;
+            }
+
             const classes = getSchedulesForDate(d);
             if (classes.length > 0) {
                 const first = classes[0];
@@ -484,7 +493,69 @@ export default function OverviewTab({
             }
         }
         return null;
-    }, [classroom, batchSchedules, makeupSchedules]);
+    }, [classroom, batchSchedules, makeupSchedules, attendance]);
+
+    // Check upcoming classes in the next 7 days that were fulfilled early as an alternative class
+    const fulfilledClassesUpcoming = useMemo(() => {
+        if (!classroom && (!makeupSchedules || makeupSchedules.length === 0)) return [];
+        const getSchedulesForDate = (date: Date) => {
+            const dateStr = getLocalYYYYMMDD(date);
+            const dayOfWeek = date.getDay();
+            const dayClasses: any[] = [];
+            const makeups = (makeupSchedules || []).filter(o => o.override_date === dateStr);
+            makeups.forEach(m => {
+                dayClasses.push({
+                    type: 'temporary',
+                    title: m.title || 'Temporary Class',
+                    start_time: m.start_time,
+                    end_time: m.end_time,
+                    dateStr
+                });
+            });
+            if (makeups.length === 0) {
+                const regulars = (batchSchedules || []).filter(s => s.day_of_week === dayOfWeek);
+                regulars.forEach(r => {
+                    dayClasses.push({
+                        type: 'permanent',
+                        title: classroom?.name || 'Regular Class',
+                        start_time: r.start_time,
+                        end_time: r.end_time,
+                        dateStr
+                    });
+                });
+            }
+            return dayClasses;
+        };
+
+        const results: any[] = [];
+        const now = new Date();
+        for (let i = 0; i <= 7; i++) {
+            const d = new Date();
+            d.setDate(now.getDate() + i);
+            const dateStr = getLocalYYYYMMDD(d);
+            const fulfilledByAtt = getFulfillmentForTargetDate(attendance, dateStr);
+            if (fulfilledByAtt) {
+                const classes = getSchedulesForDate(d);
+                if (classes.length > 0) {
+                    const first = classes[0];
+                    const isToday = i === 0;
+                    const isTomorrow = i === 1;
+                    const formattedDate = isToday
+                        ? 'Today'
+                        : isTomorrow
+                            ? 'Tomorrow'
+                            : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    results.push({
+                        ...first,
+                        formattedDate,
+                        scheduledDate: dateStr,
+                        actualDate: fulfilledByAtt.actualDate
+                    });
+                }
+            }
+        }
+        return results;
+    }, [classroom, batchSchedules, makeupSchedules, attendance]);
 
     // Pending, Overdue, and Revision tasks
     const pendingTasks = useMemo(() => assignments.filter(a => a.status === 'pending'), [assignments]);
@@ -832,34 +903,7 @@ export default function OverviewTab({
             {/* 12. Recent Submissions                                                   */}
             {/* ========================================================================= */}
             <div className="lg:hidden space-y-3.5 text-left">
-                {/* 1. Critical Action (Fee Expired) */}
-                {(profile?.fees_classes_paid === undefined || profile?.fees_classes_paid === null || profile?.fees_classes_paid <= 0) ? (
-                    <div 
-                        onClick={() => setActiveTab('fees')}
-                        className="p-2.5 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between gap-2 cursor-pointer active:scale-[0.99] text-left shadow-2xs"
-                    >
-                        <div className="flex items-center gap-2 min-w-0">
-                            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                            <span className="text-[11px] font-bold text-red-900 truncate">
-                                Prepaid Credit Expired — Pay & Book Class
-                            </span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-red-600 shrink-0" />
-                    </div>
-                ) : profile?.fees_classes_paid === 1 ? (
-                    <div 
-                        onClick={() => setActiveTab('fees')}
-                        className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-2 cursor-pointer active:scale-[0.99] text-left"
-                    >
-                        <div className="flex items-center gap-2 min-w-0">
-                            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span className="text-[11px] font-bold text-amber-900 truncate">
-                                1 Class Remaining — Renew your fees
-                            </span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-amber-600 shrink-0" />
-                    </div>
-                ) : null}
+
 
 
 
@@ -1065,7 +1109,14 @@ export default function OverviewTab({
                         onClick={() => setActiveTab('classroom')}
                         className="bg-[#FDFBF7] border border-[#E6E1DA] rounded-2xl p-3 text-left cursor-pointer active:scale-[0.98]"
                     >
-                        <span className="text-[8px] font-extrabold text-[#9A958E] uppercase tracking-widest block font-mono">Next Class</span>
+                        <div className="flex items-center justify-between">
+                            <span className="text-[8px] font-extrabold text-[#9A958E] uppercase tracking-widest block font-mono">Next Class</span>
+                            {fulfilledClassesUpcoming.length > 0 && (
+                                <span className="text-[8px] font-extrabold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 px-1.5 py-0.2 rounded-full">
+                                    Fulfilled Early
+                                </span>
+                            )}
+                        </div>
                         <h4 className="font-extrabold text-xs text-[#3E3A35] truncate mt-0.5">
                             {nextClass ? nextClass.formattedDate : (classroom ? classroom.name : 'No Class')}
                         </h4>
@@ -1086,6 +1137,23 @@ export default function OverviewTab({
                                 </button>
                             )}
                         </div>
+
+                        {fulfilledClassesUpcoming.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-[#E6E1DA]/60 space-y-1">
+                                {fulfilledClassesUpcoming.map((fc, idx) => (
+                                    <div key={idx} className="bg-emerald-50/60 dark:bg-emerald-950/20 p-1.5 rounded-lg border border-emerald-200/50 dark:border-emerald-900/30">
+                                        <div className="flex items-center justify-between gap-1">
+                                            <span className="text-[9px] font-bold text-emerald-800 dark:text-emerald-300">
+                                                {formatLocalDateStr(fc.scheduledDate, true)}: Already Completed
+                                            </span>
+                                        </div>
+                                        <p className="text-[8px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                            Completed early on {formatLocalDateStr(fc.actualDate, true)} as an alternative class. No class required.
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -1422,48 +1490,15 @@ export default function OverviewTab({
                 {/* ═══════════════════════════════════════════════════════════════════════ */}
 
 
-                {/* Compact Fee Reminder Action Bar (48–56px) */}
-                {(profile?.fees_classes_paid === undefined || profile?.fees_classes_paid === null || profile?.fees_classes_paid <= 0) && (
-                    <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-2.5 text-left flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-200 shadow-2xs">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                            <span className="bg-red-600 text-white text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded font-mono shrink-0">
-                                Prepaid Credit Expired
-                            </span>
-                            <p className="text-xs font-bold text-slate-800 truncate">
-                                Your prepaid class credits have expired. Please complete fee payment in advance to schedule sessions.
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('fees')}
-                            className="text-[11.5px] bg-red-600 hover:bg-red-700 text-white font-extrabold px-3.5 py-1.5 rounded-xl transition-all active:scale-95 shadow-xs shrink-0 flex items-center gap-1 cursor-pointer uppercase tracking-wider whitespace-nowrap"
-                        >
-                            <span>Pay & Book Class</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-                )}
+
 
                 {/* Compact Attention / Classroom Update Strip (40–44px single-line) */}
-                {(profile?.fees_classes_paid === 1 || pendingTasks.length > 0 || unreadAdminBroadcasts.length > 0) && (
+                {(pendingTasks.length > 0 || unreadAdminBroadcasts.length > 0) && (
                     <div className="bg-[#FAF5EE] border border-[#E6E1DA] rounded-2xl px-4 py-2 shadow-3xs flex items-center justify-between gap-3 animate-in fade-in duration-200 text-left">
                         <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-x-auto scrollbar-none py-0.5">
                             <span className="text-[9px] font-black text-[#7C5E3F] uppercase tracking-widest bg-amber-200/60 px-2 py-0.5 rounded-md font-mono shrink-0">
                                 Attention
                             </span>
-
-                            {/* 1 Class Remaining */}
-                            {profile?.fees_classes_paid === 1 && (
-                                <div 
-                                    onClick={() => setActiveTab('fees')}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-100/70 hover:bg-amber-100 text-amber-900 border border-amber-300/40 text-xs font-bold cursor-pointer transition-colors shrink-0"
-                                    title="Click to view fee balance & renew"
-                                >
-                                    <Clock className="w-3.5 h-3.5 text-amber-700" />
-                                    <span>1 Class Remaining</span>
-                                </div>
-                            )}
 
                             {/* Pending or Overdue Tasks */}
                             {overdueTasks.length > 0 ? (
@@ -1786,9 +1821,16 @@ export default function OverviewTab({
                             <Clock className="w-5.5 h-5.5" />
                         </div>
                         <div className="min-w-0 flex-1">
-                            <p className="text-[9px] sm:text-[10px] font-extrabold text-[#9A958E] uppercase tracking-widest">
-                                Next Class
-                            </p>
+                            <div className="flex items-center justify-between">
+                                <p className="text-[9px] sm:text-[10px] font-extrabold text-[#9A958E] uppercase tracking-widest">
+                                    Next Class
+                                </p>
+                                {fulfilledClassesUpcoming.length > 0 && (
+                                    <span className="text-[8px] sm:text-[9px] font-extrabold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-full">
+                                        Fulfilled Early
+                                    </span>
+                                )}
+                            </div>
                             <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] truncate mt-0.5">
                                 {nextClass ? (
                                     <>
@@ -1814,6 +1856,21 @@ export default function OverviewTab({
                                     </button>
                                 )}
                             </div>
+
+                            {fulfilledClassesUpcoming.length > 0 && (
+                                <div className="mt-2.5 pt-2 border-t border-[#E6E1DA]/60 space-y-1">
+                                    {fulfilledClassesUpcoming.map((fc, idx) => (
+                                        <div key={idx} className="bg-emerald-50/70 dark:bg-emerald-950/20 p-2 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40">
+                                            <p className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
+                                                Already Completed — {formatLocalDateStr(fc.scheduledDate, true)}
+                                            </p>
+                                            <p className="text-[9px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                                This class was completed early on {formatLocalDateStr(fc.actualDate, true)} as an alternative class. No class is required on {formatLocalDateStr(fc.scheduledDate, true)}.
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 
