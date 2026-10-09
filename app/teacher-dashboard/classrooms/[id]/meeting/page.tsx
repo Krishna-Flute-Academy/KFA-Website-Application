@@ -12,7 +12,7 @@ import ClassroomDashboardPage from '../page';
 import { sendClassroomNotification } from '../../../../../src/lib/notifications';
 import { isStudentOperationallyActive } from '../../../../../src/lib/student-lifecycle';
 import { CoveredAttendanceRecord, buildCoveredAttendanceMap } from '../../../../../src/lib/on-behalf-attendance';
-import { startActiveClass, endActiveClass } from '../../../../../src/lib/class-session-lifecycle';
+import { startActiveClass, endActiveClass, isSessionAttendanceEnabled } from '../../../../../src/lib/class-session-lifecycle';
 import { handleFeeBalanceTransitionNotifications } from '../../../../../src/lib/fee-notifications';
 import { extractClassroomMetadata } from '../../../../../src/lib/meeting-utils';
 
@@ -53,6 +53,7 @@ export default function MeetingPage() {
     // Unified Hub states
     const [secondsElapsed, setSecondsElapsed] = useState(0);
     const [isLiveSession, setIsLiveSession] = useState(false);
+    const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
     // ── Fetch classroom + enrolled students ──────────────────────────────────
     useEffect(() => {
@@ -64,7 +65,7 @@ export default function MeetingPage() {
 
                 const [profileRes, classroomRes] = await Promise.all([
                     supabaseAuth.from('users').select('id, name, email').eq('id', session.user.id).single(),
-                    supabaseAuth.from('classrooms').select('name, type, description, is_live, live_meeting_link, live_session_started_at').eq('id', classroomId).single()
+                    supabaseAuth.from('classrooms').select('name, type, description, is_live, live_meeting_link, live_session_started_at, active_session_id').eq('id', classroomId).single()
                 ]);
 
                 setTeacherProfile(profileRes.data);
@@ -151,6 +152,9 @@ export default function MeetingPage() {
                         const elapsed = Math.floor((Date.now() - new Date(classroom.live_session_started_at).getTime()) / 1000);
                         setSecondsElapsed(elapsed > 0 ? elapsed : 0);
                         setIsLiveSession(true);
+                        if (classroom.active_session_id) {
+                            setActiveSessionId(classroom.active_session_id);
+                        }
                         setStep(3);
 
                         // Populate local storage for backup consistency
@@ -159,6 +163,7 @@ export default function MeetingPage() {
                             classroomName: classroom.name,
                             sessionType: classroom.live_meeting_link ? 'online' : 'offline',
                             sessionDate: activeDateStr,
+                            sessionId: classroom.active_session_id || null,
                             startedAt: new Date(classroom.live_session_started_at).getTime()
                         }));
                     }
@@ -204,6 +209,9 @@ export default function MeetingPage() {
                 if (activeSession.classroomId === classroomId) {
                     setSessionType(activeSession.sessionType);
                     setSessionDate(activeSession.sessionDate);
+                    if (activeSession.sessionId) {
+                        setActiveSessionId(activeSession.sessionId);
+                    }
                     const elapsed = Math.floor((Date.now() - activeSession.startedAt) / 1000);
                     setSecondsElapsed(elapsed > 0 ? elapsed : 0);
                     setStep(3);
@@ -360,8 +368,25 @@ export default function MeetingPage() {
                 .filter(s => s.attendance === null && !coveredMap[s.id])
                 .map(s => s.id);
 
-            // Parallel execution: Attendance upsert, null deletion, and start_classroom_session RPC
-            // All operations target disjoint records / independent tables and can safely run in parallel!
+            // Step 1: Authoritative start of active class session (creates or retrieves database-backed session ID)
+            const startResult = await startActiveClass({
+                classroomId,
+                classroomName,
+                meetingLink: sessionType === 'online' ? meetingLink : null,
+                sessionType: sessionType || 'online',
+                sessionDate,
+                startedAt: Date.now()
+            });
+
+            const effectiveSessionId = startResult.sessionId || activeSessionId || null;
+            if (effectiveSessionId) {
+                setActiveSessionId(effectiveSessionId);
+            }
+
+            // Safe rollout guard: Only pass non-null session_id if feature is active
+            const sessionToSave = isSessionAttendanceEnabled() ? effectiveSessionId : null;
+
+            // Step 2: Parallel execution of Attendance records and null student deletions
             const dbOps: Promise<any>[] = [];
 
             if (rowsToUpsert.length > 0) {
@@ -374,7 +399,7 @@ export default function MeetingPage() {
                                     p_student_id: row.student_id,
                                     p_date: row.date,
                                     p_status: row.status,
-                                    p_session_id: null,
+                                    p_session_id: sessionToSave,
                                     p_on_behalf_of_date: null,
                                     p_is_extra_class: false,
                                     p_marked_by: row.marked_by
@@ -402,21 +427,10 @@ export default function MeetingPage() {
                 );
             }
 
-            dbOps.push(
-                startActiveClass({
-                    classroomId,
-                    classroomName,
-                    meetingLink: sessionType === 'online' ? meetingLink : null,
-                    sessionType: sessionType || 'online',
-                    sessionDate,
-                    startedAt: Date.now()
-                })
-            );
-
             await Promise.all(dbOps);
 
             if (process.env.NODE_ENV !== 'production') {
-                console.log(`[Perf-StartClass] Parallel attendance & live RPC completed in ${(performance.now() - t0).toFixed(1)}ms`);
+                console.log(`[Perf-StartClass] Session init (${effectiveSessionId}) & attendance save completed in ${(performance.now() - t0).toFixed(1)}ms`);
             }
 
             // Trigger push & in-app notifications for students in this classroom (non-blocking async)

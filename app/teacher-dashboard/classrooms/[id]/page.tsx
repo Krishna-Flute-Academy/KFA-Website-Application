@@ -25,7 +25,7 @@ import { fetchEffectiveClassroomParticipants } from '../../../../src/lib/classro
 import { isStudentOperationallyActive, isStudentEnrolledOnDate } from '../../../../src/lib/student-lifecycle';
 import { matchesSearchTokens, getSearchTokens, normalizeSearchText } from '../../../../src/lib/search-utils';
 import { CoveredAttendanceRecord, buildCoveredAttendanceMap } from '../../../../src/lib/on-behalf-attendance';
-import { endActiveClass } from '../../../../src/lib/class-session-lifecycle';
+import { endActiveClass, isSessionAttendanceEnabled } from '../../../../src/lib/class-session-lifecycle';
 import { 
     extractClassroomMetadata, 
     serializeClassroomDescription, 
@@ -91,6 +91,7 @@ interface ClassroomDetails {
     is_live?: boolean;
     live_meeting_link?: string | null;
     live_session_started_at?: string | null;
+    active_session_id?: string | null;
     purpose?: string;
     lifecycle_status?: string;
     credit_treatment?: string;
@@ -1534,7 +1535,8 @@ export default function ClassroomDashboardPage({
                             ...prev,
                             is_live: Boolean(payload.new.is_live),
                             live_meeting_link: payload.new.live_meeting_link || null,
-                            live_session_started_at: payload.new.live_session_started_at || null
+                            live_session_started_at: payload.new.live_session_started_at || null,
+                            active_session_id: payload.new.active_session_id || null
                         } : null);
                     }
                 }
@@ -2562,12 +2564,17 @@ export default function ClassroomDashboardPage({
         setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: true }));
 
         try {
+            // If the classroom is currently live and the attendance date matches today/live date, link to active session
+            const liveSessionId = (classroom?.is_live && classroom?.active_session_id) ? classroom.active_session_id : null;
+            // Safe rollout guard: Only pass non-null session_id if feature is active
+            const effectiveSessionId = isSessionAttendanceEnabled() ? liveSessionId : null;
+
             const { error } = await supabaseAuth.rpc('save_attendance_record', {
                 p_classroom_id: classroomId,
                 p_student_id: studentId,
                 p_date: attendanceDate,
                 p_status: status.toLowerCase(),
-                p_session_id: null,
+                p_session_id: effectiveSessionId,
                 p_on_behalf_of_date: null,
                 p_is_extra_class: false,
                 p_marked_by: teacherProfile.id

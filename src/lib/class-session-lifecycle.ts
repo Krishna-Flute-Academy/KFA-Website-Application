@@ -1,5 +1,18 @@
 import { supabaseAuth } from './supabase-auth';
 
+/**
+ * Feature Guard: Session-Specific Attendance Writer Flag
+ * Controlled by process.env.NEXT_PUBLIC_ENABLE_SESSION_ATTENDANCE ('true' | 'false').
+ * When false (default during pre-Phase 3 transition), attendance writers safely pass
+ * p_session_id: null, ensuring 100% compatibility with legacy 3-column unique constraints.
+ * Enabled after Phase 3 constraints migration is executed.
+ */
+export function isSessionAttendanceEnabled(): boolean {
+    // Strictly driven by compile-time environment variable.
+    // Cannot be bypassed via browser localStorage or client-side tampering.
+    return process.env.NEXT_PUBLIC_ENABLE_SESSION_ATTENDANCE === 'true';
+}
+
 export interface EndActiveClassOptions {
     classroomId: string;
     sessionDate?: string;
@@ -32,7 +45,17 @@ export interface StartActiveClassOptions {
     meetingLink?: string | null;
     sessionType?: 'online' | 'offline';
     sessionDate?: string;
+    sessionClassification?: 'normal' | 'extra' | 'on_behalf_of';
+    targetScheduledDate?: string | null;
     startedAt?: number;
+}
+
+export interface StartActiveClassResult {
+    success: boolean;
+    sessionId?: string | null;
+    isExisting?: boolean;
+    startedAt?: string;
+    classroomId: string;
 }
 
 /**
@@ -107,21 +130,58 @@ export async function endActiveClass(options: EndActiveClassOptions): Promise<En
 
 /**
  * Authoritative canonical operation to start a class session.
+ * Uses init_classroom_session to create or retrieve a stable, database-backed session ID.
  */
-export async function startActiveClass(options: StartActiveClassOptions): Promise<void> {
-    const { classroomId, meetingLink, sessionType, classroomName, sessionDate } = options;
+export async function startActiveClass(options: StartActiveClassOptions): Promise<StartActiveClassResult> {
+    const { 
+        classroomId, 
+        meetingLink, 
+        sessionType, 
+        classroomName, 
+        sessionDate,
+        sessionClassification,
+        targetScheduledDate
+    } = options;
     const nowMs = options.startedAt || Date.now();
-    const startedAtIso = new Date(nowMs).toISOString();
+    const effectiveDate = sessionDate || new Date(nowMs).toISOString().split('T')[0];
+    const effectiveType = sessionType || 'online';
 
-    const { error } = await supabaseAuth.rpc('start_classroom_session', {
-        p_classroom_id: classroomId,
-        p_meeting_link: sessionType === 'online' ? (meetingLink || null) : null,
-        p_started_at: startedAtIso
-    });
+    // Call init_classroom_session RPC to obtain/lock the authoritative session ID
+    let sessionId: string | null = null;
+    let isExisting = false;
+    let startedAtIso: string | undefined;
 
-    if (error) {
-        console.error('[class-session-lifecycle] Error starting class session:', error);
-        throw error;
+    try {
+        const { data, error } = await supabaseAuth.rpc('init_classroom_session', {
+            p_classroom_id: classroomId,
+            p_session_date: effectiveDate,
+            p_session_type: effectiveType,
+            p_meeting_link: effectiveType === 'online' ? (meetingLink || null) : null,
+            p_session_classification: sessionClassification || 'normal',
+            p_target_scheduled_date: targetScheduledDate || null
+        });
+
+        if (error) {
+            console.warn('[class-session-lifecycle] init_classroom_session failed, falling back to start_classroom_session:', error);
+            // Graceful fallback to legacy start_classroom_session if init RPC is unavailable
+            const fallbackRes = await supabaseAuth.rpc('start_classroom_session', {
+                p_classroom_id: classroomId,
+                p_meeting_link: effectiveType === 'online' ? (meetingLink || null) : null,
+                p_started_at: new Date(nowMs).toISOString()
+            });
+            if (fallbackRes.error) {
+                console.error('[class-session-lifecycle] Error starting class session:', fallbackRes.error);
+                throw fallbackRes.error;
+            }
+        } else if (data) {
+            const res = data as any;
+            sessionId = res.session_id || null;
+            isExisting = Boolean(res.is_existing);
+            startedAtIso = res.started_at;
+        }
+    } catch (err: any) {
+        console.error('[class-session-lifecycle] Fatal error in startActiveClass:', err);
+        throw err;
     }
 
     if (typeof window !== 'undefined') {
@@ -129,16 +189,30 @@ export async function startActiveClass(options: StartActiveClassOptions): Promis
             localStorage.setItem('active_class_session', JSON.stringify({
                 classroomId,
                 classroomName: classroomName || 'Classroom',
-                sessionType: sessionType || 'online',
-                sessionDate: sessionDate || new Date().toISOString().split('T')[0],
+                sessionType: effectiveType,
+                sessionDate: effectiveDate,
+                sessionId,
                 startedAt: nowMs
             }));
             window.dispatchEvent(new Event('storage'));
-            window.dispatchEvent(new CustomEvent('class_session_started', { detail: { classroomId } }));
+            window.dispatchEvent(new CustomEvent('class_session_started', { 
+                detail: { 
+                    classroomId,
+                    sessionId 
+                } 
+            }));
         } catch (e) {
             console.warn('[class-session-lifecycle] Failed to save active_class_session in localStorage:', e);
         }
     }
+
+    return {
+        success: true,
+        sessionId,
+        isExisting,
+        startedAt: startedAtIso,
+        classroomId
+    };
 }
 
 /**
@@ -149,6 +223,7 @@ export function getLocalActiveSession(): {
     classroomName: string;
     sessionType: 'online' | 'offline';
     sessionDate: string;
+    sessionId?: string | null;
     startedAt: number;
 } | null {
     if (typeof window === 'undefined') return null;
