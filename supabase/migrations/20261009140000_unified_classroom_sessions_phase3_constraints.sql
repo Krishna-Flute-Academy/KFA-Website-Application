@@ -27,7 +27,12 @@ CREATE INDEX IF NOT EXISTS idx_attendance_session_lookup
 ON public.attendance(classroom_id, date, session_id);
 
 -- 4. Deploy hardened session-aware save_attendance_record RPC
--- Hardened against concurrent writes (FOR UPDATE & ON CONFLICT), session mismatch, and field erasure
+-- Hardened against:
+-- 1. Concurrent writes (FOR UPDATE & ON CONFLICT)
+-- 2. Ambiguous multi-session updates (rejects ambiguous NULL session updates)
+-- 3. Session mismatch (rejects classroom/date mismatches)
+-- 4. Extra Class reset protection (preserves authoritative session classification)
+-- 5. Field erasure & double fee deductions
 CREATE OR REPLACE FUNCTION public.save_attendance_record(
     p_classroom_id UUID,
     p_student_id UUID,
@@ -55,6 +60,7 @@ DECLARE
     v_existing RECORD;
     v_effective_on_behalf DATE;
     v_effective_is_extra BOOLEAN;
+    v_matching_session_count INTEGER := 0;
 BEGIN
     -- 1. Authorization boundary
     IF current_user NOT IN ('postgres', 'supabase_admin') AND auth.role() != 'service_role' THEN
@@ -119,21 +125,36 @@ BEGIN
         WHERE classroom_id = p_classroom_id AND student_id = p_student_id AND date = p_date AND session_id IS NULL
         FOR UPDATE;
 
-        -- If none, check if there is an existing session record on that date to update
+        -- If none, check existing session-linked records on that date
         IF v_existing.id IS NULL THEN
-            SELECT * INTO v_existing
+            SELECT COUNT(*) INTO v_matching_session_count
             FROM public.attendance
-            WHERE classroom_id = p_classroom_id AND student_id = p_student_id AND date = p_date
-            ORDER BY created_at ASC
-            LIMIT 1
-            FOR UPDATE;
+            WHERE classroom_id = p_classroom_id AND student_id = p_student_id AND date = p_date;
+
+            IF v_matching_session_count > 1 THEN
+                RAISE EXCEPTION 'Ambiguous attendance update: multiple sessions exist for classroom %, student %, date %. Explicit session_id required.',
+                    p_classroom_id, p_student_id, p_date;
+            ELSIF v_matching_session_count = 1 THEN
+                SELECT * INTO v_existing
+                FROM public.attendance
+                WHERE classroom_id = p_classroom_id AND student_id = p_student_id AND date = p_date
+                FOR UPDATE;
+            END IF;
         END IF;
     END IF;
 
-    -- 5. Field Preservation & Derivation Logic:
+    -- 5. Field Preservation & Authoritative Classification Logic:
     IF v_existing.id IS NOT NULL THEN
+        -- Preserve on_behalf_of_date unless non-null value supplied
         v_effective_on_behalf := COALESCE(p_on_behalf_of_date, v_existing.on_behalf_of_date);
-        v_effective_is_extra := COALESCE(p_is_extra_class, v_existing.is_extra_class, false);
+
+        -- If existing row is already is_extra_class = true, DO NOT reset to false unless explicit authorized reclassification
+        -- If caller passed NULL, retain existing. If caller passed false but existing is true, preserve existing true.
+        IF v_existing.is_extra_class = true AND (p_is_extra_class IS NULL OR p_is_extra_class = false) THEN
+            v_effective_is_extra := true;
+        ELSE
+            v_effective_is_extra := COALESCE(p_is_extra_class, v_existing.is_extra_class, false);
+        END IF;
 
         UPDATE public.attendance
         SET status = v_status,
@@ -150,7 +171,7 @@ BEGIN
 
         -- Derive classification from session log if caller did not explicitly specify
         IF p_session_id IS NOT NULL AND v_session_found THEN
-            IF v_sess_classification = 'extra' AND p_is_extra_class IS NULL THEN
+            IF v_sess_classification = 'extra' AND (p_is_extra_class IS NULL OR p_is_extra_class = false) THEN
                 v_effective_is_extra := true;
             END IF;
             IF v_sess_classification = 'on_behalf_of' AND p_on_behalf_of_date IS NULL THEN
@@ -180,7 +201,7 @@ BEGIN
         ON CONFLICT (classroom_id, student_id, date, session_id) DO UPDATE
         SET status = EXCLUDED.status,
             on_behalf_of_date = COALESCE(EXCLUDED.on_behalf_of_date, attendance.on_behalf_of_date),
-            is_extra_class = COALESCE(EXCLUDED.is_extra_class, attendance.is_extra_class),
+            is_extra_class = (attendance.is_extra_class OR EXCLUDED.is_extra_class),
             marked_by = EXCLUDED.marked_by
         RETURNING id INTO v_att_id;
     END IF;
