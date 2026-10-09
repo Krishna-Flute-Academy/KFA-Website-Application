@@ -1017,15 +1017,16 @@ export default function AttendancePage() {
 
             if (updateError) throw updateError;
 
-            const { error: attendanceError } = await supabaseAuth
-                .from('attendance')
-                .upsert({
-                    student_id: request.student_id,
-                    classroom_id: request.classroom_id,
-                    date: request.class_date,
-                    status: 'excused',
-                    marked_by: teacherProfile.id
-                }, { onConflict: 'student_id,classroom_id,date' });
+            const { error: attendanceError } = await supabaseAuth.rpc('save_attendance_record', {
+                p_classroom_id: request.classroom_id,
+                p_student_id: request.student_id,
+                p_date: request.class_date,
+                p_status: 'excused',
+                p_session_id: null,
+                p_on_behalf_of_date: null,
+                p_is_extra_class: false,
+                p_marked_by: teacherProfile.id
+            });
 
             if (attendanceError) throw attendanceError;
 
@@ -1198,16 +1199,16 @@ export default function AttendancePage() {
                 }
             }
 
-            const { error } = await supabaseAuth
-                .from('attendance')
-                .upsert({
-                    student_id: studentId,
-                    classroom_id: batchId,
-                    date: selectedDate,
-                    status: (status as string).toLowerCase(),
-                    marked_by: teacherProfile.id,
-                    on_behalf_of_date: onBehalfDate
-                }, { onConflict: 'student_id,classroom_id,date' });
+            const { error } = await supabaseAuth.rpc('save_attendance_record', {
+                p_classroom_id: batchId,
+                p_student_id: studentId,
+                p_date: selectedDate,
+                p_status: (status as string).toLowerCase(),
+                p_session_id: null,
+                p_on_behalf_of_date: onBehalfDate,
+                p_is_extra_class: false,
+                p_marked_by: teacherProfile.id
+            });
 
             if (error) throw error;
 
@@ -1523,15 +1524,16 @@ export default function AttendancePage() {
         // Optimistic update
         setDateAttendanceMap(prev => ({ ...prev, [key]: status }));
         try {
-            const { error } = await supabaseAuth
-                .from('attendance')
-                .upsert({
-                    student_id: studentId,
-                    classroom_id: classroomId,
-                    date: selectedDate,
-                    status: status.toLowerCase(),
-                    marked_by: teacherProfile.id
-                }, { onConflict: 'student_id,classroom_id,date' });
+            const { error } = await supabaseAuth.rpc('save_attendance_record', {
+                p_classroom_id: classroomId,
+                p_student_id: studentId,
+                p_date: selectedDate,
+                p_status: status.toLowerCase(),
+                p_session_id: null,
+                p_on_behalf_of_date: null,
+                p_is_extra_class: false,
+                p_marked_by: teacherProfile.id
+            });
             if (error) throw error;
 
             handleFeeBalanceTransitionNotifications({
@@ -1859,17 +1861,16 @@ export default function AttendancePage() {
         setPendingMarkingMap(prev => ({ ...prev, [markKey]: true }));
 
         try {
-            const { error } = await supabaseAuth
-                .from('attendance')
-                .upsert({
-                    student_id: studentId,
-                    classroom_id: session.classroomId,
-                    date: session.date,
-                    status: status,
-                    marked_by: teacherProfile.id
-                }, {
-                    onConflict: 'student_id,classroom_id,date'
-                });
+            const { error } = await supabaseAuth.rpc('save_attendance_record', {
+                p_classroom_id: session.classroomId,
+                p_student_id: studentId,
+                p_date: session.date,
+                p_status: status,
+                p_session_id: null,
+                p_on_behalf_of_date: null,
+                p_is_extra_class: false,
+                p_marked_by: teacherProfile.id
+            });
 
             if (error) throw error;
 
@@ -2803,16 +2804,17 @@ export default function AttendancePage() {
                                                                     <Clock className="w-3 h-3 text-slate-400 shrink-0" />
                                                                     {batch.time}
                                                                 </span>
-                                                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
-                                                                    batch.type === 'permanent'
-                                                                        ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-600'
-                                                                        : 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400'
-                                                                }`}>
-                                                                    {batch.type === 'permanent' ? '👥 Classroom' : '⚡ Special Session'}
-                                                                </span>
-                                                                {batchOnBehalfOfMap[batch.id] && (
+                                                                {batchOnBehalfOfMap[batch.id] ? (
                                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                                                                        🗓️ Taken on behalf of {formatLocalDateStr(batchOnBehalfOfMap[batch.id]!)}
+                                                                        🔄 On Behalf Of {formatLocalDateStr(batchOnBehalfOfMap[batch.id]!)}
+                                                                    </span>
+                                                                ) : (batch as any).isExtraSession ? (
+                                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                                                        ⭐ Extra Class
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                                                        👥 Normal Class
                                                                     </span>
                                                                 )}
                                                             </div>

@@ -2562,15 +2562,16 @@ export default function ClassroomDashboardPage({
         setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: true }));
 
         try {
-            const { error } = await supabaseAuth
-                .from('attendance')
-                .upsert({
-                    student_id: studentId,
-                    classroom_id: classroomId,
-                    date: attendanceDate,
-                    status: status.toLowerCase(),
-                    marked_by: teacherProfile.id
-                }, { onConflict: 'student_id, classroom_id, date' });
+            const { error } = await supabaseAuth.rpc('save_attendance_record', {
+                p_classroom_id: classroomId,
+                p_student_id: studentId,
+                p_date: attendanceDate,
+                p_status: status.toLowerCase(),
+                p_session_id: null,
+                p_on_behalf_of_date: null,
+                p_is_extra_class: false,
+                p_marked_by: teacherProfile.id
+            });
 
             if (error) throw error;
         } catch (err: any) {

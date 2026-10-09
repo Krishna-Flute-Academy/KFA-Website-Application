@@ -367,10 +367,23 @@ export default function MeetingPage() {
             if (rowsToUpsert.length > 0) {
                 dbOps.push(
                     (async () => {
-                        const { error } = await supabaseAuth
-                            .from('attendance')
-                            .upsert(rowsToUpsert, { onConflict: 'student_id, classroom_id, date' });
-                        if (error) throw error;
+                        const results = await Promise.all(
+                            rowsToUpsert.map(row => 
+                                supabaseAuth.rpc('save_attendance_record', {
+                                    p_classroom_id: row.classroom_id,
+                                    p_student_id: row.student_id,
+                                    p_date: row.date,
+                                    p_status: row.status,
+                                    p_session_id: null,
+                                    p_on_behalf_of_date: null,
+                                    p_is_extra_class: false,
+                                    p_marked_by: row.marked_by
+                                })
+                            )
+                        );
+                        for (const res of results) {
+                            if (res.error) throw res.error;
+                        }
                     })()
                 );
             }
