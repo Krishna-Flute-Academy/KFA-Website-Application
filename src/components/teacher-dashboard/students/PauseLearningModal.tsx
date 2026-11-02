@@ -169,42 +169,29 @@ export const PauseLearningModal: React.FC<PauseLearningModalProps> = ({
         setErrorMessage(null);
 
         try {
-            // 1. If student has future makeups and cancel is checked, remove them
-            if (cancelFutureMakeups && futureMakeups.length > 0) {
-                const makeupIds = futureMakeups.map(m => m.id);
-                const { error: delError } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .delete()
-                    .in('id', makeupIds);
+            const cleanReason = reason.trim() || 'Student requested learning pause';
 
-                if (delError) {
-                    console.warn('Could not delete scheduled makeups:', delError);
-                }
-            }
+            // 1. Authoritative atomic pause operation (BR-31)
+            const { data: pauseRes, error: pauseErr } = await supabaseAuth.rpc('pause_student_learning_atomic', {
+                p_student_id: student.id,
+                p_effective_date: effectiveDate,
+                p_reason: cleanReason
+            });
 
-            // 2. Update users status to inactive (Paused) with effective pause date & reason
-            const updatedNotes = reason 
-                ? ((student as any).notes ? `${(student as any).notes}\n[Paused ${effectiveDate}]: ${reason}` : `[Paused ${effectiveDate}]: ${reason}`)
-                : (student as any).notes;
+            if (pauseErr) throw pauseErr;
 
-            const { error: userError } = await supabaseAuth
-                .from('users')
-                .update({ 
-                    status: 'inactive',
-                    notes: updatedNotes
-                })
-                .eq('id', student.id);
+            const updatedNotes = (student as any).notes 
+                ? `${(student as any).notes}\n[Paused ${effectiveDate}]: ${cleanReason}` 
+                : `[Paused ${effectiveDate}]: ${cleanReason}`;
 
-            if (userError) throw userError;
-
-            // Trigger will automatically associate student with KFA Learning Circle without overwriting permanent classroom
             if (onSuccess) {
                 onSuccess({
                     ...student,
                     status: 'Inactive',
                     batch: currentBatch,
                     classroom_name: currentBatch,
-                    notes: updatedNotes
+                    notes: updatedNotes,
+                    fees_classes_paid: 0
                 });
             }
 

@@ -425,6 +425,7 @@ export default function AttendanceTab({
                                     const isPending = req.status === 'pending';
                                     const isApproved = req.status === 'approved';
                                     const isRejected = req.status === 'rejected';
+                                    const isCancelled = req.status === 'cancelled';
 
                                     return (
                                         <div 
@@ -464,6 +465,11 @@ export default function AttendanceTab({
                                                 {isRejected && (
                                                     <span className="px-3 py-1 bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300/60 dark:border-rose-800/50 text-xs font-bold rounded-xl flex items-center gap-1.5">
                                                         <XCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> Leave Rejected
+                                                    </span>
+                                                )}
+                                                {isCancelled && (
+                                                    <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5" title={req.cancellation_reason || 'Classroom holiday declared'}>
+                                                        <XCircle className="w-3.5 h-3.5 text-slate-500" /> Cancelled (Holiday)
                                                     </span>
                                                 )}
                                             </div>

@@ -4,6 +4,10 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { sortClassroomsByDayAndTime, parseDayAndStartFromClassroom } from '../../../src/lib/classroomSort';
+import { HistoricalLeaveCorrectionModal } from '../../../src/components/teacher-dashboard/attendance/HistoricalLeaveCorrectionModal';
+import { HistoricalAttendanceCorrectionModal } from '../../../src/components/teacher-dashboard/attendance/HistoricalAttendanceCorrectionModal';
+import { AttendanceCorrectionHistoryModal } from '../../../src/components/teacher-dashboard/attendance/AttendanceCorrectionHistoryModal';
+import { UnmarkAttendanceModal } from '../../../src/components/teacher-dashboard/attendance/UnmarkAttendanceModal';
 import { 
     Loader2, 
     Calendar as CalendarIcon, 
@@ -206,6 +210,29 @@ export default function AttendancePage() {
     const [activeHistoryTab, setActiveHistoryTab] = useState<'chains' | 'timeline'>('chains');
     const [historyLoading, setHistoryLoading] = useState(false);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
+    const [correctionLeaveRequest, setCorrectionLeaveRequest] = useState<any | null>(null);
+    const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+    const [attendanceCorrectionTarget, setAttendanceCorrectionTarget] = useState<{
+        id: string;
+        student_id: string;
+        student_name?: string;
+        classroom_id: string;
+        classroom_name?: string;
+        date: string;
+        status: string;
+    } | null>(null);
+    const [attendanceUnmarkTarget, setAttendanceUnmarkTarget] = useState<{
+        attendanceId: string;
+        studentId: string;
+        studentName: string;
+        classroomId: string;
+        classroomName: string;
+        classDate: string;
+        currentStatus: string;
+    } | null>(null);
+    const [showCorrectionAuditModal, setShowCorrectionAuditModal] = useState(false);
+    const [auditModalClassroomId, setAuditModalClassroomId] = useState<string | undefined>(undefined);
+    const [auditModalStudentId, setAuditModalStudentId] = useState<string | undefined>(undefined);
 
     // On-Behalf-Of batch state mapping batchId -> on_behalf_of_date
     const [batchOnBehalfOfMap, setBatchOnBehalfOfMap] = useState<Record<string, string | null>>({});
@@ -1010,38 +1037,25 @@ export default function AttendancePage() {
     const handleApproveLeave = async (request: any) => {
         if (!teacherProfile) return;
         try {
-            const { error: updateError } = await supabaseAuth
-                .from('leave_requests')
-                .update({ status: 'approved', updated_at: new Date().toISOString() })
-                .eq('id', request.id);
+            const { error } = await supabaseAuth.rpc('approve_student_leave', {
+                p_leave_id: request.id
+            });
 
-            if (updateError) throw updateError;
-
-            const { error: attendanceError } = await supabaseAuth
-                .from('attendance')
-                .upsert({
-                    student_id: request.student_id,
-                    classroom_id: request.classroom_id,
-                    date: request.class_date,
-                    status: 'excused',
-                    marked_by: teacherProfile.id
-                }, { onConflict: 'student_id,classroom_id,date' });
-
-            if (attendanceError) throw attendanceError;
+            if (error) throw error;
 
             fetchLeaveRequests();
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error approving leave:', err);
-            alert('Failed to approve leave request.');
+            alert(err?.message || 'Failed to approve leave request.');
         }
     };
 
     const handleRejectLeave = async (request: any) => {
         try {
-            const { error: updateError } = await supabaseAuth
-                .from('leave_requests')
-                .update({ status: 'rejected', updated_at: new Date().toISOString() })
-                .eq('id', request.id);
+            const { error: updateError } = await supabaseAuth.rpc('reject_student_leave', {
+                p_leave_id: request.id,
+                p_reason: 'Rejected by teacher'
+            });
 
             if (updateError) throw updateError;
 
@@ -1073,49 +1087,29 @@ export default function AttendancePage() {
         }
 
         const prevStatus = batchAttendanceMap[batchId]?.[studentId];
+        if (!prevStatus) return;
 
-        // Optimistically update
-        setBatchAttendanceMap(prev => {
-            const currentBatch = { ...(prev[batchId] || {}) };
-            delete currentBatch[studentId];
-            return { ...prev, [batchId]: currentBatch };
-        });
+        // Fetch attendance record to open UnmarkAttendanceModal
+        const { data: existingRow } = await supabaseAuth
+            .from('attendance')
+            .select('id, student_id, classroom_id, date, status')
+            .eq('classroom_id', batchId)
+            .eq('student_id', studentId)
+            .eq('date', selectedDate)
+            .maybeSingle();
 
-        try {
-            const { error } = await supabaseAuth
-                .from('attendance')
-                .delete()
-                .eq('student_id', studentId)
-                .eq('classroom_id', batchId)
-                .eq('date', selectedDate);
-
-            if (error) throw error;
-
-            if (prevStatus) {
-                setBatchSummaries(prev => {
-                    const batchSummary = prev[batchId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
-                    const nextSummary = {
-                        ...batchSummary,
-                        present: prevStatus === 'present' ? Math.max(0, batchSummary.present - 1) : batchSummary.present,
-                        absent: prevStatus === 'absent' ? Math.max(0, batchSummary.absent - 1) : batchSummary.absent,
-                        late: prevStatus === 'late' ? Math.max(0, batchSummary.late - 1) : batchSummary.late,
-                        excused: prevStatus === 'excused' ? Math.max(0, batchSummary.excused - 1) : batchSummary.excused,
-                    };
-                    return { ...prev, [batchId]: nextSummary };
-                });
-            }
-
-            // Removed wasteful fetchMissedReport() call here. 
-            // It runs automatically when switching to the Missed tab anyway.
-        } catch (err: any) {
-            console.error('Error unmarking attendance:', err);
-            alert(`Failed to unmark attendance: ${err.message || err}`);
-            if (prevStatus) {
-                setBatchAttendanceMap(prev => ({
-                    ...prev,
-                    [batchId]: { ...(prev[batchId] || {}), [studentId]: prevStatus }
-                }));
-            }
+        if (existingRow) {
+            const sName = batchStudentsMap[batchId]?.find(s => s.id === studentId)?.name || 'Student';
+            const cName = classrooms.find(c => c.id === batchId)?.name || temporaryClasses.find(t => t.id === batchId)?.title || 'Classroom';
+            setAttendanceUnmarkTarget({
+                attendanceId: existingRow.id,
+                studentId,
+                studentName: sName,
+                classroomId: batchId,
+                classroomName: cName,
+                classDate: selectedDate,
+                currentStatus: existingRow.status
+            });
         }
     };
 
@@ -1170,6 +1164,34 @@ export default function AttendancePage() {
             return;
         }
 
+        const currentBatchStatus = batchAttendanceMap[batchId]?.[studentId];
+        // If an attendance status was already recorded, modifying it must go through
+        // the authoritative audited historical correction workflow (BR-10, BR-11, BR-12)
+        if (currentBatchStatus && currentBatchStatus !== status) {
+            const { data: existingRow } = await supabaseAuth
+                .from('attendance')
+                .select('id, student_id, classroom_id, date, status')
+                .eq('classroom_id', batchId)
+                .eq('student_id', studentId)
+                .eq('date', selectedDate)
+                .maybeSingle();
+
+            if (existingRow) {
+                const sName = batchStudentsMap[batchId]?.find(s => s.id === studentId)?.name || 'Student';
+                const cName = classrooms.find(c => c.id === batchId)?.name || temporaryClasses.find(t => t.id === batchId)?.title || 'Classroom';
+                setAttendanceCorrectionTarget({
+                    id: existingRow.id,
+                    student_id: studentId,
+                    student_name: sName,
+                    classroom_id: batchId,
+                    classroom_name: cName,
+                    date: selectedDate,
+                    status: existingRow.status
+                });
+                return;
+            }
+        }
+
         // Optimistically update
         setBatchAttendanceMap(prev => {
             const currentBatch = prev[batchId] || {};
@@ -1200,14 +1222,14 @@ export default function AttendancePage() {
 
             const { error } = await supabaseAuth
                 .from('attendance')
-                .upsert({
+                .insert({
                     student_id: studentId,
                     classroom_id: batchId,
                     date: selectedDate,
                     status: (status as string).toLowerCase(),
                     marked_by: teacherProfile.id,
                     on_behalf_of_date: onBehalfDate
-                }, { onConflict: 'student_id,classroom_id,date' });
+                });
 
             if (error) throw error;
 
@@ -1447,36 +1469,28 @@ export default function AttendancePage() {
 
         const key = `${studentId}_${classroomId}`;
         const prevStatus = dateAttendanceMap[key];
+        if (!prevStatus) return;
 
-        // Optimistically remove from state
-        setDateAttendanceMap(prev => {
-            const next = { ...prev };
-            delete next[key];
-            return next;
-        });
+        const { data: existingRow } = await supabaseAuth
+            .from('attendance')
+            .select('id, student_id, classroom_id, date, status')
+            .eq('classroom_id', classroomId)
+            .eq('student_id', studentId)
+            .eq('date', selectedDate)
+            .maybeSingle();
 
-        try {
-            const { error } = await supabaseAuth
-                .from('attendance')
-                .delete()
-                .eq('student_id', studentId)
-                .eq('classroom_id', classroomId)
-                .eq('date', selectedDate);
-
-            if (error) throw error;
-
-            // Sync batchAttendanceMap if expanded
-            setBatchAttendanceMap(prev => {
-                const currentBatch = { ...(prev[classroomId] || {}) };
-                delete currentBatch[studentId];
-                return { ...prev, [classroomId]: currentBatch };
+        if (existingRow) {
+            const sName = dateStudentsData.find(e => e.student.id === studentId)?.student.name || 'Student';
+            const cName = classrooms.find(c => c.id === classroomId)?.name || temporaryClasses.find(t => t.id === classroomId)?.title || 'Classroom';
+            setAttendanceUnmarkTarget({
+                attendanceId: existingRow.id,
+                studentId,
+                studentName: sName,
+                classroomId,
+                classroomName: cName,
+                classDate: selectedDate,
+                currentStatus: existingRow.status
             });
-        } catch (err: any) {
-            console.error('Error unmarking attendance:', err);
-            alert(`Failed to unmark attendance: ${err.message || err}`);
-            if (prevStatus) {
-                setDateAttendanceMap(prev => ({ ...prev, [key]: prevStatus }));
-            }
         }
     };
 
@@ -1520,18 +1534,46 @@ export default function AttendancePage() {
             await handleUnmarkDateAttendance(studentId, classroomId);
             return;
         }
+
+        const currentDateStatus = dateAttendanceMap[key];
+        // If an attendance status was already recorded, modifying it must go through
+        // the authoritative audited historical correction workflow (BR-10, BR-11, BR-12)
+        if (currentDateStatus && currentDateStatus !== status) {
+            const { data: existingRow } = await supabaseAuth
+                .from('attendance')
+                .select('id, student_id, classroom_id, date, status')
+                .eq('classroom_id', classroomId)
+                .eq('student_id', studentId)
+                .eq('date', selectedDate)
+                .maybeSingle();
+
+            if (existingRow) {
+                const sName = dateStudentsData.find(e => e.student.id === studentId)?.student.name || 'Student';
+                const cName = classrooms.find(c => c.id === classroomId)?.name || temporaryClasses.find(t => t.id === classroomId)?.title || 'Classroom';
+                setAttendanceCorrectionTarget({
+                    id: existingRow.id,
+                    student_id: studentId,
+                    student_name: sName,
+                    classroom_id: classroomId,
+                    classroom_name: cName,
+                    date: selectedDate,
+                    status: existingRow.status
+                });
+                return;
+            }
+        }
         // Optimistic update
         setDateAttendanceMap(prev => ({ ...prev, [key]: status }));
         try {
             const { error } = await supabaseAuth
                 .from('attendance')
-                .upsert({
+                .insert({
                     student_id: studentId,
                     classroom_id: classroomId,
                     date: selectedDate,
                     status: status.toLowerCase(),
                     marked_by: teacherProfile.id
-                }, { onConflict: 'student_id,classroom_id,date' });
+                });
             if (error) throw error;
 
             handleFeeBalanceTransitionNotifications({
@@ -2147,28 +2189,26 @@ export default function AttendancePage() {
             }
 
             if (editingMakeupId) {
-                const { error } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .update({
-                        target_classroom_id: targetId,
-                        override_date: makeupDate,
-                        reason: cleanReason || null
-                    })
-                    .eq('id', editingMakeupId);
+                const { error } = await supabaseAuth.rpc('reschedule_makeup_session', {
+                    p_override_id: editingMakeupId,
+                    p_new_target_classroom_id: targetId,
+                    p_new_override_date: makeupDate,
+                    p_notes: cleanReason || null
+                });
 
                 if (error) {
                     throw new Error(error.message + (error.details ? ` (${error.details})` : '') + (error.hint ? ` [${error.hint}]` : ''));
                 }
                 alert('Makeup class rescheduled successfully!');
             } else {
-                const { error } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .insert([{
-                        student_id: makeupStudent.student_id,
-                        target_classroom_id: targetId,
-                        override_date: makeupDate,
-                        reason: cleanReason || null
-                    }]);
+                const { error } = await supabaseAuth.rpc('book_makeup_session', {
+                    p_student_id: makeupStudent.student_id,
+                    p_target_classroom_id: targetId,
+                    p_override_date: makeupDate,
+                    p_missed_session_date: makeupStudent.date,
+                    p_original_classroom_id: makeupStudent.classroom_id || null,
+                    p_notes: cleanReason || null
+                });
 
                 if (error) {
                     throw new Error(error.message + (error.details ? ` (${error.details})` : '') + (error.hint ? ` [${error.hint}]` : ''));
@@ -2528,8 +2568,24 @@ export default function AttendancePage() {
                             </button>
                         </div>
 
-                        {/* Compact Quick Student Attendance Search Bar */}
-                        <div className="relative w-full lg:w-80">
+                        <div className="flex items-center gap-2 w-full lg:w-auto">
+                            {/* Audit Trail Button */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setAuditModalClassroomId(expandedBatchId || undefined);
+                                    setAuditModalStudentId(undefined);
+                                    setShowCorrectionAuditModal(true);
+                                }}
+                                className="px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                                title="View immutable attendance correction audit log"
+                            >
+                                <History className="w-4 h-4 text-[#ecb613]" />
+                                <span className="hidden sm:inline">Audit Trail</span>
+                            </button>
+
+                            {/* Compact Quick Student Attendance Search Bar */}
+                            <div className="relative w-full lg:w-80">
                             <div className="relative">
                                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                                 <input 
@@ -2589,6 +2645,7 @@ export default function AttendancePage() {
                             )}
                         </div>
                     </div>
+                </div>
 
                     {/* Shared Global Attendance Reporting Range Bar */}
                     <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -4073,54 +4130,72 @@ export default function AttendancePage() {
                                                                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
                                                                             request.status === 'approved'
                                                                                 ? 'bg-emerald-50 text-emerald-750 dark:bg-emerald-950/20 dark:text-emerald-455'
-                                                                                : request.status === 'rejected'
-                                                                                    ? 'bg-rose-50 text-rose-750 dark:bg-rose-955/20 dark:text-rose-455'
-                                                                                    : 'bg-amber-50 text-amber-750 dark:bg-amber-955/20 dark:text-amber-455'
-                                                                        }`}>
-                                                                            {request.status}
+                                                                                : request.status === 'cancelled'
+                                                                                    ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                                                                    : request.status === 'rejected'
+                                                                                        ? 'bg-rose-50 text-rose-750 dark:bg-rose-955/20 dark:text-rose-455'
+                                                                                        : 'bg-amber-50 text-amber-750 dark:bg-amber-955/20 dark:text-amber-455'
+                                                                        }`} title={request.cancellation_reason || undefined}>
+                                                                            {request.status === 'cancelled' ? 'Cancelled (Holiday)' : request.status}
                                                                         </span>
                                                                     </td>
                                                                     <td className="px-5 py-4 text-right">
-                                                                        {request.status === 'pending' ? (
-                                                                            <div className="flex items-center justify-end gap-2">
-                                                                                <button 
-                                                                                    onClick={() => handleApproveLeave(request)}
-                                                                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30 dark:text-emerald-400 rounded-lg transition-colors"
-                                                                                    title="Approve Leave"
+                                                                        <div className="flex items-center justify-end gap-2">
+                                                                            {request.status === 'pending' ? (
+                                                                                <>
+                                                                                    <button 
+                                                                                        onClick={() => handleApproveLeave(request)}
+                                                                                        className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30 dark:text-emerald-400 rounded-lg transition-colors"
+                                                                                        title="Approve Leave"
+                                                                                    >
+                                                                                        <Check className="size-4" />
+                                                                                    </button>
+                                                                                    <button 
+                                                                                        onClick={() => handleRejectLeave(request)}
+                                                                                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 dark:text-rose-400 rounded-lg transition-colors"
+                                                                                        title="Reject Leave"
+                                                                                    >
+                                                                                        <X className="size-4" />
+                                                                                    </button>
+                                                                                </>
+                                                                            ) : request.status === 'approved' ? (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setMakeupStudent({
+                                                                                            student_id: request.student_id,
+                                                                                            student_name: request.users?.name || 'Student',
+                                                                                            student_profile_pic_url: request.users?.profile_pic_url,
+                                                                                            date: request.class_date,
+                                                                                            classroom_name: request.classrooms?.name || 'Regular Batch',
+                                                                                            classroom_id: request.classroom_id
+                                                                                        });
+                                                                                        setShowMakeupModal(true);
+                                                                                    }}
+                                                                                    className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                                                                                    title="Schedule makeup class for this approved leave"
                                                                                 >
-                                                                                    <Check className="size-4" />
+                                                                                    <span>Schedule Makeup</span>
+                                                                                    <ArrowRight className="size-3" />
                                                                                 </button>
-                                                                                <button 
-                                                                                    onClick={() => handleRejectLeave(request)}
-                                                                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 dark:text-rose-400 rounded-lg transition-colors"
-                                                                                    title="Reject Leave"
+                                                                            ) : (
+                                                                                <span className="text-[10px] font-bold text-slate-400">Processed</span>
+                                                                            )}
+
+                                                                            {teacherProfile?.role === 'admin' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setCorrectionLeaveRequest(request);
+                                                                                        setShowCorrectionModal(true);
+                                                                                    }}
+                                                                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:hover:bg-amber-900/30 dark:text-amber-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                                                                                    title="Admin: Audit-backed leave correction"
                                                                                 >
-                                                                                    <X className="size-4" />
+                                                                                    Correct
                                                                                 </button>
-                                                                            </div>
-                                                                        ) : request.status === 'approved' ? (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setMakeupStudent({
-                                                                                        student_id: request.student_id,
-                                                                                        student_name: request.users?.name || 'Student',
-                                                                                        student_profile_pic_url: request.users?.profile_pic_url,
-                                                                                        date: request.class_date,
-                                                                                        classroom_name: request.classrooms?.name || 'Regular Batch',
-                                                                                        classroom_id: request.classroom_id
-                                                                                    });
-                                                                                    setShowMakeupModal(true);
-                                                                                }}
-                                                                                className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors shadow-xs ml-auto"
-                                                                                title="Schedule makeup class for this approved leave"
-                                                                            >
-                                                                                <span>Schedule Makeup</span>
-                                                                                <ArrowRight className="size-3" />
-                                                                            </button>
-                                                                        ) : (
-                                                                            <span className="text-[10px] font-bold text-slate-400">Processed</span>
-                                                                        )}
+                                                                            )}
+                                                                        </div>
                                                                     </td>
                                                                 </tr>
                                                             ))}
@@ -4417,6 +4492,103 @@ export default function AttendancePage() {
                 initialStudentName={attendanceModalStudent?.name}
                 initialProfilePicUrl={attendanceModalStudent?.pic}
             />
+
+            {/* Historical Leave Correction Modal (Admin Only) */}
+            {showCorrectionModal && (
+                <HistoricalLeaveCorrectionModal
+                    isOpen={showCorrectionModal}
+                    onClose={() => {
+                        setShowCorrectionModal(false);
+                        setCorrectionLeaveRequest(null);
+                    }}
+                    leaveRequest={correctionLeaveRequest}
+                    onSuccess={() => {
+                        fetchLeaveRequests();
+                    }}
+                />
+            )}
+
+            {/* Historical Attendance Correction Modal */}
+            {attendanceCorrectionTarget && (
+                <HistoricalAttendanceCorrectionModal
+                    isOpen={!!attendanceCorrectionTarget}
+                    onClose={() => setAttendanceCorrectionTarget(null)}
+                    record={attendanceCorrectionTarget ? {
+                        attendanceId: attendanceCorrectionTarget.id,
+                        studentId: attendanceCorrectionTarget.student_id,
+                        studentName: attendanceCorrectionTarget.student_name || 'Student',
+                        classroomId: attendanceCorrectionTarget.classroom_id,
+                        classroomName: attendanceCorrectionTarget.classroom_name || 'Classroom',
+                        classDate: attendanceCorrectionTarget.date,
+                        currentStatus: attendanceCorrectionTarget.status
+                    } : null}
+                    onSuccess={(result) => {
+                        setAttendanceCorrectionTarget(null);
+                        if (result?.classroom_id && result?.student_id && result?.new_status) {
+                            setBatchAttendanceMap(prev => {
+                                const curr = prev[result.classroom_id] || {};
+                                return {
+                                    ...prev,
+                                    [result.classroom_id]: {
+                                        ...curr,
+                                        [result.student_id]: result.new_status
+                                    }
+                                };
+                            });
+                            const k = `${result.student_id}_${result.classroom_id}`;
+                            setDateAttendanceMap(prev => ({ ...prev, [k]: result.new_status }));
+                            if (expandedBatchId === result.classroom_id) {
+                                handleExpandBatch(result.classroom_id, false, true);
+                            }
+                        }
+                    }}
+                />
+            )}
+
+            {/* Attendance Correction History / Audit Trail Modal */}
+            {showCorrectionAuditModal && (
+                <AttendanceCorrectionHistoryModal
+                    isOpen={showCorrectionAuditModal}
+                    onClose={() => {
+                        setShowCorrectionAuditModal(false);
+                        setAuditModalClassroomId(undefined);
+                        setAuditModalStudentId(undefined);
+                    }}
+                    classroomId={auditModalClassroomId || expandedBatchId || undefined}
+                    studentId={auditModalStudentId}
+                />
+            )}
+
+            {/* Audited Attendance Unmarking Modal */}
+            {attendanceUnmarkTarget && (
+                <UnmarkAttendanceModal
+                    isOpen={!!attendanceUnmarkTarget}
+                    onClose={() => setAttendanceUnmarkTarget(null)}
+                    record={attendanceUnmarkTarget}
+                    onSuccess={(result) => {
+                        setAttendanceUnmarkTarget(null);
+                        if (result?.classroom_id && result?.student_id) {
+                            setBatchAttendanceMap(prev => {
+                                const curr = { ...(prev[result.classroom_id] || {}) };
+                                delete curr[result.student_id];
+                                return {
+                                    ...prev,
+                                    [result.classroom_id]: curr
+                                };
+                            });
+                            const k = `${result.student_id}_${result.classroom_id}`;
+                            setDateAttendanceMap(prev => {
+                                const next = { ...prev };
+                                delete next[k];
+                                return next;
+                            });
+                            if (expandedBatchId === result.classroom_id) {
+                                handleExpandBatch(result.classroom_id, false, true);
+                            }
+                        }
+                    }}
+                />
+            )}
         </div>
     );
 }

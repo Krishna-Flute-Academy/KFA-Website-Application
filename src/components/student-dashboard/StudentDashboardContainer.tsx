@@ -2321,23 +2321,10 @@ export default function StudentDashboardContainer() {
                 return;
             }
 
-            // Determine class start time for 24-hour advance check
-            let classStartTime = '09:00:00';
-            if (matchingTempClass?.start_time) {
-                classStartTime = matchingTempClass.start_time;
-            } else if (matchingPermSched?.start_time) {
-                classStartTime = matchingPermSched.start_time;
-            }
-
-            const [hours, minutes] = classStartTime.split(':').map(Number);
-            selectedClassDate.setHours(hours, minutes || 0, 0, 0);
-
-            const now = new Date();
-            const diffMs = selectedClassDate.getTime() - now.getTime();
-            const diffHours = diffMs / (1000 * 60 * 60);
-
-            if (diffHours < 24) {
-                setExcuseError('Leaves must be requested at least 24 hours before the scheduled class time. For same-day or urgent absences, please contact your teacher or admin directly.');
+            // Future calendar date check in Asia/Kolkata timezone
+            const todayKolkata = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+            if (dateStr <= todayKolkata) {
+                setExcuseError('Leave requests must be submitted for future class dates in Asia/Kolkata timezone.');
                 setIsSubmittingExcuse(false);
                 return;
             }

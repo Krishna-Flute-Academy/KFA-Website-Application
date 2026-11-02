@@ -131,13 +131,16 @@ export default function FeesTab({ profile, payments, authoritativeFeeStatus, not
 
         setIsSubmitting(true);
         try {
-            const { error } = await supabaseAuth.from('fees_payments').insert({
-                student_id: profile.id,
-                amount: Number(amount),
-                payment_method: paymentMethod,
-                payment_date: new Date().toISOString().split('T')[0],
-                notes: notes,
-                status: 'pending_approval' // This triggers the teacher review flow
+            const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `std_pay_${profile.id}_${Date.now()}`;
+            const { data: paymentRecord, error } = await supabaseAuth.rpc('record_fee_payment', {
+                p_student_id: profile.id,
+                p_amount: Number(amount),
+                p_payment_date: new Date().toISOString().split('T')[0],
+                p_payment_method: paymentMethod,
+                p_classes_added: 4,
+                p_notes: notes || null,
+                p_idempotency_key: idempotencyKey,
+                p_status: 'pending_approval'
             });
 
             if (error) throw error;
@@ -222,7 +225,7 @@ export default function FeesTab({ profile, payments, authoritativeFeeStatus, not
                                 <span className={`text-5xl font-black ${classesLeft < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
                                     {Math.max(0, classesLeft)}
                                 </span>
-                                <span className="text-sm font-bold text-slate-400">Classes Left</span>
+                                <span className="text-sm font-bold text-slate-400">Prepaid Credits Remaining</span>
                             </div>
                             
                             {feeMetrics && feeMetrics.basis === 'monthly' && feeMetrics.unresolvedSessions > 0 && (

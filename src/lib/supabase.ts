@@ -1,7 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
+import { assertNotProductionUrl, assertStrictStagingUrl } from './production-guard';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+if (process.env.BLOCK_PRODUCTION === 'true') {
+  assertNotProductionUrl(supabaseUrl, 'supabase.ts initialization');
+}
+if (process.env.KFA_TARGET_ENV === 'staging') {
+  assertStrictStagingUrl(supabaseUrl, 'supabase.ts staging mode');
+}
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase: Missing environment variables');

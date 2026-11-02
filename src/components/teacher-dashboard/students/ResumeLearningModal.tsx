@@ -35,6 +35,7 @@ export interface ResumeLearningModalProps {
         profile_pic_url?: string;
         fees_basis?: string;
         fees_collection_date?: number | string;
+        join_date?: string;
     } | null;
     classrooms: ClassroomOption[];
     onSuccess?: (updatedStudent: any) => void;
@@ -51,6 +52,9 @@ export const ResumeLearningModal: React.FC<ResumeLearningModalProps> = ({
     const [selectedBatchId, setSelectedBatchId] = useState('');
     const [resumeDate, setResumeDate] = useState(() => new Date().toISOString().slice(0, 10));
     const [collectionDay, setCollectionDay] = useState<number>(1);
+    const [paymentAmount, setPaymentAmount] = useState<number>(1500);
+    const [paymentMethod, setPaymentMethod] = useState<string>('cash');
+    const [paymentReference, setPaymentReference] = useState<string>('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -74,8 +78,11 @@ export const ResumeLearningModal: React.FC<ResumeLearningModalProps> = ({
             setErrorMessage(null);
 
             // Default collection day
-            const cDay = Number(student.fees_collection_date) || 1;
+            const cDay = Number(student.fees_collection_date) || (student.join_date ? new Date(student.join_date).getDate() : 1);
             setCollectionDay(cDay);
+            setPaymentAmount(Number((student as any).fees_amount) || 1500);
+            setPaymentMethod('cash');
+            setPaymentReference('');
 
             // Pick initial classroom: if previous classroom was valid and in eligible list, choose it, otherwise first eligible
             const prevId = student.classroom_id;
@@ -110,6 +117,11 @@ export const ResumeLearningModal: React.FC<ResumeLearningModalProps> = ({
             return;
         }
 
+        if (!paymentAmount || paymentAmount <= 0) {
+            setErrorMessage('An approved advance payment amount is mandatory to resume learning.');
+            return;
+        }
+
         setIsSubmitting(true);
         setErrorMessage(null);
 
@@ -117,77 +129,20 @@ export const ResumeLearningModal: React.FC<ResumeLearningModalProps> = ({
             const selectedRoom = eligibleClassrooms.find(c => c.id === selectedBatchId);
             const selectedRoomName = selectedRoom?.name || 'Assigned Classroom';
 
-            // 1. Update user to active status & save collection day
-            const updatedNotes = (student as any).notes
-                ? `${(student as any).notes}\n[Resumed ${resumeDate}]`
-                : `[Resumed ${resumeDate}]`;
+            // Authoritative Atomic Resumption (BR-32)
+            const { data: resumeRes, error: resumeErr } = await supabaseAuth.rpc('resume_student_learning_atomic', {
+                p_student_id: student.id,
+                p_classroom_id: selectedBatchId,
+                p_resume_date: resumeDate,
+                p_payment_amount: Number(paymentAmount),
+                p_payment_method: paymentMethod,
+                p_payment_reference: paymentReference.trim() || null,
+                p_notes: `Resumed into ${selectedRoomName}`
+            });
 
-            const { error: userError } = await supabaseAuth
-                .from('users')
-                .update({ 
-                    status: 'active',
-                    fees_collection_date: collectionDay,
-                    notes: updatedNotes
-                })
-                .eq('id', student.id);
+            if (resumeErr) throw resumeErr;
 
-            if (userError) throw userError;
-
-            // 2. Remove only learning circle enrollments for this student (preserving permanent classroom structure)
-            const { data: circleRooms } = await supabaseAuth
-                .from('classrooms')
-                .select('id')
-                .or('type.eq.learning_circle,name.ilike.%learning circle%');
-
-            const circleIds = (circleRooms || []).map(r => r.id);
-            if (circleIds.length > 0) {
-                await supabaseAuth
-                    .from('classroom_students')
-                    .delete()
-                    .eq('student_id', student.id)
-                    .in('classroom_id', circleIds);
-            }
-
-            // 3. Upsert / update permanent classroom enrollment
-            const { data: existingEnroll } = await supabaseAuth
-                .from('classroom_students')
-                .select('id')
-                .eq('student_id', student.id)
-                .eq('classroom_id', selectedBatchId)
-                .maybeSingle();
-
-            if (existingEnroll) {
-                await supabaseAuth
-                    .from('classroom_students')
-                    .update({ joined_at: new Date(resumeDate).toISOString() })
-                    .eq('id', existingEnroll.id);
-            } else {
-                const { data: otherPermEnroll } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('id')
-                    .eq('student_id', student.id)
-                    .maybeSingle();
-
-                if (otherPermEnroll) {
-                    await supabaseAuth
-                        .from('classroom_students')
-                        .update({
-                            classroom_id: selectedBatchId,
-                            joined_at: new Date(resumeDate).toISOString()
-                        })
-                        .eq('id', otherPermEnroll.id);
-                } else {
-                    const { error: enrollError } = await supabaseAuth
-                        .from('classroom_students')
-                        .insert([{
-                            classroom_id: selectedBatchId,
-                            student_id: student.id,
-                            joined_at: new Date(resumeDate).toISOString()
-                        }]);
-
-                    if (enrollError) throw enrollError;
-                }
-            }
+            const newDueDay = resumeRes?.new_due_day || Number(resumeDate.split('-')[2]);
 
             if (onSuccess) {
                 onSuccess({
@@ -196,7 +151,8 @@ export const ResumeLearningModal: React.FC<ResumeLearningModalProps> = ({
                     batch: selectedRoomName,
                     classroom_name: selectedRoomName,
                     classroom_id: selectedBatchId,
-                    fees_collection_date: collectionDay
+                    fees_collection_date: newDueDay,
+                    fees_classes_paid: resumeRes?.credits_added || 4
                 });
             }
 
@@ -353,6 +309,60 @@ export const ResumeLearningModal: React.FC<ResumeLearningModalProps> = ({
                                 </div>
                             </div>
                         )}
+                    </div>
+
+                    {/* Mandatory Advance Payment (BR-32) */}
+                    <div className="p-3.5 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/60 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200 uppercase tracking-wide">
+                                Advance Resumption Payment (Mandatory)
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                    Payment Amount (₹) <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={paymentAmount}
+                                    onChange={(e) => setPaymentAmount(Math.max(1, parseInt(e.target.value) || 0))}
+                                    className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                    Payment Method
+                                </label>
+                                <select
+                                    value={paymentMethod}
+                                    onChange={(e) => setPaymentMethod(e.target.value)}
+                                    className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                                >
+                                    <option value="cash">Cash</option>
+                                    <option value="upi">UPI / GPay / PhonePe</option>
+                                    <option value="bank_transfer">Bank Transfer / NEFT</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                Reference / Transaction ID (Optional)
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="e.g. UPI-123456 or Receipt #"
+                                value={paymentReference}
+                                onChange={(e) => setPaymentReference(e.target.value)}
+                                className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                            />
+                        </div>
+                        <p className="text-[11px] text-emerald-800/80 dark:text-emerald-400/80">
+                            Approving this payment restores student live class access and grants 4 class credits.
+                        </p>
                     </div>
 
                     {/* Informational Guidance */}

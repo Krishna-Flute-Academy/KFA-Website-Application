@@ -33,6 +33,11 @@ import {
     identifyMeetingPlatform,
     isValidMeetingUrl 
 } from '../../../../src/lib/meeting-utils';
+import { HistoricalAttendanceCorrectionModal } from '../../../../src/components/teacher-dashboard/attendance/HistoricalAttendanceCorrectionModal';
+import { UnmarkAttendanceModal } from '../../../../src/components/teacher-dashboard/attendance/UnmarkAttendanceModal';
+import DeclareHolidayModal from '../../../../src/components/teacher-dashboard/holidays/DeclareHolidayModal';
+import HolidayAuditHistoryModal from '../../../../src/components/teacher-dashboard/holidays/HolidayAuditHistoryModal';
+import ScheduleAlternativeModal from '../../../../src/components/teacher-dashboard/holidays/ScheduleAlternativeModal';
 
 import dynamic from 'next/dynamic';
 import TaskCreateDialog from '../../../../src/components/teacher-dashboard/tasks/TaskCreateDialog';
@@ -280,7 +285,7 @@ export default function ClassroomDashboardPage({
     const [sessionOverrides, setSessionOverrides] = useState<any[]>([]);
     const [showOverrideModal, setShowOverrideModal] = useState(false);
     const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
-    const [overrideForm, setOverrideForm] = useState({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '' });
+    const [overrideForm, setOverrideForm] = useState({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '', missedSessionDate: '' });
     const [isSavingOverride, setIsSavingOverride] = useState(false);
     const [isDeletingOverrideId, setIsDeletingOverrideId] = useState<string | null>(null);
     const [directoryStudentsForOverride, setDirectoryStudentsForOverride] = useState<any[]>([]);
@@ -876,6 +881,25 @@ export default function ClassroomDashboardPage({
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [classroomInventoryAllocations, setClassroomInventoryAllocations] = useState<any[]>([]);
     const [classroomAttendance, setClassroomAttendance] = useState<any[]>([]);
+    const [attendanceIdMap, setAttendanceIdMap] = useState<Record<string, string>>({});
+    const [attendanceCorrectionTarget, setAttendanceCorrectionTarget] = useState<{
+        attendanceId: string;
+        studentId: string;
+        studentName: string;
+        classroomId: string;
+        classroomName: string;
+        classDate: string;
+        currentStatus: string;
+    } | null>(null);
+    const [attendanceUnmarkTarget, setAttendanceUnmarkTarget] = useState<{
+        attendanceId: string;
+        studentId: string;
+        studentName: string;
+        classroomId: string;
+        classroomName: string;
+        classDate: string;
+        currentStatus: string;
+    } | null>(null);
     const [classroomAssignmentsStudents, setClassroomAssignmentsStudents] = useState<any[]>([]);
     const [assignmentsLoading, setAssignmentsLoading] = useState(false);
     const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
@@ -1362,6 +1386,11 @@ export default function ClassroomDashboardPage({
     const [coveredAttendanceMap, setCoveredAttendanceMap] = useState<Record<string, CoveredAttendanceRecord>>({});
     const [attendanceLoading, setAttendanceLoading] = useState(false);
     const [isSavingAttendanceMap, setIsSavingAttendanceMap] = useState<Record<string, boolean>>({});
+    const [classroomHolidays, setClassroomHolidays] = useState<any[]>([]);
+    const [showDeclareHolidayModal, setShowDeclareHolidayModal] = useState(false);
+    const [showHolidayAuditModal, setShowHolidayAuditModal] = useState(false);
+    const [showScheduleAlternativeModal, setShowScheduleAlternativeModal] = useState(false);
+    const [selectedHolidayForScheduling, setSelectedHolidayForScheduling] = useState<any>(null);
 
     // ── Session Logs State ──
     const [sessionLogs, setSessionLogs] = useState<any[]>([]);
@@ -1684,6 +1713,9 @@ export default function ClassroomDashboardPage({
                             id,
                             student_id,
                             override_date,
+                            missed_session_date,
+                            booking_status,
+                            credit_treatment,
                             reason,
                             users!student_id(name, email, profile_pic_url, level, status)
                           `).eq('target_classroom_id', classroomId).eq('override_date', tempClassData.class_date).order('override_date', { ascending: true })
@@ -1691,6 +1723,9 @@ export default function ClassroomDashboardPage({
                             id,
                             student_id,
                             override_date,
+                            missed_session_date,
+                            booking_status,
+                            credit_treatment,
                             reason,
                             users!student_id(name, email, profile_pic_url, level, status)
                           `).eq('target_classroom_id', classroomId).order('override_date', { ascending: true }),
@@ -2383,10 +2418,10 @@ export default function ClassroomDashboardPage({
         if (!classroomId) return;
         setAttendanceLoading(true);
         try {
-            const [attRes, overridesRes, coveredRes] = await Promise.all([
+            const [attRes, overridesRes, coveredRes, holidaysRes] = await Promise.all([
                 supabaseAuth
                     .from('attendance')
-                    .select('student_id, status')
+                    .select('id, student_id, status')
                     .eq('classroom_id', classroomId)
                     .eq('date', attendanceDate),
                 supabaseAuth
@@ -2395,6 +2430,9 @@ export default function ClassroomDashboardPage({
                         id,
                         student_id,
                         override_date,
+                        missed_session_date,
+                        booking_status,
+                        credit_treatment,
                         reason,
                         users!student_id(name, profile_pic_url, level)
                     `)
@@ -2405,11 +2443,20 @@ export default function ClassroomDashboardPage({
                     .select('id, student_id, classroom_id, date, status, on_behalf_of_date')
                     .eq('on_behalf_of_date', attendanceDate)
                     .neq('date', attendanceDate)
-                    .in('status', ['present', 'late', 'absent', 'excused'])
+                    .in('status', ['present', 'late', 'absent', 'excused']),
+                supabaseAuth
+                    .from('classroom_holidays')
+                    .select('*')
+                    .eq('classroom_id', classroomId)
+                    .eq('status', 'active')
             ]);
 
             if (overridesRes.data) {
                 setSessionOverrides(overridesRes.data);
+            }
+
+            if (holidaysRes.data) {
+                setClassroomHolidays(holidaysRes.data);
             }
 
             const coveredMap = buildCoveredAttendanceMap(coveredRes.data || [], attendanceDate);
@@ -2421,9 +2468,12 @@ export default function ClassroomDashboardPage({
             }
 
             const recordsMap: Record<string, 'present' | 'absent' | 'late' | 'excused'> = {};
+            const idMap: Record<string, string> = {};
             (attRes.data || []).forEach((row: any) => {
                 recordsMap[row.student_id] = row.status;
+                idMap[row.student_id] = row.id;
             });
+            setAttendanceIdMap(idMap);
             Object.values(coveredMap).forEach(cov => {
                 if (!recordsMap[cov.studentId]) {
                     recordsMap[cov.studentId] = cov.status as any;
@@ -2436,6 +2486,30 @@ export default function ClassroomDashboardPage({
             setAttendanceLoading(false);
         }
     }, [classroomId, attendanceDate]);
+
+    const handleCancelHoliday = async (holiday: any) => {
+        if (!holiday?.id) return;
+        const reason = window.prompt(`Enter reason for cancelling holiday on ${holiday.holiday_date}:`);
+        if (!reason || reason.trim().length < 3) {
+            if (reason !== null) {
+                alert('A valid cancellation reason (minimum 3 characters) is required.');
+            }
+            return;
+        }
+
+        try {
+            const { error } = await supabaseAuth.rpc('cancel_classroom_holiday', {
+                p_holiday_id: holiday.id,
+                p_reason: reason.trim()
+            });
+            if (error) throw error;
+            await fetchClassroomAttendance();
+            alert('Holiday successfully cancelled.');
+        } catch (err: any) {
+            console.error('Error cancelling holiday:', err);
+            alert(`Failed to cancel holiday: ${err.message || err}`);
+        }
+    };
 
     // Fetch when switching to Attendance tab or when attendanceDate changes
     useEffect(() => {
@@ -2480,36 +2554,29 @@ export default function ClassroomDashboardPage({
             return;
         }
 
-        const prevStatus = attendanceRecords[studentId];
-
-        // Optimistically remove from state
-        setAttendanceRecords(prev => {
-            const next = { ...prev };
-            delete next[studentId];
-            return next;
-        });
-        setClassroomAttendance(prev => prev.filter(a => !(a.student_id === studentId && a.date === attendanceDate)));
-        setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: true }));
-
-        try {
-            const { error } = await supabaseAuth
+        let attId = attendanceIdMap[studentId];
+        if (!attId) {
+            const { data: row } = await supabaseAuth
                 .from('attendance')
-                .delete()
-                .eq('student_id', studentId)
+                .select('id, status')
                 .eq('classroom_id', classroomId)
-                .eq('date', attendanceDate);
-
-            if (error) throw error;
-        } catch (err: any) {
-            console.error('Error unmarking attendance:', err);
-            alert(`Failed to unmark attendance: ${err.message || err}`);
-            if (prevStatus) {
-                setAttendanceRecords(prev => ({ ...prev, [studentId]: prevStatus }));
-                setClassroomAttendance(prev => [...prev, { student_id: studentId, date: attendanceDate, status: prevStatus }]);
-            }
-        } finally {
-            setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: false }));
+                .eq('student_id', studentId)
+                .eq('date', attendanceDate)
+                .maybeSingle();
+            attId = row?.id;
         }
+        if (!attId) return;
+
+        const sName = students.find(s => s.id === studentId)?.name || sessionOverrides.find(o => o.student_id === studentId)?.users?.name || 'Student';
+        setAttendanceUnmarkTarget({
+            attendanceId: attId,
+            studentId,
+            studentName: sName,
+            classroomId,
+            classroomName: classroom?.name || 'Classroom',
+            classDate: attendanceDate,
+            currentStatus: attendanceRecords[studentId] || 'present'
+        });
     };
 
     const handleMarkClassroomAttendance = async (studentId: string, status: string) => {
@@ -2542,37 +2609,63 @@ export default function ClassroomDashboardPage({
             return;
         }
 
-        // If clicking the already selected status, unmark it
+        // If clicking the already selected status, route to audited unmarking workflow
         if (attendanceRecords[studentId] === status) {
             await handleUnmarkClassroomAttendance(studentId);
             return;
         }
 
-        // Optimistically update status
-        setAttendanceRecords(prev => ({ ...prev, [studentId]: status as any }));
-        setClassroomAttendance(prev => {
-            const idx = prev.findIndex(a => a.student_id === studentId && a.date === attendanceDate);
-            if (idx >= 0) {
-                const updated = [...prev];
-                updated[idx] = { ...updated[idx], status: status.toLowerCase() };
-                return updated;
+        const currentStatus = attendanceRecords[studentId];
+        // If an attendance status was already recorded, modifying it must use the audited correction workflow (BR-10, BR-11, BR-12)
+        if (currentStatus && currentStatus !== status) {
+            let attId = attendanceIdMap[studentId];
+            if (!attId) {
+                const { data: row } = await supabaseAuth
+                    .from('attendance')
+                    .select('id, status')
+                    .eq('classroom_id', classroomId)
+                    .eq('student_id', studentId)
+                    .eq('date', attendanceDate)
+                    .maybeSingle();
+                attId = row?.id;
             }
-            return [...prev, { student_id: studentId, date: attendanceDate, status: status.toLowerCase() }];
-        });
-        setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: true }));
+            if (attId) {
+                const sName = students.find(s => s.id === studentId)?.name || sessionOverrides.find(o => o.student_id === studentId)?.users?.name || 'Student';
+                setAttendanceCorrectionTarget({
+                    attendanceId: attId,
+                    studentId,
+                    studentName: sName,
+                    classroomId,
+                    classroomName: classroom?.name || 'Classroom',
+                    classDate: attendanceDate,
+                    currentStatus
+                });
+                return;
+            }
+        }
 
+        // Initial attendance marking (no existing record)
+        setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: true }));
         try {
-            const { error } = await supabaseAuth
+            const { data: inserted, error } = await supabaseAuth
                 .from('attendance')
-                .upsert({
+                .insert({
                     student_id: studentId,
                     classroom_id: classroomId,
                     date: attendanceDate,
                     status: status.toLowerCase(),
                     marked_by: teacherProfile.id
-                }, { onConflict: 'student_id, classroom_id, date' });
+                })
+                .select('id')
+                .single();
 
             if (error) throw error;
+
+            if (inserted) {
+                setAttendanceIdMap(prev => ({ ...prev, [studentId]: inserted.id }));
+            }
+            setAttendanceRecords(prev => ({ ...prev, [studentId]: status as any }));
+            setClassroomAttendance(prev => [...prev, { id: inserted?.id, student_id: studentId, date: attendanceDate, status: status.toLowerCase() }]);
         } catch (err: any) {
             console.error('Error marking attendance:', err);
             alert(`Failed to save attendance: ${err.message || err}`);
@@ -2587,7 +2680,7 @@ export default function ClassroomDashboardPage({
         setEditingOverrideId(null);
         setShowOverrideModal(true);
         setIsOverrideRosterLoading(true);
-        setOverrideForm({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '' });
+        setOverrideForm({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '', missedSessionDate: '' });
         try {
             const enrolledIds = new Set(students.map(s => s.student_id));
             const usersQuery = supabaseAuth
@@ -2620,7 +2713,8 @@ export default function ClassroomDashboardPage({
         setOverrideForm({
             studentId: override.student_id,
             date: override.override_date,
-            reason: override.reason || ''
+            reason: override.reason || '',
+            missedSessionDate: override.missed_session_date || ''
         });
         try {
             const enrolledIds = new Set(students.map(s => s.student_id));
@@ -2657,6 +2751,10 @@ export default function ClassroomDashboardPage({
             alert('Please select a student and date.');
             return;
         }
+        if (!overrideForm.missedSessionDate) {
+            alert('Please specify the original missed class date that this makeup session covers.');
+            return;
+        }
         // Validate date matching schedule for permanent classroom
         if (classroom?.type === 'permanent' || !classroom?.type) {
             const daysOfWeek = (schedules || []).map((s: any) => s.day_of_week);
@@ -2674,59 +2772,38 @@ export default function ClassroomDashboardPage({
 
         setIsSavingOverride(true);
         try {
+            const cleanReason = overrideForm.missedSessionDate
+                ? (overrideForm.reason?.includes(`[MissedDate:${overrideForm.missedSessionDate}]`)
+                    ? overrideForm.reason
+                    : `[MissedDate:${overrideForm.missedSessionDate}] ${overrideForm.reason || ''}`.trim())
+                : overrideForm.reason || null;
+
             if (editingOverrideId) {
-                const { data, error } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .update({
-                        student_id: overrideForm.studentId,
-                        override_date: overrideForm.date,
-                        credit_treatment: 'makeup',
-                        reason: overrideForm.reason || null
-                    })
-                    .eq('id', editingOverrideId)
-                    .select(`
-                        id,
-                        student_id,
-                        override_date,
-                        reason,
-                        credit_treatment,
-                        missed_session_date,
-                        users!student_id(name, profile_pic_url, level)
-                    `)
-                    .single();
+                const { error } = await supabaseAuth.rpc('reschedule_makeup_session', {
+                    p_override_id: editingOverrideId,
+                    p_new_target_classroom_id: classroomId,
+                    p_new_override_date: overrideForm.date,
+                    p_notes: cleanReason
+                });
 
                 if (error) throw error;
 
-                setSessionOverrides(prev =>
-                    prev.map(o => o.id === editingOverrideId ? data : o)
-                        .sort((a, b) => a.override_date.localeCompare(b.override_date))
-                );
+                await fetchClassroomAttendance();
                 setShowOverrideModal(false);
                 setEditingOverrideId(null);
             } else {
-                const { data, error } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .insert([{
-                        student_id: overrideForm.studentId,
-                        target_classroom_id: classroomId,
-                        override_date: overrideForm.date,
-                        credit_treatment: 'makeup',
-                        reason: overrideForm.reason || null
-                    }])
-                    .select(`
-                        id,
-                        student_id,
-                        override_date,
-                        reason,
-                        credit_treatment,
-                        missed_session_date,
-                        users!student_id(name, profile_pic_url, level)
-                    `)
-                    .single();
+                const { error } = await supabaseAuth.rpc('book_makeup_session', {
+                    p_student_id: overrideForm.studentId,
+                    p_target_classroom_id: classroomId,
+                    p_override_date: overrideForm.date,
+                    p_missed_session_date: overrideForm.missedSessionDate,
+                    p_original_classroom_id: null,
+                    p_notes: cleanReason
+                });
 
                 if (error) throw error;
 
-                setSessionOverrides(prev => [...prev, data].sort((a, b) => a.override_date.localeCompare(b.override_date)));
+                await fetchClassroomAttendance();
                 setShowOverrideModal(false);
             }
         } catch (err: any) {
@@ -2741,14 +2818,14 @@ export default function ClassroomDashboardPage({
         if (!window.confirm('Are you sure you want to cancel this temporary makeup class allocation?')) return;
         setIsDeletingOverrideId(overrideId);
         try {
-            const { error } = await supabaseAuth
-                .from('session_student_overrides')
-                .delete()
-                .eq('id', overrideId);
+            const { error } = await supabaseAuth.rpc('cancel_makeup_session', {
+                p_override_id: overrideId,
+                p_reason: 'Cancelled by teacher'
+            });
 
             if (error) throw error;
 
-            setSessionOverrides(prev => prev.filter(o => o.id !== overrideId));
+            await fetchClassroomAttendance();
         } catch (err: any) {
             console.error('Error deleting override:', err);
             alert(`Failed to cancel makeup: ${err.message || err}`);
@@ -5333,6 +5410,17 @@ export default function ClassroomDashboardPage({
                                         />
                                     </div>
                                     <div className="text-left">
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Original Missed Class Date <span className="text-rose-500">*</span></label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={overrideForm.missedSessionDate || ''}
+                                            onChange={e => setOverrideForm(f => ({ ...f, missedSessionDate: e.target.value }))}
+                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-slate-800 dark:text-slate-100"
+                                        />
+                                        <p className="text-[11px] text-slate-400 mt-1">Specify which missed class date this makeup session covers to ensure accurate fee credit linking.</p>
+                                    </div>
+                                    <div className="text-left">
                                         <label className="block text-xs font-bold text-slate-550 dark:text-slate-400 uppercase tracking-wider mb-2">Reason / Private Notes</label>
                                         <textarea
                                             value={overrideForm.reason}
@@ -5541,6 +5629,12 @@ export default function ClassroomDashboardPage({
                         </div>
 
                         <div className="flex items-center gap-4">
+                            {secondsElapsed > 3600 && (
+                                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold animate-pulse">
+                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Class duration exceeded — please end manually</span>
+                                </div>
+                            )}
                             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800">
                                 <Clock className="w-4 h-4 text-[#ecb613] animate-spin" style={{ animationDuration: '6s' }} />
                                 <div className="text-xs text-left">
@@ -5855,6 +5949,14 @@ export default function ClassroomDashboardPage({
                             handleUnmarkClassroomAttendance={handleUnmarkClassroomAttendance}
                             formatLocalDate={formatLocalDate}
                             coveredAttendanceMap={coveredAttendanceMap}
+                            holidays={classroomHolidays}
+                            onDeclareHoliday={() => setShowDeclareHolidayModal(true)}
+                            onCancelHoliday={handleCancelHoliday}
+                            onViewHolidayAudit={() => setShowHolidayAuditModal(true)}
+                            onScheduleAlternative={(holiday) => {
+                                setSelectedHolidayForScheduling(holiday);
+                                setShowScheduleAlternativeModal(true);
+                            }}
                         />
                     )}
 
@@ -7204,6 +7306,88 @@ export default function ClassroomDashboardPage({
                         )}
                         <p className="text-xs font-bold leading-relaxed">{messageNotification.text}</p>
                     </div>
+                )}
+
+                {/* Historical Attendance Correction Modal */}
+                {attendanceCorrectionTarget && (
+                    <HistoricalAttendanceCorrectionModal
+                        isOpen={!!attendanceCorrectionTarget}
+                        onClose={() => setAttendanceCorrectionTarget(null)}
+                        record={attendanceCorrectionTarget}
+                        onSuccess={(result) => {
+                            setAttendanceCorrectionTarget(null);
+                            if (result?.student_id && result?.new_status) {
+                                setAttendanceRecords(prev => ({ ...prev, [result.student_id]: result.new_status }));
+                                fetchClassroomAttendance();
+                            }
+                        }}
+                    />
+                )}
+
+                {/* Audited Attendance Unmarking Modal */}
+                {attendanceUnmarkTarget && (
+                    <UnmarkAttendanceModal
+                        isOpen={!!attendanceUnmarkTarget}
+                        onClose={() => setAttendanceUnmarkTarget(null)}
+                        record={attendanceUnmarkTarget}
+                        onSuccess={(result) => {
+                            setAttendanceUnmarkTarget(null);
+                            if (result?.student_id) {
+                                setAttendanceRecords(prev => {
+                                    const next = { ...prev };
+                                    delete next[result.student_id];
+                                    return next;
+                                });
+                                setAttendanceIdMap(prev => {
+                                    const next = { ...prev };
+                                    delete next[result.student_id];
+                                    return next;
+                                });
+                                setClassroomAttendance(prev => prev.filter(a => !(a.student_id === result.student_id && a.date === result.session_date)));
+                            }
+                        }}
+                    />
+                )}
+
+                {/* Holiday Management Modals */}
+                {showDeclareHolidayModal && classroomId && (
+                    <DeclareHolidayModal
+                        isOpen={showDeclareHolidayModal}
+                        onClose={() => setShowDeclareHolidayModal(false)}
+                        onSuccess={() => {
+                            setShowDeclareHolidayModal(false);
+                            fetchClassroomAttendance();
+                        }}
+                        classroomId={classroomId}
+                        classroomName={classroom?.name || 'Classroom'}
+                        initialDate={attendanceDate}
+                    />
+                )}
+
+                {showHolidayAuditModal && classroomId && (
+                    <HolidayAuditHistoryModal
+                        isOpen={showHolidayAuditModal}
+                        onClose={() => setShowHolidayAuditModal(false)}
+                        classroomId={classroomId}
+                        classroomName={classroom?.name || 'Classroom'}
+                    />
+                )}
+
+                {showScheduleAlternativeModal && selectedHolidayForScheduling && classroomId && (
+                    <ScheduleAlternativeModal
+                        isOpen={showScheduleAlternativeModal}
+                        onClose={() => {
+                            setShowScheduleAlternativeModal(false);
+                            setSelectedHolidayForScheduling(null);
+                        }}
+                        onSuccess={() => {
+                            setShowScheduleAlternativeModal(false);
+                            setSelectedHolidayForScheduling(null);
+                            fetchClassroomAttendance();
+                        }}
+                        classroomName={classroom?.name || 'Classroom'}
+                        holiday={selectedHolidayForScheduling}
+                    />
                 )}
             </main>
         </div>

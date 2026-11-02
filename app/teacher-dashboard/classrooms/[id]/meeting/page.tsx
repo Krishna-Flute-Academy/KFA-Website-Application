@@ -356,34 +356,27 @@ export default function MeetingPage() {
                     marked_by: teacherProfile.id,
                 }));
 
-            const nullStudentIds = students
-                .filter(s => s.attendance === null && !coveredMap[s.id])
-                .map(s => s.id);
+            // Check for existing attendance rows so meeting save cannot overwrite existing records (Task 2)
+            const { data: existingRows } = await supabaseAuth
+                .from('attendance')
+                .select('student_id, status')
+                .eq('classroom_id', classroomId)
+                .eq('date', sessionDate);
 
-            // Parallel execution: Attendance upsert, null deletion, and start_classroom_session RPC
-            // All operations target disjoint records / independent tables and can safely run in parallel!
+            const existingStudentIds = new Set((existingRows || []).map(r => r.student_id));
+
+            // Only insert initial attendance for students who do not already have an attendance record
+            const rowsToInsert = rowsToUpsert.filter(r => !existingStudentIds.has(r.student_id));
+
+            // Parallel execution: New attendance insert and start_classroom_session RPC
             const dbOps: Promise<any>[] = [];
 
-            if (rowsToUpsert.length > 0) {
+            if (rowsToInsert.length > 0) {
                 dbOps.push(
                     (async () => {
                         const { error } = await supabaseAuth
                             .from('attendance')
-                            .upsert(rowsToUpsert, { onConflict: 'student_id, classroom_id, date' });
-                        if (error) throw error;
-                    })()
-                );
-            }
-
-            if (nullStudentIds.length > 0) {
-                dbOps.push(
-                    (async () => {
-                        const { error } = await supabaseAuth
-                            .from('attendance')
-                            .delete()
-                            .in('student_id', nullStudentIds)
-                            .eq('classroom_id', classroomId)
-                            .eq('date', sessionDate);
+                            .insert(rowsToInsert);
                         if (error) throw error;
                     })()
                 );

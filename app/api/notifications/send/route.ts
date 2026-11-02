@@ -2,32 +2,19 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
 import { htmlToPlainText } from '../../../../src/lib/text-utils';
-import fs from 'fs';
-import path from 'path';
+import { assertNotProductionUrl } from '../../../../src/lib/production-guard';
 
-// Fallback env reader to robustly handle server environment loading and avoid server restart issues
 function getEnvVariable(key: string): string {
-    if (process.env[key]) return process.env[key]!;
-    try {
-        const envPath = path.join(process.cwd(), '.env');
-        if (fs.existsSync(envPath)) {
-            const content = fs.readFileSync(envPath, 'utf8');
-            const lines = content.split('\n');
-            for (const line of lines) {
-                const parts = line.split('=');
-                if (parts[0]?.trim() === key) {
-                    return parts.slice(1).join('=').trim();
-                }
-            }
-        }
-    } catch (e) {
-        console.error('Error reading fallback env:', e);
-    }
-    return '';
+    return process.env[key] || '';
 }
 
 const supabaseAuthUrl = getEnvVariable('NEXT_PUBLIC_AUTH_SUPABASE_URL');
 const supabaseAuthAnonKey = getEnvVariable('NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY');
+
+// Fail-closed production check for staging / test execution
+if (process.env.BLOCK_PRODUCTION === 'true' || process.env.KFA_TARGET_ENV === 'staging') {
+    assertNotProductionUrl(supabaseAuthUrl, 'notifications/send endpoint startup');
+}
 
 // Set VAPID keys for direct web push delivery
 const vapidPublicKey = getEnvVariable('NEXT_PUBLIC_VAPID_PUBLIC_KEY');

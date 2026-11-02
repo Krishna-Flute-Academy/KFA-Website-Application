@@ -410,6 +410,8 @@ export default function RoleAllocationDashboard() {
         setSavingAllocation(true);
         try {
             const isStudent = allocatedRole === 'student';
+            const wasStudent = selectedUser.role === 'student';
+            const initialCredits = isStudent && !wasStudent ? (Number(feesClassesPaid) || 0) : null;
             
             const updatePayload: any = {
                 role: allocatedRole,
@@ -419,10 +421,14 @@ export default function RoleAllocationDashboard() {
                 teacher_id: isStudent ? (selectedTeacherId || null) : null,
                 fees_basis: isStudent ? feesBasis : null,
                 fees_amount: isStudent ? (Number(feesAmount) || 0) : null,
-                fees_classes_paid: isStudent ? (Number(feesClassesPaid) || 0) : null,
                 fees_collection_date: isStudent ? (feesCollectionDate ? Number(feesCollectionDate) : null) : null,
                 join_date: isStudent ? joinDate : null
             };
+
+            // If user is newly allocated as student, initialize balance to 0 (credits granted through payment RPC)
+            if (isStudent && !wasStudent) {
+                updatePayload.fees_classes_paid = 0;
+            }
 
             // 1. Update user record
             const { error: userError } = await supabaseAuth
@@ -431,6 +437,21 @@ export default function RoleAllocationDashboard() {
                 .eq('id', selectedUser.id);
 
             if (userError) throw userError;
+
+            // 1.5. If newly allocated student has onboarding credits, record auditable onboarding payment
+            if (isStudent && !wasStudent && initialCredits && initialCredits > 0) {
+                const onboardingKey = `onboard_role_${selectedUser.id}_${Date.now()}`;
+                await supabaseAuth.rpc('record_fee_payment', {
+                    p_student_id: selectedUser.id,
+                    p_amount: Number(feesAmount) || 0,
+                    p_payment_date: joinDate || new Date().toISOString().split('T')[0],
+                    p_payment_method: 'UPI',
+                    p_classes_added: initialCredits,
+                    p_notes: 'Initial onboarding prepaid classes upon role allocation',
+                    p_idempotency_key: onboardingKey,
+                    p_status: 'approved'
+                });
+            }
 
             // 2. Manage Classroom assignment
             // Delete existing assignments first
@@ -1282,14 +1303,22 @@ export default function RoleAllocationDashboard() {
 
                                         {/* Classes Prepaid */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Prepaid Classes</label>
-                                            <input
-                                                required={allocatedRole === 'student'}
-                                                type="number"
-                                                value={feesClassesPaid}
-                                                onChange={e => setFeesClassesPaid(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
-                                            />
+                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
+                                                {selectedUser.role === 'student' ? 'Prepaid Credits (Current)' : 'Opening Prepaid Credits'}
+                                            </label>
+                                            {selectedUser.role === 'student' ? (
+                                                <div className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 select-none">
+                                                    {feesClassesPaid} classes (Managed via Fees & Payments)
+                                                </div>
+                                            ) : (
+                                                <input
+                                                    required={allocatedRole === 'student'}
+                                                    type="number"
+                                                    value={feesClassesPaid}
+                                                    onChange={e => setFeesClassesPaid(e.target.value)}
+                                                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
+                                                />
+                                            )}
                                         </div>
 
                                         {/* Collection Date */}

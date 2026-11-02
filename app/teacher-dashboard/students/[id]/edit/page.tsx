@@ -193,7 +193,6 @@ export default function EditStudentPage() {
                 updatePayload.fees_basis = formData.feesBasis;
                 updatePayload.fees_amount = Number(formData.feesAmount) || 0;
                 updatePayload.fees_collection_date = finalCollectionDate;
-                updatePayload.fees_classes_paid = Number(formData.feesClassesPaid) || 0;
                 updatePayload.teacher_id = formData.teacherId || null;
             }
 
@@ -498,16 +497,13 @@ export default function EditStudentPage() {
                                                     )}
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Prepaid Classes Balance</label>
-                                                    <input
-                                                        required
-                                                        disabled={!isAdmin}
-                                                        type="number"
-                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                                                        placeholder="e.g. 4"
-                                                        value={formData.feesClassesPaid}
-                                                        onChange={(e) => setFormData({ ...formData, feesClassesPaid: e.target.value })}
-                                                    />
+                                                    <label className="text-sm font-bold text-slate-700 block">Prepaid Credits (Current)</label>
+                                                    <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 select-none">
+                                                        {formData.feesClassesPaid} classes remaining
+                                                    </div>
+                                                    <p className="text-[11px] text-slate-400 font-medium">
+                                                        Prepaid credits are maintained automatically through Fees & Payments and Attendance.
+                                                    </p>
                                                 </div>
                                             </>
                                         )}

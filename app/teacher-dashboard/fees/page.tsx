@@ -3,13 +3,14 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, AlertCircle, ShieldCheck, Mail, History, Send, Check, Trash2, Download, FileSpreadsheet, TrendingUp, BarChart3 } from 'lucide-react';
+import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, AlertCircle, ShieldCheck, Mail, History, Send, Check, Trash2, Download, FileSpreadsheet, TrendingUp, BarChart3, Shield } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { getStudentFeeStatus, calculateClassesAdded, getStudentBillingCycle, calculateStudentFeeCycleMetrics, getStudentFeeCycleLedger, StudentFeeCycleMetrics, FeeCycleLedgerReport } from '../../../src/lib/fee-utils';
 import { isStudentOperationallyActive } from '../../../src/lib/student-lifecycle';
 import FeeCycleLedgerModal from '../../../src/components/teacher-dashboard/fees/FeeCycleLedgerModal';
 import { StudentAttendanceModal } from '../../../src/components/teacher-dashboard/attendance/StudentAttendanceModal';
+import HistoricalReconciliationReviewModal from '../../../src/components/teacher-dashboard/fees/HistoricalReconciliationReviewModal';
 import { exportFeesCSV } from '../../../src/lib/csv-export';
 
 interface StudentFeesData {
@@ -257,6 +258,7 @@ export default function FeesManagementDashboard() {
     const [ledgerLoading, setLedgerLoading] = useState(false);
     const [showFullAttendanceModal, setShowFullAttendanceModal] = useState(false);
     const [fullAttendanceStudent, setFullAttendanceStudent] = useState<{ id: string; name: string; avatar?: string } | null>(null);
+    const [showReconciliationModal, setShowReconciliationModal] = useState(false);
 
     // Payment Form State
     const [paymentAmount, setPaymentAmount] = useState('');
@@ -909,51 +911,31 @@ export default function FeesManagementDashboard() {
             const amt = Number(paymentAmount) || 0;
             const cls = Number(classesAdded) || 0;
 
-            // 1. If this student has a pending payment awaiting review, approve and reconcile that exact record.
-            //    Otherwise, insert a new confirmed payment with explicit status 'approved'.
+            // 1. Record Fee Payment via atomic database RPC
             if (pendingPaymentToReconcile) {
-                const { error: paymentError } = await supabaseAuth
-                    .from('fees_payments')
-                    .update({
-                        amount: amt,
-                        payment_date: paymentDate,
-                        payment_method: paymentMethod,
-                        classes_added: cls,
-                        notes: paymentNotes || null,
-                        status: 'approved'
-                    })
-                    .eq('id', pendingPaymentToReconcile.id);
+                const { error: paymentError } = await supabaseAuth.rpc('approve_fee_payment', {
+                    p_payment_id: pendingPaymentToReconcile.id,
+                    p_classes_added: cls
+                });
 
                 if (paymentError) throw paymentError;
             } else {
-                const { error: paymentError } = await supabaseAuth
-                    .from('fees_payments')
-                    .insert([{
-                        student_id: selectedStudent.id,
-                        amount: amt,
-                        payment_date: paymentDate,
-                        payment_method: paymentMethod,
-                        classes_added: cls,
-                        notes: paymentNotes || null,
-                        status: 'approved'
-                    }]);
+                const idempotencyKey = `pay-${selectedStudent.id}-${paymentDate}-${Date.now()}`;
+                const { error: paymentError } = await supabaseAuth.rpc('record_fee_payment', {
+                    p_student_id: selectedStudent.id,
+                    p_amount: amt,
+                    p_payment_date: paymentDate,
+                    p_payment_method: paymentMethod,
+                    p_classes_added: cls,
+                    p_notes: paymentNotes || null,
+                    p_idempotency_key: idempotencyKey,
+                    p_status: 'approved'
+                });
 
                 if (paymentError) throw paymentError;
             }
 
-            // 2. Update Student User classes balance (PRESERVE fees_amount standard fee)
-            // Strict arithmetic addition: payment adds credits directly to current balance (e.g. -1 + 4 = 3)
-            const newClassesPaid = (selectedStudent.fees_classes_paid || 0) + cls;
-            const { error: studentUpdateError } = await supabaseAuth
-                .from('users')
-                .update({
-                    fees_classes_paid: newClassesPaid
-                })
-                .eq('id', selectedStudent.id);
-
-            if (studentUpdateError) throw studentUpdateError;
-
-            // 3. Auto-mark previous fee due reminders as read for this student upon payment recording
+            // 2. Auto-mark previous fee due reminders as read for this student upon payment recording
             await supabaseAuth
                 .from('notifications')
                 .update({ is_read: true })
@@ -1219,28 +1201,13 @@ export default function FeesManagementDashboard() {
             const studentFeesBasis = student ? student.fees_basis : (selectedStudent?.fees_basis || basis || 'monthly');
             const classesToAdd = calculateClassesAdded(amount, studentFeesAmount, studentFeesBasis);
 
-            // Update payment status
-            const { error: paymentError } = await supabaseAuth
-                .from('fees_payments')
-                .update({ status: 'approved', classes_added: classesToAdd })
-                .eq('id', paymentId);
+            // Call atomic approval RPC
+            const { error: paymentError } = await supabaseAuth.rpc('approve_fee_payment', {
+                p_payment_id: paymentId,
+                p_classes_added: classesToAdd
+            });
             
             if (paymentError) throw paymentError;
-
-            // Update student balance
-            const currentClasses = student ? student.fees_classes_paid : (selectedStudent?.fees_classes_paid || 0);
-            const newClassesPaid = (currentClasses || 0) + classesToAdd;
-            
-            const { error: studentUpdateError } = await supabaseAuth
-                .from('users')
-                .update({ fees_classes_paid: newClassesPaid })
-                .eq('id', studentId);
-            
-            if (studentUpdateError) throw studentUpdateError;
-            
-            if (selectedStudent && selectedStudent.id === studentId) {
-                setSelectedStudent({ ...selectedStudent, fees_classes_paid: newClassesPaid });
-            }
 
             // Auto-mark previous fee due reminders as read for this student upon payment approval
             await supabaseAuth
@@ -1269,10 +1236,10 @@ export default function FeesManagementDashboard() {
                 .eq('id', paymentId)
                 .single();
 
-            const { error } = await supabaseAuth
-                .from('fees_payments')
-                .update({ status: 'rejected' })
-                .eq('id', paymentId);
+            const { error } = await supabaseAuth.rpc('reject_fee_payment', {
+                p_payment_id: paymentId,
+                p_reason: 'Payment marked not received by staff'
+            });
             
             if (error) throw error;
 
@@ -1298,46 +1265,34 @@ export default function FeesManagementDashboard() {
     const handleDeletePayment = async (pay: PaymentRecord) => {
         if (!selectedStudent) return;
 
-        const confirmMsg = `Are you sure you want to remove this fee payment record of ₹${pay.amount}? This will delete the payment record and deduct ${pay.classes_added || 0} classes from ${selectedStudent.name}'s balance.`;
-        if (!window.confirm(confirmMsg)) return;
+        const reason = window.prompt(`Please provide a reason to reverse/void this payment record of ₹${pay.amount}:`, 'Administrative reversal');
+        if (!reason || !reason.trim()) {
+            if (reason !== null) {
+                alert('A valid reason is required to void a payment.');
+            }
+            return;
+        }
 
         setIsDeletingPayment(pay.id);
         try {
-            // 1. Delete payment record from fees_payments
-            const { error: deleteError } = await supabaseAuth
-                .from('fees_payments')
-                .delete()
-                .eq('id', pay.id);
+            // Call atomic void RPC (safely reverses balance without clamping to zero and writes to audit log)
+            const { error: voidError } = await supabaseAuth.rpc('void_fee_payment', {
+                p_payment_id: pay.id,
+                p_reason: reason.trim()
+            });
 
-            if (deleteError) throw deleteError;
-
-            // 2. Adjust student balance in users table (deduct classes added by this payment)
-            const currentClasses = selectedStudent.fees_classes_paid || 0;
-            const classesToDeduct = pay.status === 'rejected' ? 0 : (pay.classes_added || 0);
-            const newClassesPaid = Math.max(0, currentClasses - classesToDeduct);
-
-            const { error: userUpdateError } = await supabaseAuth
-                .from('users')
-                .update({ fees_classes_paid: newClassesPaid })
-                .eq('id', selectedStudent.id);
-
-            if (userUpdateError) throw userUpdateError;
-
-            // 3. Update local state
-            setSelectedStudent(prev => prev ? { ...prev, fees_classes_paid: newClassesPaid } : null);
-            setStudentPayments(prev => prev.filter(p => p.id !== pay.id));
-            setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, fees_classes_paid: newClassesPaid } : s));
+            if (voidError) throw voidError;
 
             setAlertMessage({
                 type: 'success',
-                text: `Fee record (₹${pay.amount}) removed successfully and ${classesToDeduct} classes deducted.`
+                text: `Fee record (₹${pay.amount}) reversed successfully and credits adjusted.`
             });
 
-            // 4. Refresh global data
+            // Refresh global data
             fetchData();
         } catch (err: any) {
-            console.error('Error removing fee payment record:', err);
-            setAlertMessage({ type: 'error', text: `Failed to remove payment record: ${err.message || err}` });
+            console.error('Error voiding fee payment record:', err);
+            setAlertMessage({ type: 'error', text: `Failed to void payment record: ${err.message || err}` });
         } finally {
             setIsDeletingPayment(null);
         }
@@ -1398,6 +1353,16 @@ export default function FeesManagementDashboard() {
                                         <Download className="size-4" />
                                         <span>Export CSV Report</span>
                                     </button>
+                                    {process.env.NEXT_PUBLIC_ENABLE_HISTORICAL_RECONCILIATION_UI === 'true' && (
+                                        <button
+                                            onClick={() => setShowReconciliationModal(true)}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold rounded-xl text-xs shadow-sm transition-all cursor-pointer border border-amber-300 dark:border-amber-800 shrink-0"
+                                            title="Review Historical Balance Reconciliations"
+                                        >
+                                            <Shield className="size-4 text-amber-600 dark:text-amber-400" />
+                                            <span>Reconciliation Review</span>
+                                        </button>
+                                    )}
                                     {alertMessage && (
                                         <div className={`px-4 py-3 rounded-xl border text-sm font-semibold shadow-sm transition-all duration-300 animate-in fade-in slide-in-from-top-3 ${
                                             alertMessage.type === 'success' 
@@ -1893,10 +1858,10 @@ export default function FeesManagementDashboard() {
                                                 <th 
                                                     onClick={() => handleHeaderSort('fees_classes_paid')}
                                                     className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
-                                                    title="Click to sort by Prepaid Classes Left"
+                                                    title="Click to sort by Prepaid Credits Remaining"
                                                 >
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className={sortField === 'fees_classes_paid' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Prepaid Classes</span>
+                                                        <span className={sortField === 'fees_classes_paid' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Prepaid Credits</span>
                                                         <span className="text-xs">
                                                             {sortField === 'fees_classes_paid' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
                                                         </span>
@@ -1907,10 +1872,10 @@ export default function FeesManagementDashboard() {
                                                 <th 
                                                     onClick={() => handleHeaderSort('next_collection')}
                                                     className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
-                                                    title="Click to sort by Next Collection Date"
+                                                    title="Click to sort by Next Due Date"
                                                 >
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className={sortField === 'next_collection' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Next Collection</span>
+                                                        <span className={sortField === 'next_collection' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Next Due Date</span>
                                                         <span className="text-xs">
                                                             {sortField === 'next_collection' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
                                                         </span>
@@ -2821,6 +2786,12 @@ export default function FeesManagementDashboard() {
                 studentId={fullAttendanceStudent?.id || null}
                 initialStudentName={fullAttendanceStudent?.name}
                 initialProfilePicUrl={fullAttendanceStudent?.avatar}
+            />
+
+            {/* Historical Balance Reconciliation Review Modal (Phase 2B.2A) */}
+            <HistoricalReconciliationReviewModal
+                isOpen={showReconciliationModal}
+                onClose={() => setShowReconciliationModal(false)}
             />
         </div>
     );

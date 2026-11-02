@@ -925,9 +925,19 @@ export function calculateAuthoritativeFeeStatus(input: {
             continue;
         }
 
+        const ov = overrideByDate.get(physicalDate);
+
+        // Task D: Free Extra Class / Complimentary session consumes 0 credits
+        if (
+            (ov as any)?.credit_treatment === 'complimentary' || 
+            (att as any).credit_treatment === 'complimentary' ||
+            (ov as any)?.reason?.includes('[credit_treatment:complimentary]')
+        ) {
+            continue;
+        }
+
         // Attendance statuses that consume credit: present, late, absent
         if (status === 'present' || status === 'late' || status === 'absent') {
-            const ov = overrideByDate.get(physicalDate);
             let missedDate = ov?.missed_session_date;
             if (!missedDate && ov?.reason) {
                 const match = ov.reason.match(/\[MissedDate:([^\]]+)\]/);

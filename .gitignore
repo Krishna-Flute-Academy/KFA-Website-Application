@@ -34,6 +34,9 @@ out/
 
 # Scratch and test files
 scratch/
+backups/
+*.dump
+*.sql.gz
 test_upsert.cjs
 migration-backups/
 test-results/

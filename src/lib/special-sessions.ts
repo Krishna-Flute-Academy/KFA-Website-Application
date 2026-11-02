@@ -91,6 +91,13 @@ export async function createSpecialSession(
     if (!classDate) throw new Error('Session date is required.');
     if (!startTime || !endTime) throw new Error('Start and end times are required.');
     if (endTime <= startTime) throw new Error('End time must be after start time.');
+    if (purpose === 'makeup' && selectedStudents.length > 0) {
+        for (const sid of selectedStudents) {
+            if (!studentMissedDates || !studentMissedDates[sid]) {
+                throw new Error(`Original missed session date is required for each student assigned to a makeup session (missing for student ID: ${sid}).`);
+            }
+        }
+    }
 
     const creditTreatment = input.creditTreatment || getDefaultCreditTreatment(purpose);
     const finalDescription = serializeClassroomDescription(description || 'Special session', deliveryFormat, input.meetingLink);
@@ -319,18 +326,47 @@ export async function updateSpecialSession(
 
     // 3. Update student overrides if selectedStudents is provided
     if (input.selectedStudents !== undefined) {
-        const { error: delErr } = await supabaseClient
+        // Fetch existing session overrides to safely preserve completed/forfeited history
+        const { data: existingOverrides } = await supabaseClient
             .from('session_student_overrides')
-            .delete()
+            .select('id, student_id, booking_status')
             .eq('target_classroom_id', classroomId);
-        if (delErr) throw delErr;
 
-        if (input.selectedStudents.length > 0) {
+        const targetStudentSet = new Set(input.selectedStudents);
+        // Only cancel scheduled overrides for students who were removed; never delete completed or forfeited
+        for (const o of (existingOverrides || [])) {
+            if (!targetStudentSet.has(o.student_id) && o.booking_status === 'scheduled') {
+                try {
+                    await supabaseClient.rpc('cancel_makeup_session', {
+                        p_override_id: o.id,
+                        p_reason: 'Removed from special session participants'
+                    });
+                } catch (cErr) {
+                    await supabaseClient
+                        .from('session_student_overrides')
+                        .update({ booking_status: 'cancelled', reason: 'Removed from special session participants' })
+                        .eq('id', o.id);
+                }
+            }
+        }
+
+        const existingStudentIds = new Set((existingOverrides || []).map((o: any) => o.student_id));
+        const newStudentsToAdd = input.selectedStudents.filter(sid => !existingStudentIds.has(sid));
+
+        if (newStudentsToAdd.length > 0) {
             const purpose = input.purpose || 'makeup';
             const creditTreatment = input.creditTreatment || getDefaultCreditTreatment(purpose);
             const studentMissedDates = input.studentMissedDates || {};
 
-            const studentInserts = input.selectedStudents.map(studentId => {
+            if (purpose === 'makeup') {
+                for (const sid of newStudentsToAdd) {
+                    if (!studentMissedDates || !studentMissedDates[sid]) {
+                        throw new Error(`Original missed session date is required for each student assigned to a makeup session (missing for student ID: ${sid}).`);
+                    }
+                }
+            }
+
+            const studentInserts = newStudentsToAdd.map(studentId => {
                 const missedDate = studentMissedDates[studentId] || null;
                 const reason = purpose === 'makeup' && missedDate
                     ? `Special Session (Makeup for ${missedDate}) [MissedDate:${missedDate}][credit_treatment:${creditTreatment}][purpose:${purpose}]`

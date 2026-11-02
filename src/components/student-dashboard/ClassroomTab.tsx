@@ -144,6 +144,28 @@ export default function ClassroomTab({
             .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }, [broadcasts, classroom?.id]);
 
+    // Active classroom holidays state (BR-22 / BR-23)
+    const [classroomHolidays, setClassroomHolidays] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (!classroom?.id) return;
+        async function fetchHolidays() {
+            try {
+                const { data, error } = await supabaseAuth
+                    .from('classroom_holidays')
+                    .select('*')
+                    .eq('classroom_id', classroom.id)
+                    .eq('status', 'active');
+                if (!error && data) {
+                    setClassroomHolidays(data);
+                }
+            } catch (err) {
+                console.error('Error fetching classroom holidays:', err);
+            }
+        }
+        fetchHolidays();
+    }, [classroom?.id]);
+
     // Meeting details state & authorized joining
     const meetingInfo = useMemo(() => resolveClassroomMeetingInfo(classroom), [classroom]);
     const [isJoiningCall, setIsJoiningCall] = useState(false);
@@ -369,6 +391,8 @@ export default function ClassroomTab({
             makeups: any[];
             assignments: any[];
             fulfilledAlternative?: any;
+            holiday?: any;
+            alternativeHoliday?: any;
         }> = [];
 
         // Previous month fill-in
@@ -388,7 +412,9 @@ export default function ClassroomTab({
                 isToday: false,
                 schedules: [],
                 makeups: [],
-                assignments: matchedAssignments
+                assignments: matchedAssignments,
+                holiday: null,
+                alternativeHoliday: null
             });
         }
 
@@ -400,11 +426,15 @@ export default function ClassroomTab({
             const dateStr = getLocalYYYYMMDD(dateObj);
             const dayOfWeek = dateObj.getDay();
             
+            // Check holiday matching dateStr
+            const matchedHoliday = classroomHolidays.find(h => h.holiday_date === dateStr);
+            const matchedAlternativeHoliday = classroomHolidays.find(h => h.alternative_date === dateStr);
+
             // Check makeup session overrides matching dateStr
             const matchedMakeups = makeupSchedules.filter(o => o.override_date === dateStr);
 
-            // Check recurring batch schedules (schedules matching day_of_week) - only if no overrides exist for this day
-            const matchedSchedules = matchedMakeups.length === 0
+            // Check recurring batch schedules (schedules matching day_of_week) - only if no overrides or holidays exist for this day
+            const matchedSchedules = (matchedMakeups.length === 0 && !matchedHoliday)
                 ? batchSchedules.filter(s => s.day_of_week === dayOfWeek)
                 : [];
 
@@ -424,7 +454,9 @@ export default function ClassroomTab({
                 schedules: matchedSchedules,
                 makeups: matchedMakeups,
                 assignments: matchedAssignments,
-                fulfilledAlternative
+                fulfilledAlternative,
+                holiday: matchedHoliday || null,
+                alternativeHoliday: matchedAlternativeHoliday || null
             });
         }
 
@@ -447,12 +479,14 @@ export default function ClassroomTab({
                 schedules: [],
                 makeups: [],
                 assignments: matchedAssignments,
-                fulfilledAlternative: null
+                fulfilledAlternative: null,
+                holiday: null,
+                alternativeHoliday: null
             });
         }
 
         return days;
-    }, [currentDate, batchSchedules, makeupSchedules, assignments, attendance]);
+    }, [currentDate, batchSchedules, makeupSchedules, assignments, attendance, classroomHolidays]);
 
     const handlePrevMonth = () => {
         setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -708,7 +742,7 @@ export default function ClassroomTab({
                         {/* Calendar Grid Cells */}
                         <div className="grid grid-cols-7 gap-1 flex-1">
                             {calendarDays.map((cell, idx) => {
-                                const hasEvents = cell.schedules.length > 0 || cell.makeups.length > 0 || (cell.assignments && cell.assignments.length > 0);
+                                const hasEvents = cell.schedules.length > 0 || cell.makeups.length > 0 || (cell.assignments && cell.assignments.length > 0) || !!cell.holiday || !!cell.alternativeHoliday;
                                 const regularClass = cell.schedules[0];
                                 const makeupClass = cell.makeups[0];
                                 
@@ -718,6 +752,14 @@ export default function ClassroomTab({
                                 let cellBgAndBorder = 'border-slate-100 dark:border-slate-805 bg-white dark:bg-slate-900';
                                 if (!cell.isCurrentMonth) {
                                     cellBgAndBorder = 'bg-slate-50/50 dark:bg-slate-950/20 text-slate-400 opacity-40 border-slate-100 dark:border-slate-805';
+                                } else if (cell.holiday) {
+                                    cellBgAndBorder = (cell.holiday.holiday_type === 'with_alternative' || cell.holiday.holiday_type === 'alternative_scheduled')
+                                        ? 'border-purple-300 dark:border-purple-800 bg-purple-50/20 dark:bg-purple-950/20 shadow-xs'
+                                        : cell.holiday.holiday_type === 'alternative_pending'
+                                        ? 'border-indigo-300 dark:border-indigo-800 bg-indigo-50/20 dark:bg-indigo-950/20 shadow-xs'
+                                        : 'border-amber-300 dark:border-amber-800 bg-amber-50/20 dark:bg-amber-950/20 shadow-xs';
+                                } else if (cell.alternativeHoliday) {
+                                    cellBgAndBorder = 'border-blue-300 dark:border-blue-800 bg-blue-50/20 dark:bg-blue-950/20 shadow-xs';
                                 } else if (cell.makeups.length > 0) {
                                     cellBgAndBorder = 'border-emerald-500/30 dark:border-emerald-400/20 bg-emerald-500/[0.07] dark:bg-emerald-950/15 shadow-xs ring-1 ring-emerald-500/10';
                                 } else if (hasPendingAssignment) {
@@ -737,6 +779,38 @@ export default function ClassroomTab({
 
                                         {hasEvents && cell.isCurrentMonth && (
                                             <div className="space-y-1">
+                                                {cell.holiday && cell.holiday.holiday_type === 'no_alternative' && (
+                                                    <div 
+                                                        className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 truncate" 
+                                                        title={`Holiday — No Alternative. Original class cancelled; 0 credit deduction. (${cell.holiday.reason})`}
+                                                    >
+                                                        🏖️ Holiday (No Alt)
+                                                    </div>
+                                                )}
+                                                {cell.holiday && cell.holiday.holiday_type === 'alternative_pending' && (
+                                                    <div 
+                                                        className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 truncate" 
+                                                        title={`Holiday — Alternative Pending (replacement date to be announced). Original class cancelled; 0 credit deduction. (${cell.holiday.reason})`}
+                                                    >
+                                                        ⏳ Holiday (Alt Pending)
+                                                    </div>
+                                                )}
+                                                {cell.holiday && (cell.holiday.holiday_type === 'with_alternative' || cell.holiday.holiday_type === 'alternative_scheduled') && (
+                                                    <div 
+                                                        className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 truncate" 
+                                                        title={`Holiday — Alternative Scheduled on ${formatLocalDateStr(cell.holiday.alternative_date, false)}. Original class cancelled. (${cell.holiday.reason})`}
+                                                    >
+                                                        🏖️ Holiday (Alt: {formatLocalDateStr(cell.holiday.alternative_date, false)})
+                                                    </div>
+                                                )}
+                                                {cell.alternativeHoliday && (
+                                                    <div 
+                                                        className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30 truncate" 
+                                                        title={`Alternative Class on behalf of holiday on ${formatLocalDateStr(cell.alternativeHoliday.holiday_date, true)}. Normal credit deduction applies.`}
+                                                    >
+                                                        🔄 On Behalf Of {formatLocalDateStr(cell.alternativeHoliday.holiday_date, false)}
+                                                    </div>
+                                                )}
                                                 {cell.fulfilledAlternative && (
                                                     <div 
                                                         className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 truncate" 
@@ -745,7 +819,7 @@ export default function ClassroomTab({
                                                         ✓ Completed ({formatLocalDateStr(cell.fulfilledAlternative.actualDate)})
                                                     </div>
                                                 )}
-                                                {!cell.fulfilledAlternative && cell.schedules.map((regularClass, sIdx) => (
+                                                {!cell.fulfilledAlternative && !cell.holiday && cell.schedules.map((regularClass, sIdx) => (
                                                     <div key={`reg-${sIdx}`} className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 truncate" title={`Weekly Class: ${formatTime12hr(regularClass.start_time.slice(0, 5))}`}>
                                                         🏫 {formatTime12hr(regularClass.start_time.slice(0, 5))} Class
                                                     </div>

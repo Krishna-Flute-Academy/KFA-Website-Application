@@ -232,32 +232,19 @@ export async function scheduleMakeupInExistingClass(
     const reasonTag = `[MissedDate:${missedSessionDate}]`;
     const cleanReason = `${reasonTag} ${notes || 'Temporary makeup attendance'}`.trim();
 
-    // 4. Insert into session_student_overrides
-    const { data: override, error: insertError } = await supabaseClient
-        .from('session_student_overrides')
-        .insert([{
-            student_id: studentId,
-            target_classroom_id: targetClassroomId,
-            override_date: makeupDate,
-            missed_session_date: missedSessionDate,
-            credit_treatment: 'makeup',
-            reason: cleanReason
-        }])
-        .select(`
-            id,
-            student_id,
-            target_classroom_id,
-            override_date,
-            missed_session_date,
-            credit_treatment,
-            reason,
-            users!student_id(name, profile_pic_url, level)
-        `)
-        .single();
+    // 4. Use authoritative atomic book_makeup_session RPC
+    const { data: override, error: insertError } = await supabaseClient.rpc('book_makeup_session', {
+        p_student_id: studentId,
+        p_target_classroom_id: targetClassroomId,
+        p_override_date: makeupDate,
+        p_missed_session_date: missedSessionDate,
+        p_original_classroom_id: null,
+        p_notes: cleanReason
+    });
 
     if (insertError) {
-        if (insertError.code === '23505' || insertError.message?.includes('unique constraint')) {
-            throw new Error(`This student is already scheduled to attend ${classroom.name} on ${makeupDate}. Please choose a different date or classroom.`);
+        if (insertError.code === '23505' || insertError.message?.includes('unique constraint') || insertError.message?.includes('active booking already exists')) {
+            throw new Error(`This student already has an active makeup booking for missed class on ${missedSessionDate}.`);
         }
         throw insertError;
     }
@@ -365,26 +352,13 @@ export async function rescheduleMakeup(
     const reasonTag = missedSessionDate ? `[MissedDate:${missedSessionDate}]` : '';
     const cleanReason = `${reasonTag} ${notes || 'Rescheduled makeup session'}`.trim();
 
-    const { data: updated, error: updateError } = await supabaseClient
-        .from('session_student_overrides')
-        .update({
-            target_classroom_id: newTargetClassroomId,
-            override_date: newMakeupDate,
-            missed_session_date: missedSessionDate || null,
-            reason: cleanReason
-        })
-        .eq('id', overrideId)
-        .select(`
-            id,
-            student_id,
-            target_classroom_id,
-            override_date,
-            missed_session_date,
-            credit_treatment,
-            reason,
-            users!student_id(name, profile_pic_url, level)
-        `)
-        .single();
+    // Use authoritative atomic reschedule_makeup_session RPC
+    const { data: updated, error: updateError } = await supabaseClient.rpc('reschedule_makeup_session', {
+        p_override_id: overrideId,
+        p_new_target_classroom_id: newTargetClassroomId,
+        p_new_override_date: newMakeupDate,
+        p_notes: cleanReason
+    });
 
     if (updateError) throw updateError;
 
@@ -396,15 +370,17 @@ export async function rescheduleMakeup(
  */
 export async function cancelMakeup(
     supabaseClient: any,
-    overrideId: string
-): Promise<{ success: boolean }> {
+    overrideId: string,
+    reason?: string
+): Promise<{ success: boolean; override?: any }> {
     if (!overrideId) throw new Error('Override ID is required.');
 
-    const { error } = await supabaseClient
-        .from('session_student_overrides')
-        .delete()
-        .eq('id', overrideId);
+    // Use authoritative atomic cancel_makeup_session RPC to preserve auditable history
+    const { data: cancelledOverride, error } = await supabaseClient.rpc('cancel_makeup_session', {
+        p_override_id: overrideId,
+        p_reason: reason || 'Cancelled by staff'
+    });
 
     if (error) throw error;
-    return { success: true };
+    return { success: true, override: cancelledOverride };
 }

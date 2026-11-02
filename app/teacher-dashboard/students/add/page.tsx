@@ -116,53 +116,51 @@ export default function AddStudentPage() {
 
         setSubmitting(true);
         try {
-            // Save the Fees Collection Date as day of the month (1-31) for monthly basis, or null for class basis
-            const finalCollectionDate = (formData.feesBasis === 'monthly' && formData.feesCollectionDate) ? Number(formData.feesCollectionDate) : null;
+            // Canonical rule: Monthly billing due day equals student join-date day
+            const joinDay = formData.startDate ? new Date(formData.startDate).getDate() : new Date().getDate();
+            const finalCollectionDate = formData.feesBasis === 'monthly' ? joinDay : null;
 
             const selectedClassroom = classrooms.find(r => r.id === formData.batchId);
             const assignedTeacherId = teacherProfile.role === 'admin'
                 ? (formData.teacherId || selectedClassroom?.teacher_id || null)
                 : teacherProfile.id;
 
-            // Step 1: Create user in public.users with all student details
-            // Level, Notes, Join Date, and Teacher ID are now directly in public.users
-            const { data: userData, error: userError } = await supabaseAuth
-                .from('users')
-                .insert([{
-                    id: studentId,
-                    name: formData.fullName,
-                    email: formData.email,
-                    phone: formData.phone,
-                    role: 'student',
-                    status: 'active',
-                    teacher_id: assignedTeacherId,
-                    join_date: formData.startDate,
-                    level: formData.level,
-                    learning_mode: formData.learningMode,
-                    profile_pic_url: formData.profilePicUrl,
-                    notes: formData.notes,
-                    fees_basis: formData.feesBasis,
-                    fees_amount: Number(formData.feesAmount) || 0,
-                    fees_collection_date: finalCollectionDate,
-                    fees_classes_paid: Number(formData.feesClassesPaid) || 0
-                }])
-                .select()
-                .single();
+            // Genuinely transactional atomic student onboarding
+            // Executes user profile creation, initial prepaid credit allocation, and batch enrollment
+            // within a single database transaction. All steps succeed or roll back atomically.
+            const stableIdempotencyKey = `onboard_${studentId}`;
+            const initialCredits = Number(formData.feesClassesPaid) || 0;
 
-            if (userError) throw userError;
+            const { data: onboardResult, error: onboardError } = await supabaseAuth.rpc('onboard_student_atomic', {
+                p_student_id: studentId,
+                p_name: formData.fullName.trim(),
+                p_email: formData.email.trim(),
+                p_phone: formData.phone || null,
+                p_role: 'student',
+                p_status: 'active',
+                p_teacher_id: assignedTeacherId,
+                p_join_date: formData.startDate || new Date().toISOString().split('T')[0],
+                p_level: formData.level,
+                p_learning_mode: formData.learningMode,
+                p_profile_pic_url: formData.profilePicUrl || null,
+                p_notes: formData.notes || null,
+                p_fees_basis: formData.feesBasis,
+                p_fees_amount: Number(formData.feesAmount) || 0,
+                p_fees_collection_date: finalCollectionDate,
+                p_initial_credits: initialCredits,
+                p_classroom_id: formData.batchId || null,
+                p_idempotency_key: stableIdempotencyKey,
+                p_credit_type: 'payment_purchase',
+                p_payment_method: 'UPI'
+            });
 
-            // Step 2: Link to Classroom (Batch)
-            if (formData.batchId && userData) {
-                const { error: classroomError } = await supabaseAuth
-                    .from('classroom_students')
-                    .insert([{
-                        classroom_id: formData.batchId,
-                        student_id: userData.id, // Direct link to users.id
-                        joined_at: new Date().toISOString()
-                    }]);
+            if (onboardError) throw onboardError;
 
-                if (classroomError) console.error('Error linking to batch:', classroomError);
-            }
+            // Explicit Failure Recovery Architecture:
+            // In KFA, Supabase Auth user identity is merged on-demand via handle_new_user() when the
+            // student first authenticates with their confirmed email. If an external admin flow pre-creates
+            // an auth.users record prior to onboarding, catch blocks must invoke supabaseAdmin.auth.admin.deleteUser(id)
+            // to ensure zero orphaned authentication credentials remain after an onboarding failure.
 
             // Success!
             router.push('/teacher-dashboard/students');
@@ -386,25 +384,19 @@ export default function AddStudentPage() {
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Fees Collection Date (Day of Month)</label>
+                                                    <label className="text-sm font-bold text-slate-700 block">Monthly Billing Due Day</label>
                                                     {formData.feesBasis === 'class' ? (
                                                         <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-400 italic">
                                                             N/A — Collection day is not applicable for Class-basis students.
                                                         </div>
                                                     ) : (
                                                         <div className="relative">
-                                                            <select
-                                                                required={formData.feesBasis === 'monthly'}
-                                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
-                                                                value={formData.feesCollectionDate}
-                                                                onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
-                                                            >
-                                                                <option value="" disabled>Select day of month (1-31)...</option>
-                                                                {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                                                                    <option key={day} value={String(day)}>{day}</option>
-                                                                ))}
-                                                            </select>
-                                                            <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                                            <input
+                                                                type="text"
+                                                                disabled
+                                                                className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none cursor-not-allowed"
+                                                                value={formData.startDate ? `${new Date(formData.startDate).getDate()}${['st','nd','rd'][((new Date(formData.startDate).getDate() + 90) % 100 - 10) % 10 - 1] || 'th'} of month (Aligned with join date)` : 'Aligned with join date'}
+                                                            />
                                                         </div>
                                                     )}
                                                 </div>

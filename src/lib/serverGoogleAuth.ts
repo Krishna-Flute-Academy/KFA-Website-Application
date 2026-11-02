@@ -1,28 +1,10 @@
 import { JWT } from 'google-auth-library';
-import fs from 'fs';
-import path from 'path';
 
 /**
- * Safely reads an environment variable from process.env or local .env fallback
+ * Safely reads an environment variable from process.env
  */
 export function getEnvVariable(key: string): string {
-    if (process.env[key]) return process.env[key]!;
-    try {
-        const envPath = path.join(process.cwd(), '.env');
-        if (fs.existsSync(envPath)) {
-            const content = fs.readFileSync(envPath, 'utf8');
-            const lines = content.split('\n');
-            for (const line of lines) {
-                const parts = line.split('=');
-                if (parts[0]?.trim() === key) {
-                    return parts.slice(1).join('=').trim().replace(/^["']|["']$/g, '');
-                }
-            }
-        }
-    } catch (e) {
-        // Ignore fallback errors
-    }
-    return '';
+    return process.env[key] || '';
 }
 
 /**

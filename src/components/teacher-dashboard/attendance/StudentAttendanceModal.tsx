@@ -22,6 +22,7 @@ import {
 import { supabaseAuth } from '../../../lib/supabase-auth';
 import { getStudentFeeStatus, FeeStatusDetails, calculateAuthoritativeFeeStatus, AuthoritativeFeeStatus } from '../../../lib/fee-utils';
 import { isStudentPaused } from '../../../lib/student-lifecycle';
+import { HistoricalAttendanceCorrectionModal } from './HistoricalAttendanceCorrectionModal';
 
 export interface StudentAttendanceModalProps {
     isOpen: boolean;
@@ -140,6 +141,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
     const [completedMakeupsCount, setCompletedMakeupsCount] = useState(0);
     const [pendingMakeupsCount, setPendingMakeupsCount] = useState(0);
+    const [correctionTarget, setCorrectionTarget] = useState<AttendanceRecord | null>(null);
 
     // Preset Range Handlers
     const setThisMonth = () => {
@@ -488,7 +490,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
             </div>
         );
     } else if (studentProfile?.fees_basis === 'monthly') {
-        const collectionDay = Number(studentProfile.fees_collection_date) || 1;
+        const collectionDay = Number(studentProfile.fees_collection_date) || (studentProfile.join_date ? new Date(studentProfile.join_date).getDate() : 1);
         const ordinal = getOrdinalSuffix(collectionDay);
         const dayLabel = `${collectionDay}${ordinal} of every month`;
 
@@ -838,13 +840,25 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                                                     Makeup scheduled on {formatLocalDateStr(record.makeupDetails.missedScheduledDate, true)} in {record.makeupDetails.missedScheduledClass}
                                                 </p>
                                             )}
+
+                                            {/* Historical Attendance Correction Trigger */}
+                                            <div className="pt-1.5 flex justify-end">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCorrectionTarget(record)}
+                                                    className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs"
+                                                >
+                                                    <RotateCcw className="w-3 h-3 text-[#ecb613]" />
+                                                    Correct Attendance
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
 
                                 {/* Desktop Table */}
                                 <div className="hidden sm:block overflow-x-auto">
-                                    <table className="w-full text-left border-collapse min-w-[650px]">
+                                    <table className="w-full text-left border-collapse min-w-[720px]">
                                         <thead>
                                             <tr className="bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">
                                                 <th className="px-4 py-3">Date</th>
@@ -852,6 +866,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                                                 <th className="px-4 py-3">Type</th>
                                                 <th className="px-4 py-3">Status</th>
                                                 <th className="px-4 py-3">Makeup & Session Details</th>
+                                                <th className="px-4 py-3 text-right">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40 text-xs">
@@ -865,10 +880,10 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                                                            record.sessionType === 'guest_makeup'
-                                                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                                                : record.sessionType === 'special'
-                                                                ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                                                            record.sessionType === 'guest_makeup' 
+                                                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' 
+                                                                : record.sessionType === 'special' 
+                                                                ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400' 
                                                                 : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300'
                                                         }`}>
                                                             {record.sessionType === 'guest_makeup' 
@@ -920,6 +935,17 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                                                             </div>
                                                         )}
                                                     </td>
+                                                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setCorrectionTarget(record)}
+                                                            className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                                            title="Correct historical attendance with audit reason"
+                                                        >
+                                                            <RotateCcw className="w-3 h-3 text-[#ecb613]" />
+                                                            Correct
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -960,5 +986,28 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     );
 
     if (typeof document === 'undefined') return null;
-    return createPortal(modalContent, document.body);
+    return (
+        <>
+            {createPortal(modalContent, document.body)}
+            {correctionTarget && (
+                <HistoricalAttendanceCorrectionModal
+                    isOpen={!!correctionTarget}
+                    onClose={() => setCorrectionTarget(null)}
+                    onSuccess={() => {
+                        setCorrectionTarget(null);
+                        fetchData();
+                    }}
+                    record={{
+                        attendanceId: correctionTarget.id,
+                        studentId: studentId || '',
+                        studentName: studentProfile?.name || initialStudentName || 'Student',
+                        classroomId: correctionTarget.classroom_id,
+                        classroomName: correctionTarget.classroom_name,
+                        classDate: correctionTarget.date,
+                        currentStatus: correctionTarget.status
+                    }}
+                />
+            )}
+        </>
+    );
 };

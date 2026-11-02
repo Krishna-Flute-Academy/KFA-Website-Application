@@ -135,12 +135,17 @@ export async function POST(req: Request) {
             }, { status: 403 });
         }
 
-        // 6. Concurrently fetch student's payments, attendance, overrides, and leaves for authoritative status
-        const [paymentsRes, attendanceRes, overridesRes, leavesRes] = await Promise.all([
+        // 6. Concurrently fetch student's payments, attendance, overrides, leaves, and special access grants
+        const [paymentsRes, attendanceRes, overridesRes, leavesRes, grantsRes] = await Promise.all([
             supabase.from('fees_payments').select('*').eq('student_id', user.id),
             supabase.from('attendance').select('*').eq('student_id', user.id),
             supabase.from('session_student_overrides').select('*').eq('student_id', user.id),
-            supabase.from('leave_requests').select('*').eq('student_id', user.id).eq('status', 'approved')
+            supabase.from('leave_requests').select('*').eq('student_id', user.id).eq('status', 'approved'),
+            supabase.from('student_special_access_grants')
+                .select('*')
+                .eq('student_id', user.id)
+                .eq('classroom_id', classroomId)
+                .eq('status', 'active')
         ]);
 
         const authStatus = calculateAuthoritativeFeeStatus({
@@ -153,12 +158,32 @@ export async function POST(req: Request) {
             today: new Date()
         });
 
-        // 7. Check live class access eligibility based on financial standing
-        if (!authStatus.canJoinLiveClass) {
-            // Balance < 0: Restrict access with HTTP 403 and redact meeting link
+        // 7. Check special access authorizations for negative balance and overdue restrictions (Task A)
+        const activeGrants = grantsRes.data || [];
+        const hasAdvanceGrant = activeGrants.some(g => 
+            g.access_type === 'advance_credit' && 
+            (g.min_balance_limit ?? -2) <= authStatus.effectiveBalance
+        );
+        const hasOverdueGrant = activeGrants.some(g => g.access_type === 'overdue_access');
+
+        const isNegativeBalance = authStatus.effectiveBalance < 0;
+
+        // Check if billing due date has passed
+        let isPastDueDate = false;
+        if (student.fees_collection_date) {
+            const today = new Date();
+            const dueDay = Number(student.fees_collection_date);
+            const currentDay = today.getDate();
+            if (currentDay > dueDay) {
+                isPastDueDate = true;
+            }
+        }
+
+        // Hard floor: Balance < -2 is strictly prohibited
+        if (authStatus.effectiveBalance < -2) {
             return NextResponse.json({
                 canJoinLiveClass: false,
-                error: 'Your fee payment is pending. Please complete your fee payment to continue attending live classes.',
+                error: `Maximum advance credit limit (-2) exceeded. Current balance is ${authStatus.effectiveBalance}. Live class participation is blocked.`,
                 liveMeetingLink: null,
                 classroomName: classroom.name,
                 financialState: authStatus.financialState,
@@ -166,13 +191,44 @@ export async function POST(req: Request) {
             }, { status: 403 });
         }
 
-        // Balance >= 0: Authorized to join live class
+        // Evaluate access restrictions:
+        // Rule: Balance >= 0 is ALWAYS allowed (Balance > 0 is GOOD_STANDING; Balance = 0 is FEE_DUE)
+        // Access is blocked ONLY when balance is negative (< 0) unless authorized
+        let accessAllowed = true;
+        let restrictionReason = '';
+
+        if (isNegativeBalance) {
+            if (!hasAdvanceGrant && isPastDueDate && !hasOverdueGrant) {
+                accessAllowed = false;
+                restrictionReason = 'Both advance credit and overdue access authorizations are required.';
+            } else if (!hasAdvanceGrant) {
+                accessAllowed = false;
+                restrictionReason = 'Negative balance requires advance credit authorization.';
+            } else if (isPastDueDate && !hasOverdueGrant) {
+                accessAllowed = false;
+                restrictionReason = 'Overdue fee requires overdue access authorization.';
+            }
+        }
+
+        if (isNegativeBalance && !accessAllowed) {
+            return NextResponse.json({
+                canJoinLiveClass: false,
+                error: restrictionReason || 'Your fee payment is pending. Please complete your fee payment to continue attending live classes.',
+                liveMeetingLink: null,
+                classroomName: classroom.name,
+                financialState: authStatus.financialState,
+                effectiveBalance: authStatus.effectiveBalance
+            }, { status: 403 });
+        }
+
+        // Balance >= 0 or Special Access authorized
         return NextResponse.json({
             canJoinLiveClass: true,
             liveMeetingLink: effectiveLink,
             classroomName: classroom.name,
             financialState: authStatus.financialState,
-            effectiveBalance: authStatus.effectiveBalance
+            effectiveBalance: authStatus.effectiveBalance,
+            specialAccessGranted: isNegativeBalance && (hasAdvanceGrant || hasOverdueGrant)
         });
     } catch (err: any) {
         console.error('[live-access API] Error:', err);

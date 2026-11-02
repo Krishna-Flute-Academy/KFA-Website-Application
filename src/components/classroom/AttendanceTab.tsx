@@ -19,6 +19,11 @@ interface AttendanceTabProps {
     handleUnmarkClassroomAttendance?: (studentId: string) => Promise<void>;
     formatLocalDate: (dateStr: string) => Date;
     coveredAttendanceMap?: Record<string, CoveredAttendanceRecord>;
+    holidays?: any[];
+    onDeclareHoliday?: () => void;
+    onCancelHoliday?: (holiday: any) => void;
+    onViewHolidayAudit?: () => void;
+    onScheduleAlternative?: (holiday: any) => void;
 }
 
 export default function AttendanceTab({
@@ -31,8 +36,16 @@ export default function AttendanceTab({
     handleMarkClassroomAttendance,
     handleUnmarkClassroomAttendance,
     formatLocalDate,
-    coveredAttendanceMap = {}
+    coveredAttendanceMap = {},
+    holidays = [],
+    onDeclareHoliday,
+    onCancelHoliday,
+    onViewHolidayAudit,
+    onScheduleAlternative
 }: AttendanceTabProps) {
+    const activeHoliday = (holidays || []).find(h => h.holiday_date === attendanceDate && h.status === 'active');
+    const alternativeHoliday = (holidays || []).find(h => h.alternative_date === attendanceDate && h.status === 'active');
+
     const activeRecords = Object.values(attendanceRecords);
     const totalCount = activeAttendanceRoster.length;
 
@@ -99,7 +112,110 @@ export default function AttendanceTab({
                         Today
                     </button>
                 </div>
+
+                {/* Holiday Management Action Buttons */}
+                <div className="flex items-center gap-2 flex-wrap">
+                    {onDeclareHoliday && (
+                        <button
+                            type="button"
+                            onClick={onDeclareHoliday}
+                            className="px-3.5 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                        >
+                            🏖️ Declare Holiday
+                        </button>
+                    )}
+                    {onViewHolidayAudit && (
+                        <button
+                            type="button"
+                            onClick={onViewHolidayAudit}
+                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
+                        >
+                            📋 Holiday History
+                        </button>
+                    )}
+                </div>
             </div>
+
+            {/* Active Holiday Banner (BR-22 / BR-23) */}
+            {activeHoliday && (
+                <div className="p-4 rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50/90 dark:bg-amber-950/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 dark:text-amber-200 shadow-sm">
+                    <div className="flex items-start sm:items-center gap-3">
+                        <span className="text-2xl flex-shrink-0">
+                            {activeHoliday.holiday_type === 'alternative_pending' ? '⏳' : '🏖️'}
+                        </span>
+                        <div>
+                            <h4 className="font-bold text-sm text-amber-950 dark:text-amber-100 flex items-center gap-2 flex-wrap">
+                                {activeHoliday.holiday_type === 'alternative_pending' ? (
+                                    <span>Declared Holiday — Alternative Pending</span>
+                                ) : activeHoliday.holiday_type === 'alternative_scheduled' || activeHoliday.holiday_type === 'with_alternative' ? (
+                                    <span>Declared Holiday — Alternative Scheduled for {activeHoliday.alternative_date}</span>
+                                ) : (
+                                    <span>Declared Holiday — No Alternative Class</span>
+                                )}
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 uppercase tracking-wider">
+                                    0 Credit Deduction
+                                </span>
+                            </h4>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                                Reason: <strong>{activeHoliday.reason}</strong>. Original session is cancelled; attendance recording is disabled.
+                                {activeHoliday.holiday_type === 'alternative_pending' && (
+                                    <span className="font-medium text-amber-800 dark:text-amber-300"> Replacement date and time pending confirmation.</span>
+                                )}
+                                {(activeHoliday.holiday_type === 'alternative_scheduled' || activeHoliday.holiday_type === 'with_alternative') && activeHoliday.alternative_date && (
+                                    <span> Replacement class will be conducted on {activeHoliday.alternative_date}{activeHoliday.alternative_start_time ? ` at ${activeHoliday.alternative_start_time.slice(0, 5)}` : ''}.</span>
+                                )}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        {onScheduleAlternative && activeHoliday.holiday_type === 'alternative_pending' && (
+                            <button
+                                type="button"
+                                onClick={() => onScheduleAlternative(activeHoliday)}
+                                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
+                            >
+                                📅 Schedule Alternative
+                            </button>
+                        )}
+                        {onScheduleAlternative && (activeHoliday.holiday_type === 'alternative_scheduled' || activeHoliday.holiday_type === 'with_alternative') && (
+                            <button
+                                type="button"
+                                onClick={() => onScheduleAlternative(activeHoliday)}
+                                className="px-3.5 py-1.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-700 hover:bg-blue-100 text-blue-900 dark:text-blue-200 text-xs font-semibold rounded-xl transition-colors shadow-xs cursor-pointer"
+                            >
+                                ✏️ Reschedule
+                            </button>
+                        )}
+                        {onCancelHoliday && (
+                            <button
+                                type="button"
+                                onClick={() => onCancelHoliday(activeHoliday)}
+                                className="px-3.5 py-1.5 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-950 dark:text-amber-200 text-xs font-semibold rounded-xl transition-colors shadow-xs cursor-pointer"
+                            >
+                                Cancel Holiday
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Alternative Session Banner (BR-22 / BR-26) */}
+            {alternativeHoliday && (
+                <div className="p-4 rounded-2xl border border-blue-300 dark:border-blue-800 bg-blue-50/90 dark:bg-blue-950/40 flex items-center gap-3 text-blue-900 dark:text-blue-200 shadow-sm">
+                    <span className="text-2xl flex-shrink-0">🔄</span>
+                    <div>
+                        <h4 className="font-bold text-sm text-blue-950 dark:text-blue-100 flex items-center gap-2">
+                            <span>Alternative Session (On Behalf Of {alternativeHoliday.holiday_date})</span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-200/80 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200 uppercase tracking-wider">
+                                1 Credit Consumed
+                            </span>
+                        </h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                            This replacement session fulfills the cancelled class for {alternativeHoliday.holiday_date} ({alternativeHoliday.reason}). Regular attendance credit deduction rules apply.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Summary Statistics */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -229,16 +345,16 @@ export default function AttendanceTab({
                                             return (
                                                 <button
                                                     key={opt.key}
-                                                    disabled={isSaving || isCoveredLocked}
-                                                    title={isCoveredLocked ? `Attendance covered on ${coveredInfo.actualDate}` : (isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`)}
+                                                    disabled={isSaving || isCoveredLocked || !!activeHoliday}
+                                                    title={activeHoliday ? `Attendance recording disabled for declared holiday (${activeHoliday.reason})` : (isCoveredLocked ? `Attendance covered on ${coveredInfo.actualDate}` : (isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`))}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        if (isCoveredLocked) return;
+                                                        if (isCoveredLocked || activeHoliday) return;
                                                         handleMarkClassroomAttendance(student.student_id, opt.key);
                                                     }}
                                                     onDoubleClick={(e) => {
                                                         e.stopPropagation();
-                                                        if (isCoveredLocked) return;
+                                                        if (isCoveredLocked || activeHoliday) return;
                                                         if (handleUnmarkClassroomAttendance) {
                                                             handleUnmarkClassroomAttendance(student.student_id);
                                                         } else {

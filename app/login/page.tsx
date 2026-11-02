@@ -259,6 +259,7 @@ function LoginContent() {
 
                             <button
                                 id="email-signin-btn"
+                                type="submit"
                                 disabled={loading || googleLoading}
                                 className="w-full h-11 bg-[#a15912] text-white font-bold rounded-xl shadow-lg shadow-[#a15912]/20 hover:bg-[#8a4b0f] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed"
                             >

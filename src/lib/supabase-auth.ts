@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { assertNotProductionUrl, assertStrictStagingUrl } from './production-guard';
 
 // Initialize the secondary Supabase client designed ONLY for authentication.
 // You must set these variables in your .env or .env.local file:
@@ -7,6 +8,13 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseAuthUrl = process.env.NEXT_PUBLIC_AUTH_SUPABASE_URL || '';
 const supabaseAuthAnonKey = process.env.NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY || '';
+
+if (process.env.BLOCK_PRODUCTION === 'true') {
+    assertNotProductionUrl(supabaseAuthUrl, 'supabase-auth.ts initialization');
+}
+if (process.env.KFA_TARGET_ENV === 'staging') {
+    assertStrictStagingUrl(supabaseAuthUrl, 'supabase-auth.ts staging mode');
+}
 
 if (typeof window !== 'undefined' && (!supabaseAuthUrl || !supabaseAuthAnonKey)) {
     console.warn('Missing Auth Supabase URL or Anon Key. Authentication will not work.');
