@@ -237,7 +237,11 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
             }
         } catch (err: any) {
             console.error('Error arranging makeup:', err);
-            setErrorMessage(err.message || 'Failed to arrange makeup session.');
+            const rawMsg = err.message || 'Failed to arrange makeup session.';
+            const userMsg = student?.name && student?.id && rawMsg.includes(student.id)
+                ? rawMsg.replaceAll(student.id, student.name)
+                : rawMsg;
+            setErrorMessage(userMsg);
         } finally {
             setIsSubmitting(false);
         }

@@ -89,10 +89,11 @@ function parseSlotNumber(name: string): number {
 
 function parseTimeFromName(name: string): string | null {
     if (!name) return null;
-    const match = name.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    const match = name.match(/(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)/i);
     if (!match) return null;
     let hours = parseInt(match[1], 10);
     const minutes = parseInt(match[2] || '0', 10);
+    if (hours < 1 || hours > 12 || minutes < 0 || minutes >= 60) return null;
     const ampm = match[3].toLowerCase();
     if (ampm === 'pm' && hours < 12) hours += 12;
     if (ampm === 'am' && hours === 12) hours = 0;
@@ -164,6 +165,16 @@ export default function ClassroomsPage() {
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     const [tempClassrooms, setTempClassrooms] = useState<Classroom[]>([]);
     const [activeView, setActiveView] = useState<'today' | 'permanent' | 'temporary' | 'all' | 'inactive'>('today');
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const v = params.get('view') || params.get('tab');
+            if (v === 'temporary' || v === 'permanent' || v === 'today' || v === 'all' || v === 'inactive') {
+                setActiveView(v);
+            }
+        }
+    }, []);
     const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
     const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [viewDate, setViewDate] = useState(new Date());
@@ -314,11 +325,25 @@ export default function ClassroomsPage() {
     const [recycleBin, setRecycleBin] = useState<DeletedClassroomItem[]>([]);
     const [showRecycleBin, setShowRecycleBin] = useState(false);
 
+    const deduplicateRecycleBin = (bin: DeletedClassroomItem[]): DeletedClassroomItem[] => {
+        const seen = new Set<string>();
+        const unique: DeletedClassroomItem[] = [];
+        for (const item of bin) {
+            if (!item || !item.id || seen.has(item.id)) continue;
+            seen.add(item.id);
+            unique.push(item);
+        }
+        return unique;
+    };
+
     useEffect(() => {
         const savedBin = localStorage.getItem('classrooms_recycle_bin');
         if (savedBin) {
             try {
-                setRecycleBin(JSON.parse(savedBin));
+                const parsed = JSON.parse(savedBin);
+                const clean = Array.isArray(parsed) ? deduplicateRecycleBin(parsed) : [];
+                setRecycleBin(clean);
+                localStorage.setItem('classrooms_recycle_bin', JSON.stringify(clean));
             } catch (e) {
                 console.error(e);
             }
@@ -326,8 +351,9 @@ export default function ClassroomsPage() {
     }, []);
 
     const saveRecycleBin = (bin: DeletedClassroomItem[]) => {
-        setRecycleBin(bin);
-        localStorage.setItem('classrooms_recycle_bin', JSON.stringify(bin));
+        const clean = deduplicateRecycleBin(bin);
+        setRecycleBin(clean);
+        localStorage.setItem('classrooms_recycle_bin', JSON.stringify(clean));
     };
 
     const handleDeleteClassroom = async (room: any) => {
@@ -599,18 +625,43 @@ export default function ClassroomsPage() {
 
     const handleRestoreClassroom = async (item: DeletedClassroomItem) => {
         try {
-            const table = item.type === 'permanent' ? 'classrooms' : 'temporary_classes';
-            const { error } = await supabaseAuth
-                .from(table)
-                .insert([item.classroom]);
+            if (item.type === 'permanent') {
+                const payload = { ...item.classroom, status: 'active' };
+                const { error } = await supabaseAuth
+                    .from('classrooms')
+                    .upsert([payload]);
 
-            if (error) {
-                console.error("Supabase restore error:", error);
-                setToast({
-                    type: 'error',
-                    message: `Failed to restore classroom: ${error.message}`
-                });
-                return;
+                if (error) {
+                    console.error("Supabase restore error:", error);
+                    setToast({
+                        type: 'error',
+                        message: `Failed to restore classroom: ${error.message}`
+                    });
+                    return;
+                }
+            } else {
+                const tempPayload = {
+                    ...item.classroom,
+                    lifecycle_status: 'scheduled'
+                };
+                if (tempPayload.classroom_id) {
+                    await supabaseAuth
+                        .from('classrooms')
+                        .update({ status: 'active' })
+                        .eq('id', tempPayload.classroom_id);
+                }
+                const { error } = await supabaseAuth
+                    .from('temporary_classes')
+                    .upsert([tempPayload]);
+
+                if (error) {
+                    console.error("Supabase restore error:", error);
+                    setToast({
+                        type: 'error',
+                        message: `Failed to restore special session: ${error.message}`
+                    });
+                    return;
+                }
             }
 
             // Remove from local recycle bin state & local storage
@@ -633,15 +684,52 @@ export default function ClassroomsPage() {
         }
     };
 
-    const handlePermanentDeleteClassroom = (itemId: string) => {
-        if (!window.confirm("Are you sure you want to permanently delete this classroom from the Recycle Bin? This action is permanent and cannot be undone.")) return;
-        const updatedBin = recycleBin.filter(b => b.id !== itemId);
-        saveRecycleBin(updatedBin);
+    const permanentlyDeleteBinItemsFromDb = async (items: DeletedClassroomItem[]) => {
+        const tempItems = items.filter(i => i.type === 'temporary');
+        const tempIds = tempItems.map(i => i.id).filter(Boolean);
+        const shadowIds = tempItems
+            .map(i => i.classroom?.classroom_id)
+            .filter(Boolean);
+
+        try {
+            if (shadowIds.length > 0) {
+                await supabaseAuth
+                    .from('session_student_overrides')
+                    .delete()
+                    .in('target_classroom_id', shadowIds);
+            }
+            if (tempIds.length > 0) {
+                await supabaseAuth
+                    .from('temporary_classes')
+                    .delete()
+                    .in('id', tempIds);
+            }
+            if (shadowIds.length > 0) {
+                await supabaseAuth
+                    .from('classrooms')
+                    .delete()
+                    .in('id', shadowIds);
+            }
+        } catch (err) {
+            console.error('Error cleaning up deleted temporary classes in DB:', err);
+        }
     };
 
-    const handleClearRecycleBin = () => {
+    const handlePermanentDeleteClassroom = async (itemId: string) => {
+        if (!window.confirm("Are you sure you want to permanently delete this classroom from the Recycle Bin? This action is permanent and cannot be undone.")) return;
+        const targetItems = recycleBin.filter(b => b.id === itemId);
+        const updatedBin = recycleBin.filter(b => b.id !== itemId);
+        saveRecycleBin(updatedBin);
+        await permanentlyDeleteBinItemsFromDb(targetItems);
+        await fetchData();
+    };
+
+    const handleClearRecycleBin = async () => {
         if (!window.confirm("Are you sure you want to empty the Recycle Bin? All deleted classrooms will be permanently lost.")) return;
+        const itemsToPurge = [...recycleBin];
         saveRecycleBin([]);
+        await permanentlyDeleteBinItemsFromDb(itemsToPurge);
+        await fetchData();
     };
 
     const fetchData = React.useCallback(async () => {
@@ -841,9 +929,19 @@ export default function ClassroomsPage() {
                 }
             });
 
-            const tempRoomsWithCounts = (tempRoomsData || []).map((room) => {
+            const activeTempRoomsData = (tempRoomsData || []).filter((room: any) => {
+                const lifecycle = (room.lifecycle_status || 'scheduled').toLowerCase();
+                if (lifecycle === 'cancelled') return false;
+                const shadowRoom = (roomsData || []).find(c => c.id === room.classroom_id);
+                const shadowStatus = (shadowRoom?.status || 'active').toLowerCase();
+                if ((shadowStatus === 'archived' || shadowStatus === 'inactive') && lifecycle !== 'completed') {
+                    return false;
+                }
+                return true;
+            });
+
+            const tempRoomsWithCounts = activeTempRoomsData.map((room) => {
                 const tStudents = tempStudentMap[room.id] || tempStudentMap[room.classroom_id] || [];
-                const isCancelled = room.lifecycle_status === 'cancelled';
                 const shadowRoom = (roomsData || []).find(c => c.id === room.classroom_id);
                 return {
                     id: room.id,
@@ -857,10 +955,7 @@ export default function ClassroomsPage() {
                     teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
                     students: tStudents,
                     student_count: tStudents.length,
-                    status: (() => {
-                        if (isCancelled) return 'Archived';
-                        return shadowRoom ? (shadowRoom.status || 'Active') : 'Active';
-                    })(),
+                    status: shadowRoom ? (shadowRoom.status || 'Active') : 'Active',
                     class_date: room.class_date,
                     classroom_id: room.classroom_id,
                     start_time: room.start_time,
@@ -903,7 +998,11 @@ export default function ClassroomsPage() {
             if (cached) {
                 const data = JSON.parse(cached);
                 if (data.classrooms) setClassrooms(data.classrooms);
-                if (data.tempClassrooms) setTempClassrooms(data.tempClassrooms);
+                if (data.tempClassrooms) {
+                    setTempClassrooms(
+                        data.tempClassrooms.filter((t: any) => (t.lifecycle_status || 'scheduled').toLowerCase() !== 'cancelled')
+                    );
+                }
                 if (data.rawSchedules) setRawSchedules(data.rawSchedules);
                 if (data.teacherProfile) setTeacherProfile(data.teacherProfile);
                 setLoading(false);
@@ -1288,7 +1387,7 @@ export default function ClassroomsPage() {
                                     <span className="material-symbols-outlined text-lg shrink-0">delete_sweep</span>
                                     <span className="hidden sm:inline">Recycle Bin ({recycleBin.length})</span>
                                 </button>
-                                <Link href="/teacher-dashboard/classrooms/add">
+                                <Link href={activeView === 'temporary' ? '/teacher-dashboard/classrooms/add?type=temporary' : '/teacher-dashboard/classrooms/add'}>
                                     <button className="admin-btn admin-btn-primary" title="Configure New Class">
                                         <PlusCircle className="size-4 sm:size-5 shrink-0" />
                                         <span className="hidden sm:inline">Configure New Class</span>
@@ -2587,15 +2686,15 @@ export default function ClassroomsPage() {
                         </div>
                         <div className="p-6 max-h-[400px] overflow-y-auto space-y-3">
                             {recycleBin.length === 0 ? (
-                                <div className="text-center py-12 text-slate-400">
+                                <div key="empty-recycle-bin" className="text-center py-12 text-slate-400">
                                     <span className="material-symbols-outlined text-5xl mb-2 text-slate-300 dark:text-slate-700">delete_outline</span>
                                     <p className="text-sm font-semibold">Your recycle bin is empty.</p>
                                     <p className="text-xs text-slate-400 mt-1">Deleted classrooms will show up here to be restored if needed.</p>
                                 </div>
                             ) : (
-                                <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {recycleBin.map((item) => (
-                                        <div key={item.id} className="py-3 flex items-center justify-between gap-4">
+                                <div key="populated-recycle-bin" className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {recycleBin.map((item, idx) => (
+                                        <div key={`${item.id}-${idx}`} className="py-3 flex items-center justify-between gap-4">
                                             <div className="min-w-0">
                                                 <p className="font-bold text-slate-900 dark:text-white truncate">{item.name}</p>
                                                 <p className="text-xs text-slate-450 mt-0.5">

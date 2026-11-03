@@ -58,6 +58,8 @@ import {
 interface Classroom {
     id: string;
     name: string;
+    type?: string | null;
+    status?: string | null;
 }
 
 interface BatchSchedule {
@@ -75,6 +77,7 @@ interface TemporaryClass {
     class_date: string;
     start_time: string;
     end_time: string;
+    lifecycle_status?: string | null;
 }
 
 interface Student {
@@ -399,12 +402,20 @@ export default function AttendancePage() {
                 // 1. Fetch classrooms
                 const classesQuery = supabaseAuth
                     .from('classrooms')
-                    .select('id, name');
+                    .select('id, name, type, status');
                 const { data: classesData } = isAdmin
                     ? await classesQuery
                     : await classesQuery.eq('teacher_id', session.user.id);
                 
-                const loadedClassrooms = classesData || [];
+                const allClassroomsRaw = classesData || [];
+                const shadowRoomStatusById = new Map<string, string>(
+                    allClassroomsRaw.map(c => [c.id, (c.status || 'active').toLowerCase()])
+                );
+                const loadedClassrooms = allClassroomsRaw.filter(c => {
+                    const cType = (c.type || 'permanent').toLowerCase();
+                    const cStatus = (c.status || 'active').toLowerCase();
+                    return cType === 'permanent' && cStatus !== 'archived' && cStatus !== 'inactive';
+                });
                 setClassrooms(loadedClassrooms);
 
                 // 2. Fetch all batch schedules in parallel (ordered by time ascending)
@@ -429,7 +440,17 @@ export default function AttendancePage() {
                     ? await tempClassesQuery
                     : await tempClassesQuery.eq('teacher_id', session.user.id);
                 
-                const loadedTempClasses = tempClassesData || [];
+                const loadedTempClasses = (tempClassesData || []).filter(tc => {
+                    const lifecycle = (tc.lifecycle_status || 'scheduled').toLowerCase();
+                    if (lifecycle === 'cancelled') return false;
+                    if (tc.classroom_id) {
+                        const shadowStatus = shadowRoomStatusById.get(tc.classroom_id);
+                        if ((shadowStatus === 'archived' || shadowStatus === 'inactive') && lifecycle !== 'completed') {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
                 setTemporaryClasses(loadedTempClasses);
 
                 // Validate expandedBatchId from URL
@@ -483,6 +504,9 @@ export default function AttendancePage() {
 
         // 2. Include any classrooms whose title explicitly matches dayOfWeek even if schedule row is missing/mismatched
         classrooms.forEach(room => {
+            const roomType = (room.type || 'permanent').toLowerCase();
+            const roomStatus = (room.status || 'active').toLowerCase();
+            if (roomType !== 'permanent' || roomStatus === 'archived' || roomStatus === 'inactive') return;
             if (!processedRoomIds.has(room.id)) {
                 const parsed = parseDayAndStartFromClassroom(room);
                 if (parsed.dayOfWeek === dayOfWeek) {
@@ -502,7 +526,7 @@ export default function AttendancePage() {
         });
 
         const activeTemporary = temporaryClasses
-            .filter(tc => tc.class_date === selectedDate)
+            .filter(tc => tc.class_date === selectedDate && (tc.lifecycle_status || 'scheduled').toLowerCase() !== 'cancelled')
             .map(tc => ({
                 id: tc.classroom_id || tc.id,
                 name: tc.title || 'Temporary Session',
@@ -520,12 +544,19 @@ export default function AttendancePage() {
     const scheduledDatesSet = useMemo(() => {
         const scheduledDaysOfWeek = new Set(allSchedules.map(s => s.day_of_week));
         classrooms.forEach(c => {
+            const cType = (c.type || 'permanent').toLowerCase();
+            const cStatus = (c.status || 'active').toLowerCase();
+            if (cType !== 'permanent' || cStatus === 'archived' || cStatus === 'inactive') return;
             const parsed = parseDayAndStartFromClassroom(c);
             if (parsed.dayOfWeek !== 99) {
                 scheduledDaysOfWeek.add(parsed.dayOfWeek);
             }
         });
-        const tempDates = new Set(temporaryClasses.map(tc => tc.class_date));
+        const tempDates = new Set(
+            temporaryClasses
+                .filter(tc => (tc.lifecycle_status || 'scheduled').toLowerCase() !== 'cancelled')
+                .map(tc => tc.class_date)
+        );
         return { scheduledDaysOfWeek, tempDates };
     }, [allSchedules, classrooms, temporaryClasses]);
 
@@ -2333,7 +2364,9 @@ export default function AttendancePage() {
             });
 
             // 2. Process Temporary Classrooms
-            const activeTemps = temporaryClasses.filter((tc: any) => tc.class_date === dateStr);
+            const activeTemps = temporaryClasses.filter(
+                (tc: any) => tc.class_date === dateStr && (tc.lifecycle_status || 'scheduled').toLowerCase() !== 'cancelled'
+            );
             activeTemps.forEach((tc: any) => {
                 const targetRoomId = tc.classroom_id || tc.id;
                 const overrideStudents = (overridesData || [])

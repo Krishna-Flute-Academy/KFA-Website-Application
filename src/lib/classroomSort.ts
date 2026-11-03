@@ -48,16 +48,18 @@ export function parseDayAndStartFromClassroom(
         dayOfWeek = Number(classroom.day_of_week);
     }
 
-    // 4. Try parsing start time from classroom name first if explicit (e.g. "5:30 PM")
+    // 4. Try parsing start time from classroom name first if explicit (e.g. "5:30 PM" or "5.30 PM")
     if (nameStr) {
-        const timeMatch = nameStr.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
+        const timeMatch = nameStr.match(/(\d{1,2})(?:[:.](\d{2}))?\s*(AM|PM)/i);
         if (timeMatch) {
             let hours = parseInt(timeMatch[1], 10);
             const minutes = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
             const ampm = timeMatch[3].toUpperCase();
-            if (ampm === 'PM' && hours < 12) hours += 12;
-            if (ampm === 'AM' && hours === 12) hours = 0;
-            startTimeMinutes = hours * 60 + minutes;
+            if (hours >= 1 && hours <= 12 && minutes >= 0 && minutes < 60) {
+                if (ampm === 'PM' && hours < 12) hours += 12;
+                if (ampm === 'AM' && hours === 12) hours = 0;
+                startTimeMinutes = hours * 60 + minutes;
+            }
         }
     }
 

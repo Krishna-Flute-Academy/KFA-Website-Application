@@ -4,12 +4,14 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
 import { sendClassroomNotification } from '../../../../src/lib/notifications';
-import { Loader2, ArrowLeft, Search, UserPlus, Clock, Info, CheckCircle2, Video } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, UserPlus, Clock, Info, CheckCircle2, Video, X, Users } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { fetchAcademyTeachers } from '../../../../src/lib/teachers';
-import { createSpecialSession } from '../../../../src/lib/special-sessions';
+import { createSpecialSession, getDefaultCreditTreatment, SpecialSessionPurpose } from '../../../../src/lib/special-sessions';
 import { serializeClassroomDescription, isValidMeetingUrl } from '../../../../src/lib/meeting-utils';
+import { isStudentOperationallyActive } from '../../../../src/lib/student-lifecycle';
+import { sortClassroomsByDayAndTime } from '../../../../src/lib/classroomSort';
 
 interface Student {
     id: string;
@@ -17,6 +19,14 @@ interface Student {
     name: string;
     level: string;
     profile_pic_url?: string;
+    batchName?: string;
+}
+
+interface ExistingBatch {
+    id: string;
+    name: string;
+    teacher_id?: string | null;
+    studentIds: string[];
 }
 
 export default function CreateClassPage() {
@@ -26,6 +36,8 @@ export default function CreateClassPage() {
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
+    const [existingBatches, setExistingBatches] = useState<ExistingBatch[]>([]);
+    const [selectedBatchImportId, setSelectedBatchImportId] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
     const [studentMissedDates, setStudentMissedDates] = useState<Record<string, string>>({});
@@ -93,6 +105,14 @@ export default function CreateClassPage() {
     };
 
     useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const urlType = params.get('type');
+            if (urlType === 'temporary' || urlType === 'special') {
+                setFormData(prev => ({ ...prev, type: 'temporary' }));
+            }
+        }
+
         const fetchData = async () => {
             setLoading(true);
             try {
@@ -122,26 +142,80 @@ export default function CreateClassPage() {
                     setTeachers(teachersData);
                 }
 
-                // 4. Fetch Students directly from users table
-                const { data: studentsData, error: studentsError } = await supabaseAuth
-                    .from('users')
-                    .select(`
-                        id,
-                        name,
-                        level,
-                        profile_pic_url
-                    `)
-                    .or('role.eq.student,role.eq.pending,role.eq.mentor');
+                // 4. Fetch Students and existing Permanent Classrooms + Rosters
+                const [
+                    { data: studentsData, error: studentsError },
+                    { data: classroomsData },
+                    { data: rosterData }
+                ] = await Promise.all([
+                    supabaseAuth
+                        .from('users')
+                        .select(`
+                            id,
+                            name,
+                            level,
+                            status,
+                            profile_pic_url
+                        `)
+                        .or('role.eq.student,role.eq.pending,role.eq.mentor'),
+                    supabaseAuth
+                        .from('classrooms')
+                        .select('id, name, teacher_id, type, status'),
+                    supabaseAuth
+                        .from('classroom_students')
+                        .select('classroom_id, student_id')
+                ]);
 
                 if (studentsError) throw studentsError;
 
-                const formattedStudents = (studentsData || []).map((s: any) => ({
-                    id: s.id,
-                    user_id: s.id,
-                    name: s.name || 'Unknown Student',
-                    level: s.level || 'beginner',
-                    profile_pic_url: s.profile_pic_url
+                const activeStudentsRaw = (studentsData || []).filter((s: any) =>
+                    isStudentOperationallyActive(s.status)
+                );
+                const activeStudentIdSet = new Set(activeStudentsRaw.map((s: any) => s.id));
+
+                const activePermanentRooms = sortClassroomsByDayAndTime(
+                    (classroomsData || []).filter((c: any) => {
+                        const cType = (c.type || 'permanent').toLowerCase();
+                        const cStatus = (c.status || 'active').toLowerCase();
+                        return cType === 'permanent' && cStatus !== 'archived' && cStatus !== 'inactive';
+                    })
+                );
+
+                const roomIdsByStudent = new Map<string, string[]>();
+                const studentIdsByRoom = new Map<string, string[]>();
+                (rosterData || []).forEach((r: any) => {
+                    if (!activeStudentIdSet.has(r.student_id)) return;
+                    if (!studentIdsByRoom.has(r.classroom_id)) studentIdsByRoom.set(r.classroom_id, []);
+                    studentIdsByRoom.get(r.classroom_id)!.push(r.student_id);
+
+                    if (!roomIdsByStudent.has(r.student_id)) roomIdsByStudent.set(r.student_id, []);
+                    roomIdsByStudent.get(r.student_id)!.push(r.classroom_id);
+                });
+
+                const roomNameById = new Map<string, string>(
+                    activePermanentRooms.map((c: any) => [c.id, c.name])
+                );
+
+                const batchesList: ExistingBatch[] = activePermanentRooms.map((c: any) => ({
+                    id: c.id,
+                    name: c.name,
+                    teacher_id: c.teacher_id,
+                    studentIds: studentIdsByRoom.get(c.id) || []
                 }));
+                setExistingBatches(batchesList);
+
+                const formattedStudents: Student[] = activeStudentsRaw.map((s: any) => {
+                    const sRoomIds = roomIdsByStudent.get(s.id) || [];
+                    const batchNames = sRoomIds.map(rid => roomNameById.get(rid)).filter(Boolean);
+                    return {
+                        id: s.id,
+                        user_id: s.id,
+                        name: s.name || 'Unknown Student',
+                        level: s.level || 'beginner',
+                        profile_pic_url: s.profile_pic_url,
+                        batchName: batchNames.length > 0 ? batchNames.join(', ') : undefined
+                    };
+                });
 
                 setStudents(formattedStudents);
 
@@ -163,28 +237,48 @@ export default function CreateClassPage() {
         startTime: string,
         endTime: string
     ) => {
-        const { data: classrooms, error: classErr } = await supabaseAuth
+        const { data: classroomsRaw, error: classErr } = await supabaseAuth
             .from('classrooms')
-            .select('id, name')
+            .select('id, name, type, status')
             .eq('teacher_id', teacherId);
         
-        if (classErr || !classrooms || classrooms.length === 0) return null;
-        const classroomMap = new Map<string, string>(classrooms.map(c => [c.id, c.name]));
-        const classroomIds = classrooms.map(c => c.id);
+        if (classErr) return null;
+        const allTeacherRooms = classroomsRaw || [];
+        const shadowStatusById = new Map<string, string>(
+            allTeacherRooms.map((c: any) => [c.id, (c.status || 'active').toLowerCase()])
+        );
+        const activePermanentRooms = allTeacherRooms.filter((c: any) => {
+            const cType = (c.type || 'permanent').toLowerCase();
+            const cStatus = (c.status || 'active').toLowerCase();
+            return cType === 'permanent' && cStatus !== 'archived' && cStatus !== 'inactive';
+        });
+
+        const classroomMap = new Map<string, string>(allTeacherRooms.map((c: any) => [c.id, c.name]));
+        const permanentClassroomIds = activePermanentRooms.map((c: any) => c.id);
 
         const [schedRes, tempRes] = await Promise.all([
-            supabaseAuth
-                .from('batch_schedules')
-                .select('classroom_id, day_of_week, start_time, end_time')
-                .in('classroom_id', classroomIds),
+            permanentClassroomIds.length > 0
+                ? supabaseAuth
+                    .from('batch_schedules')
+                    .select('classroom_id, day_of_week, start_time, end_time')
+                    .in('classroom_id', permanentClassroomIds)
+                : Promise.resolve({ data: [] as any[] }),
             supabaseAuth
                 .from('temporary_classes')
-                .select('classroom_id, title, class_date, start_time, end_time')
+                .select('classroom_id, title, class_date, start_time, end_time, lifecycle_status')
                 .eq('teacher_id', teacherId)
         ]);
 
         const batchSchedules = schedRes.data || [];
-        const temporaryClasses = tempRes.data || [];
+        const temporaryClasses = (tempRes.data || []).filter((tc: any) => {
+            const lifecycle = (tc.lifecycle_status || 'scheduled').toLowerCase();
+            if (lifecycle === 'cancelled') return false;
+            if (tc.classroom_id) {
+                const shadowStatus = shadowStatusById.get(tc.classroom_id);
+                if (shadowStatus === 'archived' || shadowStatus === 'inactive') return false;
+            }
+            return true;
+        });
 
         const newStart = startTime.slice(0, 5);
         const newEnd = endTime.slice(0, 5);
@@ -194,10 +288,7 @@ export default function CreateClassPage() {
         };
 
         if (type === 'temporary') {
-            const targetDate = new Date(classDate);
-            const targetDow = targetDate.getDay();
-
-            // Check temporary classes on same date
+            // Check active temporary classes on the exact same date
             for (const tc of temporaryClasses) {
                 if (tc.class_date === classDate && checkOverlap(newStart, newEnd, tc.start_time, tc.end_time)) {
                     return {
@@ -205,18 +296,6 @@ export default function CreateClassPage() {
                         type: 'temporary',
                         dayOrDate: classDate,
                         time: `${tc.start_time.slice(0, 5)} - ${tc.end_time.slice(0, 5)}`
-                    };
-                }
-            }
-
-            // Check permanent classes on same day of week
-            for (const bs of batchSchedules) {
-                if (bs.day_of_week === targetDow && checkOverlap(newStart, newEnd, bs.start_time, bs.end_time)) {
-                    return {
-                        className: classroomMap.get(bs.classroom_id) || 'Permanent Class',
-                        type: 'permanent',
-                        dayOrDate: DAY_FULL[targetDow],
-                        time: `${bs.start_time.slice(0, 5)} - ${bs.end_time.slice(0, 5)}`
                     };
                 }
             }
@@ -230,19 +309,6 @@ export default function CreateClassPage() {
                             type: 'permanent',
                             dayOrDate: DAY_FULL[day],
                             time: `${bs.start_time.slice(0, 5)} - ${bs.end_time.slice(0, 5)}`
-                        };
-                    }
-                }
-
-                for (const tc of temporaryClasses) {
-                    const tcDate = new Date(tc.class_date);
-                    const tcDow = tcDate.getDay();
-                    if (tcDow === day && checkOverlap(newStart, newEnd, tc.start_time, tc.end_time)) {
-                        return {
-                            className: tc.title || classroomMap.get(tc.classroom_id) || 'Temporary Class',
-                            type: 'temporary',
-                            dayOrDate: `${DAY_FULL[day]} (${tc.class_date})`,
-                            time: `${tc.start_time.slice(0, 5)} - ${tc.end_time.slice(0, 5)}`
                         };
                     }
                 }
@@ -406,8 +472,11 @@ export default function CreateClassPage() {
                 });
             }
 
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('kfa_classrooms_cache');
+            }
             alert(`${formData.type === 'permanent' ? 'Permanent Class' : 'Special Session'} created successfully!`);
-            router.push('/teacher-dashboard/classrooms');
+            router.push(formData.type === 'temporary' ? '/teacher-dashboard/classrooms?view=temporary' : '/teacher-dashboard/classrooms');
 
         } catch (err: any) {
             const errStr = err?.message || err?.details || err?.hint || (typeof err === 'object' ? JSON.stringify(err) : String(err));
@@ -468,12 +537,76 @@ export default function CreateClassPage() {
                         <div className="lg:col-span-2 space-y-6">
                             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                                 <div className="grid grid-cols-1 gap-6">
+                                    {/* Class Type & Scheduling (Moved to Top for Clarity) */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Class Type</label>
+                                            <div className="flex gap-4">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, type: 'permanent' })}
+                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer ${formData.type === 'permanent' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                >
+                                                    Permanent Class
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, type: 'temporary' })}
+                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer ${formData.type === 'temporary' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                >
+                                                    Special Session
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {formData.type === 'permanent' ? (
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Schedule Days (Weekly)</label>
+                                                <div className="flex gap-1.5 flex-wrap">
+                                                    {DAY_LABELS.map((label, idx) => (
+                                                        <button
+                                                            key={idx}
+                                                            type="button"
+                                                            onClick={() => toggleDay(idx)}
+                                                            className={`px-3 py-2.5 rounded-lg text-xs font-bold transition-all ${formData.selectedDays.includes(idx) ? 'bg-[#ecb613] text-slate-900 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                                        >
+                                                            {label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Session Date (Single Day)</label>
+                                                <input
+                                                    value={formData.classDate}
+                                                    onChange={(e) => setFormData({ ...formData, classDate: e.target.value })}
+                                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
+                                                    type="date"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+
                                     {/* Class Name */}
                                     <div>
                                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Class Name</label>
                                         <input
                                             value={formData.name}
-                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                            onChange={(e) => {
+                                                const newName = e.target.value;
+                                                const lower = newName.toLowerCase();
+                                                const looksLikeSpecial =
+                                                    lower.includes('alternative') ||
+                                                    lower.includes('makeup') ||
+                                                    lower.includes('make up') ||
+                                                    lower.includes('special') ||
+                                                    lower.includes('reschedule');
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    name: newName,
+                                                    type: looksLikeSpecial ? 'temporary' : prev.type
+                                                }));
+                                            }}
                                             className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all"
                                             placeholder="e.g. Morning Raag Basics - Intermediate"
                                             type="text"
@@ -511,56 +644,6 @@ export default function CreateClassPage() {
                                         ></textarea>
                                     </div>
 
-                                    {/* Class Type & Scheduling */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div>
-                                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Class Type</label>
-                                            <div className="flex gap-4">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setFormData({ ...formData, type: 'permanent' })}
-                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer ${formData.type === 'permanent' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                                                >
-                                                    Permanent Class
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setFormData({ ...formData, type: 'temporary' })}
-                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer ${formData.type === 'temporary' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                                                >
-                                                    Special Session
-                                                </button>
-                                            </div>
-                                        </div>
-                                        {formData.type === 'permanent' ? (
-                                            <div>
-                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Schedule Days</label>
-                                                <div className="flex gap-1.5 flex-wrap">
-                                                    {DAY_LABELS.map((label, idx) => (
-                                                        <button
-                                                            key={idx}
-                                                            type="button"
-                                                            onClick={() => toggleDay(idx)}
-                                                            className={`px-3 py-2.5 rounded-lg text-xs font-bold transition-all ${formData.selectedDays.includes(idx) ? 'bg-[#ecb613] text-slate-900 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                                                        >
-                                                            {label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div>
-                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Session Date</label>
-                                                <input
-                                                    value={formData.classDate}
-                                                    onChange={(e) => setFormData({ ...formData, classDate: e.target.value })}
-                                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
-                                                    type="date"
-                                                />
-                                            </div>
-                                        )}
-                                    </div>
-
                                     {/* Special Session Options */}
                                     {formData.type === 'temporary' && (
                                         <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-4">
@@ -574,7 +657,14 @@ export default function CreateClassPage() {
                                                     </label>
                                                     <select
                                                         value={formData.purpose}
-                                                        onChange={(e) => setFormData({ ...formData, purpose: e.target.value as any })}
+                                                        onChange={(e) => {
+                                                            const nextPurpose = e.target.value as SpecialSessionPurpose;
+                                                            setFormData({
+                                                                ...formData,
+                                                                purpose: nextPurpose,
+                                                                creditTreatment: getDefaultCreditTreatment(nextPurpose)
+                                                            });
+                                                        }}
                                                         className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
                                                     >
                                                         <option value="makeup">Makeup Class (Excused Absence)</option>
@@ -689,7 +779,7 @@ export default function CreateClassPage() {
                                     disabled={submitting}
                                     className="px-10 py-3 rounded-xl bg-[#ecb613] text-slate-900 font-bold shadow-lg shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    {submitting ? <Loader2 className="size-5 animate-spin" /> : 'Create Class'}
+                                    {submitting ? <Loader2 className="size-5 animate-spin" /> : (formData.type === 'temporary' ? 'Create Special Session' : 'Create Permanent Class')}
                                 </button>
                             </div>
                         </div>
@@ -697,26 +787,71 @@ export default function CreateClassPage() {
                         {/* Student Selection Sidebar */}
                         <div className="space-y-6">
                             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm h-full flex flex-col min-h-[500px]">
-                                <div className="mb-4">
+                                <div className="mb-3">
                                     <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                                         <UserPlus className="size-5 text-[#ecb613]" />
                                         Assign Students
                                     </h4>
-                                    <p className="text-xs text-slate-500 mt-1">Select students to enroll in this class</p>
+                                    <p className="text-xs text-slate-500 mt-1">Select a batch or search individual students to enroll</p>
                                 </div>
 
-                                <div className="relative mb-4">
+                                {/* Quick Import from Existing Batch */}
+                                {existingBatches.length > 0 && (
+                                    <div className="mb-3">
+                                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                            <Users className="size-3.5 text-[#ecb613]" />
+                                            Import Students from Batch (Optional)
+                                        </label>
+                                        <select
+                                            value={selectedBatchImportId}
+                                            onChange={(e) => {
+                                                const batchId = e.target.value;
+                                                setSelectedBatchImportId(batchId);
+                                                if (!batchId) return;
+                                                const batch = existingBatches.find(b => b.id === batchId);
+                                                if (batch) {
+                                                    setSelectedStudents(prev => Array.from(new Set([...prev, ...batch.studentIds])));
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        type: 'temporary',
+                                                        teacherId: prev.teacherId || batch.teacher_id || ''
+                                                    }));
+                                                }
+                                            }}
+                                            className="w-full px-3 py-2 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 focus:ring-1 focus:ring-[#ecb613]/50 outline-none"
+                                        >
+                                            <option value="">-- Select batch to add all its students --</option>
+                                            {existingBatches.map(b => (
+                                                <option key={b.id} value={b.id}>
+                                                    {b.name} ({b.studentIds.length} {b.studentIds.length === 1 ? 'student' : 'students'})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                <div className="relative mb-3">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-4" />
                                     <input
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 focus:ring-1 focus:ring-[#ecb613]/50 outline-none"
+                                        className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 focus:ring-1 focus:ring-[#ecb613]/50 outline-none"
                                         placeholder="Filter students..."
                                         type="text"
                                     />
+                                    {searchQuery && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSearchQuery('')}
+                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                            title="Clear search"
+                                        >
+                                            <X className="size-4" />
+                                        </button>
+                                    )}
                                 </div>
 
-                                <div className="flex-1 overflow-y-auto space-y-2 max-h-[400px] pr-2 custom-scrollbar">
+                                <div className="flex-1 overflow-y-auto space-y-2 max-h-[300px] pr-2 custom-scrollbar">
                                     {filteredStudents.map((student) => {
                                         const isSelected = selectedStudents.includes(student.id);
                                         return (
@@ -738,14 +873,16 @@ export default function CreateClassPage() {
                                                     )}
                                                     <div className="flex flex-col min-w-0 flex-1">
                                                         <span className="text-xs font-bold truncate">{student.name}</span>
-                                                        <span className="text-[10px] text-slate-500 uppercase tracking-wider">{student.level}</span>
+                                                        <span className="text-[10px] text-slate-500 uppercase tracking-wider truncate">
+                                                            {student.level}{student.batchName ? ` • ${student.batchName}` : ''}
+                                                        </span>
                                                     </div>
                                                 </div>
 
                                                 {isSelected && formData.type === 'temporary' && formData.purpose === 'makeup' && (
                                                     <div className="mt-1 pt-2 border-t border-amber-500/20" onClick={(e) => e.stopPropagation()}>
                                                         <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 mb-1 uppercase tracking-wider">
-                                                            Missed Class Date:
+                                                            Missed Class Date (Optional):
                                                         </label>
                                                         <input
                                                             type="date"
@@ -769,10 +906,82 @@ export default function CreateClassPage() {
                                 </div>
 
                                 <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                                    <div className="flex justify-between items-center text-xs font-bold">
+                                    <div className="flex justify-between items-center text-xs font-bold mb-2">
                                         <span className="text-slate-500">Total Selected:</span>
-                                        <span className="text-[#ecb613]">{selectedStudents.length} Students</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[#ecb613]">{selectedStudents.length} {selectedStudents.length === 1 ? 'Student' : 'Students'}</span>
+                                            {selectedStudents.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedStudents([]);
+                                                        setSelectedBatchImportId('');
+                                                    }}
+                                                    className="text-[10px] font-bold text-rose-500 hover:text-rose-600 underline cursor-pointer"
+                                                >
+                                                    Clear All
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
+
+                                    {selectedStudents.length > 0 && (
+                                        <div className="mt-2 space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                                            {selectedStudents.map(sid => {
+                                                const st = students.find(s => s.id === sid);
+                                                if (!st) return null;
+                                                return (
+                                                    <div
+                                                        key={sid}
+                                                        className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-[#ecb613]/40"
+                                                    >
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                {st.profile_pic_url ? (
+                                                                    <img src={st.profile_pic_url} alt={st.name} className="size-6 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
+                                                                ) : (
+                                                                    <div className="size-6 rounded-full bg-[#ecb613]/20 flex items-center justify-center text-[10px] font-bold text-amber-800 dark:text-amber-300 shrink-0">
+                                                                        {st.name.charAt(0)}
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate">{st.name}</span>
+                                                                    <span className="text-[10px] text-slate-500 truncate">
+                                                                        {st.batchName || st.level.toUpperCase()}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleStudent(sid)}
+                                                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors shrink-0 cursor-pointer"
+                                                                title={`Remove ${st.name}`}
+                                                            >
+                                                                <X className="size-3.5" />
+                                                            </button>
+                                                        </div>
+
+                                                        {formData.type === 'temporary' && formData.purpose === 'makeup' && (
+                                                            <div className="flex items-center gap-2 pt-1 border-t border-amber-500/20">
+                                                                <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase shrink-0">
+                                                                    Missed Date:
+                                                                </span>
+                                                                <input
+                                                                    type="date"
+                                                                    value={studentMissedDates[sid] || ''}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value;
+                                                                        setStudentMissedDates(prev => ({ ...prev, [sid]: val }));
+                                                                    }}
+                                                                    className="flex-1 px-2 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-1 focus:ring-[#ecb613] outline-none text-slate-800 dark:text-slate-100 font-medium"
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

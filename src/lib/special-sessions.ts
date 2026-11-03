@@ -62,6 +62,87 @@ function formatTime12hr(time24: string): string {
     return `${hours}:${m} ${ampm}`;
 }
 
+async function resolveStudentOverridePayloads(
+    supabaseClient: any,
+    studentIds: string[],
+    targetClassroomId: string,
+    overrideDate: string,
+    purpose: SpecialSessionPurpose,
+    creditTreatment: SpecialSessionCreditTreatment,
+    studentMissedDates: Record<string, string>
+) {
+    const eligibleMakeupStudents = new Set<string>();
+
+    if (creditTreatment === 'makeup' && studentIds.length > 0) {
+        const studentsWithMissedDate = studentIds.filter(sid => Boolean(studentMissedDates?.[sid]));
+        if (studentsWithMissedDate.length > 0) {
+            const [leavesRes, attRes, existingOverridesRes] = await Promise.all([
+                supabaseClient
+                    .from('leave_requests')
+                    .select('student_id, class_date')
+                    .in('student_id', studentsWithMissedDate)
+                    .eq('status', 'approved'),
+                supabaseClient
+                    .from('attendance')
+                    .select('student_id, date, on_behalf_of_date')
+                    .in('student_id', studentsWithMissedDate)
+                    .eq('status', 'excused'),
+                supabaseClient
+                    .from('session_student_overrides')
+                    .select('student_id, missed_session_date, booking_status')
+                    .in('student_id', studentsWithMissedDate)
+                    .eq('credit_treatment', 'makeup')
+            ]);
+
+            const leaves = leavesRes.data || [];
+            const attendances = attRes.data || [];
+            const existingOverrides = (existingOverridesRes.data || []).filter((o: any) =>
+                ['scheduled', 'completed', 'forfeited'].includes(o.booking_status || 'scheduled')
+            );
+
+            for (const sid of studentsWithMissedDate) {
+                const mDate = studentMissedDates[sid];
+                if (!mDate || mDate >= overrideDate) continue;
+
+                const hasLeave = leaves.some((l: any) => l.student_id === sid && l.class_date === mDate);
+                const hasExcused = attendances.some((a: any) =>
+                    a.student_id === sid && ((a.on_behalf_of_date || a.date) === mDate || a.date === mDate)
+                );
+                const hasDuplicate = existingOverrides.some((o: any) =>
+                    o.student_id === sid && o.missed_session_date === mDate
+                );
+
+                if ((hasLeave || hasExcused) && !hasDuplicate) {
+                    eligibleMakeupStudents.add(sid);
+                }
+            }
+        }
+    }
+
+    return studentIds.map(studentId => {
+        const rawMissedDate = studentMissedDates?.[studentId] || null;
+        const isEligibleMakeup = creditTreatment === 'makeup' && eligibleMakeupStudents.has(studentId);
+        const effectiveCreditTreatment: SpecialSessionCreditTreatment =
+            creditTreatment === 'makeup'
+                ? (isEligibleMakeup ? 'makeup' : 'complimentary')
+                : creditTreatment;
+        const effectiveMissedDate = isEligibleMakeup ? rawMissedDate : null;
+
+        const reason = rawMissedDate
+            ? `Special Session (${purpose === 'makeup' ? `Makeup for ${rawMissedDate}` : purpose.replace('_', ' ')}) [MissedDate:${rawMissedDate}][credit_treatment:${effectiveCreditTreatment}][purpose:${purpose}]`
+            : `Special Session (${purpose.replace('_', ' ')}) [credit_treatment:${effectiveCreditTreatment}][purpose:${purpose}]`;
+
+        return {
+            student_id: studentId,
+            target_classroom_id: targetClassroomId,
+            override_date: overrideDate,
+            credit_treatment: effectiveCreditTreatment,
+            missed_session_date: effectiveMissedDate,
+            reason
+        };
+    });
+}
+
 /**
  * Creates a Special Session using the canonical architecture:
  * 1. Shadow classroom row in `classrooms` (type: 'temporary', canonical ID)
@@ -91,13 +172,6 @@ export async function createSpecialSession(
     if (!classDate) throw new Error('Session date is required.');
     if (!startTime || !endTime) throw new Error('Start and end times are required.');
     if (endTime <= startTime) throw new Error('End time must be after start time.');
-    if (purpose === 'makeup' && selectedStudents.length > 0) {
-        for (const sid of selectedStudents) {
-            if (!studentMissedDates || !studentMissedDates[sid]) {
-                throw new Error(`Original missed session date is required for each student assigned to a makeup session (missing for student ID: ${sid}).`);
-            }
-        }
-    }
 
     const creditTreatment = input.creditTreatment || getDefaultCreditTreatment(purpose);
     const finalDescription = serializeClassroomDescription(description || 'Special session', deliveryFormat, input.meetingLink);
@@ -159,20 +233,15 @@ export async function createSpecialSession(
 
     // 3. Assign Students to Special Session in session_student_overrides
     if (selectedStudents.length > 0) {
-        const studentInserts = selectedStudents.map(studentId => {
-            const missedDate = studentMissedDates[studentId] || null;
-            const reason = purpose === 'makeup' && missedDate
-                ? `Special Session (Makeup for ${missedDate}) [MissedDate:${missedDate}][credit_treatment:${creditTreatment}][purpose:${purpose}]`
-                : `Special Session (${purpose.replace('_', ' ')}) [credit_treatment:${creditTreatment}][purpose:${purpose}]`;
-            return {
-                student_id: studentId,
-                target_classroom_id: classroom.id,
-                override_date: classDate,
-                credit_treatment: creditTreatment,
-                missed_session_date: missedDate,
-                reason
-            };
-        });
+        const studentInserts = await resolveStudentOverridePayloads(
+            supabaseClient,
+            selectedStudents,
+            classroom.id,
+            classDate,
+            purpose,
+            creditTreatment,
+            studentMissedDates
+        );
 
         let { error: tempAssignmentError } = await supabaseClient
             .from('session_student_overrides')
@@ -357,29 +426,17 @@ export async function updateSpecialSession(
             const purpose = input.purpose || 'makeup';
             const creditTreatment = input.creditTreatment || getDefaultCreditTreatment(purpose);
             const studentMissedDates = input.studentMissedDates || {};
+            const targetDate = input.classDate || new Date().toISOString().split('T')[0];
 
-            if (purpose === 'makeup') {
-                for (const sid of newStudentsToAdd) {
-                    if (!studentMissedDates || !studentMissedDates[sid]) {
-                        throw new Error(`Original missed session date is required for each student assigned to a makeup session (missing for student ID: ${sid}).`);
-                    }
-                }
-            }
-
-            const studentInserts = newStudentsToAdd.map(studentId => {
-                const missedDate = studentMissedDates[studentId] || null;
-                const reason = purpose === 'makeup' && missedDate
-                    ? `Special Session (Makeup for ${missedDate}) [MissedDate:${missedDate}][credit_treatment:${creditTreatment}][purpose:${purpose}]`
-                    : `Special Session (${purpose.replace('_', ' ')}) [credit_treatment:${creditTreatment}][purpose:${purpose}]`;
-                return {
-                    student_id: studentId,
-                    target_classroom_id: classroomId,
-                    override_date: input.classDate || new Date().toISOString().split('T')[0],
-                    credit_treatment: creditTreatment,
-                    missed_session_date: missedDate,
-                    reason
-                };
-            });
+            const studentInserts = await resolveStudentOverridePayloads(
+                supabaseClient,
+                newStudentsToAdd,
+                classroomId,
+                targetDate,
+                purpose,
+                creditTreatment,
+                studentMissedDates
+            );
 
             let { error: insErr } = await supabaseClient
                 .from('session_student_overrides')

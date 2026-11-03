@@ -246,7 +246,11 @@ export async function scheduleMakeupInExistingClass(
         if (insertError.code === '23505' || insertError.message?.includes('unique constraint') || insertError.message?.includes('active booking already exists')) {
             throw new Error(`This student already has an active makeup booking for missed class on ${missedSessionDate}.`);
         }
-        throw insertError;
+        let msg = insertError.message || 'Failed to book makeup session.';
+        if (studentName && studentId && msg.includes(studentId)) {
+            msg = msg.replaceAll(studentId, studentName);
+        }
+        throw new Error(msg);
     }
 
     // 5. Send notification to student

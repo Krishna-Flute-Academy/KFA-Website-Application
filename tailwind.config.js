@@ -58,12 +58,13 @@ export default {
         "surface-container-low": "#f8f8f6"
       },
       fontFamily: {
+        'sans': ['var(--font-inter)', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         'montserrat': ['Montserrat', 'sans-serif'],
-        'playfair': ['Playfair Display', 'serif'],
-        'inter': ['Inter', 'sans-serif'],
-        "headline": ["Plus Jakarta Sans"],
-        "body": ["Inter"],
-        "label": ["Inter"]
+        'playfair': ['var(--font-playfair)', 'Playfair Display', 'serif'],
+        'inter': ['var(--font-inter)', 'Inter', 'sans-serif'],
+        "headline": ['var(--font-inter)', "Plus Jakarta Sans", 'sans-serif'],
+        "body": ['var(--font-inter)', "Inter", 'sans-serif'],
+        "label": ['var(--font-inter)', "Inter", 'sans-serif']
       },
       typography: (theme) => ({
         DEFAULT: {

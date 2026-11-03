@@ -196,28 +196,31 @@ export default function TempClassManagePage() {
         endTimeStr: string,
         excludeTemporaryClassId: string
     ) => {
-        const { data: classrooms, error: classErr } = await supabaseAuth
-            .from('classrooms')
-            .select('id, name')
-            .eq('teacher_id', teacherId);
-        
-        if (classErr || !classrooms || classrooms.length === 0) return null;
-        const classroomMap = new Map<string, string>(classrooms.map(c => [c.id, c.name]));
-        const classroomIds = classrooms.map(c => c.id);
-
-        const [schedRes, tempRes] = await Promise.all([
+        const [classRes, tempRes] = await Promise.all([
             supabaseAuth
-                .from('batch_schedules')
-                .select('classroom_id, day_of_week, start_time, end_time')
-                .in('classroom_id', classroomIds),
+                .from('classrooms')
+                .select('id, name, status')
+                .eq('teacher_id', teacherId),
             supabaseAuth
                 .from('temporary_classes')
-                .select('id, classroom_id, title, class_date, start_time, end_time')
+                .select('id, classroom_id, title, class_date, start_time, end_time, lifecycle_status')
                 .eq('teacher_id', teacherId)
         ]);
-
-        const batchSchedules = schedRes.data || [];
-        const temporaryClasses = tempRes.data || [];
+        
+        const classrooms = classRes.data || [];
+        const classroomMap = new Map<string, string>(classrooms.map((c: any) => [c.id, c.name]));
+        const shadowStatusById = new Map<string, string>(
+            classrooms.map((c: any) => [c.id, (c.status || 'active').toLowerCase()])
+        );
+        const temporaryClasses = (tempRes.data || []).filter((tc: any) => {
+            const lifecycle = (tc.lifecycle_status || 'scheduled').toLowerCase();
+            if (lifecycle === 'cancelled') return false;
+            if (tc.classroom_id) {
+                const shadowStatus = shadowStatusById.get(tc.classroom_id);
+                if (shadowStatus === 'archived' || shadowStatus === 'inactive') return false;
+            }
+            return true;
+        });
 
         const newStart = startTimeStr.slice(0, 5);
         const newEnd = endTimeStr.slice(0, 5);
@@ -226,11 +229,7 @@ export default function TempClassManagePage() {
             return s1.slice(0, 5) < e2.slice(0, 5) && s2.slice(0, 5) < e1.slice(0, 5);
         };
 
-        const targetDate = new Date(classDate);
-        const targetDow = targetDate.getDay();
-        const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-        // Check temporary classes on same date (excluding the current one)
+        // Check active temporary classes on the same date (excluding the current one)
         for (const tc of temporaryClasses) {
             if (tc.id !== excludeTemporaryClassId && tc.class_date === classDate && checkOverlap(newStart, newEnd, tc.start_time, tc.end_time)) {
                 return {
@@ -238,18 +237,6 @@ export default function TempClassManagePage() {
                     type: 'temporary',
                     dayOrDate: classDate,
                     time: `${tc.start_time.slice(0, 5)} - ${tc.end_time.slice(0, 5)}`
-                };
-            }
-        }
-
-        // Check permanent classes on same day of week
-        for (const bs of batchSchedules) {
-            if (bs.day_of_week === targetDow && checkOverlap(newStart, newEnd, bs.start_time, bs.end_time)) {
-                return {
-                    className: classroomMap.get(bs.classroom_id) || 'Permanent Class',
-                    type: 'permanent',
-                    dayOrDate: DAY_FULL[targetDow],
-                    time: `${bs.start_time.slice(0, 5)} - ${bs.end_time.slice(0, 5)}`
                 };
             }
         }
