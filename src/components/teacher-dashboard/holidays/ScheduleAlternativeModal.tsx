@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabaseAuth } from '../../../lib/supabase-auth';
+import { ensureAlternativeSpecialSession, cancelAlternativeSpecialSession } from '../../../lib/alternative-class-sessions';
 import { Calendar, AlertCircle, X, Clock, HelpCircle, RotateCcw } from 'lucide-react';
 
 interface ScheduleAlternativeModalProps {
@@ -81,6 +82,13 @@ export default function ScheduleAlternativeModal({
 
             if (rpcError) throw rpcError;
 
+            // BR-22: alternative class is always a Special Session (create or re-date)
+            try {
+                await ensureAlternativeSpecialSession(supabaseAuth, holiday.id);
+            } catch (sessErr) {
+                console.error('Error creating alternative class special session:', sessErr);
+            }
+
             onSuccess();
             onClose();
         } catch (err: any) {
@@ -102,6 +110,12 @@ export default function ScheduleAlternativeModal({
             });
 
             if (rpcError) throw rpcError;
+
+            try {
+                await cancelAlternativeSpecialSession(supabaseAuth, holiday.id);
+            } catch (sessErr) {
+                console.error('Error cancelling alternative class special session:', sessErr);
+            }
 
             onSuccess();
             onClose();

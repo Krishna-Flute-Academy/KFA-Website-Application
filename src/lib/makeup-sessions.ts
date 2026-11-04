@@ -39,6 +39,10 @@ export interface PermanentClassroomOption {
     daysOfWeek: number[];
     scheduleSummary: string;
     enrolledCount: number;
+    isSpecialSession?: boolean;
+    classDate?: string;
+    startTime?: string;
+    endTime?: string;
 }
 
 export interface ScheduleMakeupInExistingClassInput {
@@ -125,7 +129,7 @@ export function getNextScheduleOccurrences(daysOfWeek: number[], fromDateStr: st
 }
 
 /**
- * Fetches all active permanent classrooms with their schedules and current roster count.
+ * Fetches all active permanent classrooms with their schedules, plus active special sessions.
  */
 export async function fetchAvailablePermanentClassrooms(
     supabaseClient: any,
@@ -157,7 +161,7 @@ export async function fetchAvailablePermanentClassrooms(
         throw error;
     }
 
-    return (data || []).map((row: any) => {
+    const permanentRooms: PermanentClassroomOption[] = (data || []).map((row: any) => {
         const schedules: PermanentClassroomSchedule[] = (row.batch_schedules || []).map((s: any) => ({
             id: s.id,
             day_of_week: s.day_of_week,
@@ -183,13 +187,68 @@ export async function fetchAvailablePermanentClassrooms(
             schedules,
             daysOfWeek,
             scheduleSummary,
-            enrolledCount: (row.classroom_students || []).length
+            enrolledCount: (row.classroom_students || []).length,
+            isSpecialSession: false
         };
     });
+
+    // Also fetch active/scheduled Special Sessions (temporary classes)
+    try {
+        let tempQuery = supabaseClient
+            .from('temporary_classes')
+            .select(`
+                id,
+                classroom_id,
+                teacher_id,
+                title,
+                class_date,
+                start_time,
+                end_time,
+                lifecycle_status,
+                users!temporary_classes_teacher_id_fkey(id, name, email, profile_pic_url)
+            `)
+            .not('classroom_id', 'is', null)
+            .neq('lifecycle_status', 'cancelled');
+
+        if (!isAdmin && currentTeacherId) {
+            tempQuery = tempQuery.eq('teacher_id', currentTeacherId);
+        }
+
+        const { data: tempData, error: tempError } = await tempQuery.order('class_date', { ascending: false });
+        if (!tempError && tempData) {
+            const specialRooms: PermanentClassroomOption[] = tempData.map((tc: any) => {
+                const teacherUser = Array.isArray(tc.users) ? tc.users[0] : tc.users;
+                const timingStr = tc.start_time && tc.end_time
+                    ? `${formatTime12hr(tc.start_time)} - ${formatTime12hr(tc.end_time)}`
+                    : '';
+                return {
+                    id: tc.classroom_id,
+                    name: tc.title || 'Special Session',
+                    teacherId: tc.teacher_id,
+                    teacherName: teacherUser?.name || 'Academy Instructor',
+                    teacherProfilePic: teacherUser?.profile_pic_url || null,
+                    schedules: [],
+                    daysOfWeek: [],
+                    scheduleSummary: `${tc.class_date}${timingStr ? ' • ' + timingStr : ''}`,
+                    enrolledCount: 0,
+                    isSpecialSession: true,
+                    classDate: tc.class_date,
+                    startTime: tc.start_time,
+                    endTime: tc.end_time
+                };
+            });
+
+            return [...permanentRooms, ...specialRooms];
+        }
+    } catch (tempErr) {
+        console.warn('[MakeupSessions] Could not fetch temporary classes:', tempErr);
+    }
+
+    return permanentRooms;
 }
 
 /**
- * PATHWAY 1: Schedule Makeup in an Existing Permanent Classroom
+ * PATHWAY 1: Schedule Makeup in an Existing Permanent Classroom or Special Session
  */
 export async function scheduleMakeupInExistingClass(
     supabaseClient: any,
@@ -198,11 +257,11 @@ export async function scheduleMakeupInExistingClass(
     const { studentId, targetClassroomId, makeupDate, missedSessionDate, notes, studentName } = input;
 
     if (!studentId) throw new Error('Student ID is required.');
-    if (!targetClassroomId) throw new Error('Target permanent classroom is required.');
+    if (!targetClassroomId) throw new Error('Target classroom is required.');
     if (!makeupDate) throw new Error('Makeup class date is required.');
     if (!missedSessionDate) throw new Error('Original missed session date is required.');
 
-    // 1. Verify target classroom is permanent
+    // 1. Verify target classroom exists
     const { data: classroom, error: classError } = await supabaseClient
         .from('classrooms')
         .select('id, name, type, status, teacher_id, batch_schedules(day_of_week)')
@@ -213,18 +272,18 @@ export async function scheduleMakeupInExistingClass(
         throw new Error('Target classroom not found.');
     }
 
-    if (classroom.type && classroom.type !== 'permanent') {
-        throw new Error('Target classroom must be a permanent classroom. For one-off sessions, choose "Create a Special Session".');
-    }
+    const isTemporary = classroom.type === 'temporary';
 
-    // 2. Validate day of week matching
-    const daysOfWeek: number[] = (classroom.batch_schedules || []).map((s: any) => s.day_of_week);
-    if (daysOfWeek.length > 0) {
-        const makeupDay = getDayOfWeekFromDateStr(makeupDate);
-        if (!daysOfWeek.includes(makeupDay)) {
-            const expectedDays = daysOfWeek.map(d => DAY_NAMES[d]).join(' or ');
-            const actualDay = DAY_NAMES[makeupDay];
-            throw new Error(`Invalid date! ${classroom.name} only runs on ${expectedDays} (selected date is a ${actualDay}).`);
+    // 2. Validate day of week matching only for permanent classrooms with schedules
+    if (!isTemporary) {
+        const daysOfWeek: number[] = (classroom.batch_schedules || []).map((s: any) => s.day_of_week);
+        if (daysOfWeek.length > 0) {
+            const makeupDay = getDayOfWeekFromDateStr(makeupDate);
+            if (!daysOfWeek.includes(makeupDay)) {
+                const expectedDays = daysOfWeek.map(d => DAY_NAMES[d]).join(' or ');
+                const actualDay = DAY_NAMES[makeupDay];
+                throw new Error(`Invalid date! ${classroom.name} only runs on ${expectedDays} (selected date is a ${actualDay}).`);
+            }
         }
     }
 

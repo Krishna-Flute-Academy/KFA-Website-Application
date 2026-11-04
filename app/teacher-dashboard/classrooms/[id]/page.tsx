@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
+import { cancelAlternativeSpecialSession } from '../../../../src/lib/alternative-class-sessions';
 import { 
     Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Video, 
     TrendingUp, Zap, Star, Edit3, PlusCircle, 
@@ -290,6 +291,11 @@ export default function ClassroomDashboardPage({
     const [isDeletingOverrideId, setIsDeletingOverrideId] = useState<string | null>(null);
     const [directoryStudentsForOverride, setDirectoryStudentsForOverride] = useState<any[]>([]);
     const [isOverrideRosterLoading, setIsOverrideRosterLoading] = useState(false);
+    const [overrideStudentSearch, setOverrideStudentSearch] = useState('');
+    const [isOverrideStudentDropdownOpen, setIsOverrideStudentDropdownOpen] = useState(false);
+    const [studentMissedClassesList, setStudentMissedClassesList] = useState<Array<{ date: string; source: string; label: string }>>([]);
+    const [isLoadingMissedDates, setIsLoadingMissedDates] = useState(false);
+    const [isCustomMissedDate, setIsCustomMissedDate] = useState(false);
 
     // Timezone-safe local date formatter
     const formatLocalDate = (dateStr: string): Date => {
@@ -2503,6 +2509,11 @@ export default function ClassroomDashboardPage({
                 p_reason: reason.trim()
             });
             if (error) throw error;
+            try {
+                await cancelAlternativeSpecialSession(supabaseAuth, holiday.id);
+            } catch (sessErr) {
+                console.error('Error cancelling alternative class special session:', sessErr);
+            }
             await fetchClassroomAttendance();
             alert('Holiday successfully cancelled.');
         } catch (err: any) {
@@ -2681,11 +2692,75 @@ export default function ClassroomDashboardPage({
         }
     };
 
+    const fetchStudentMissedClasses = async (studentId: string) => {
+        if (!studentId) {
+            setStudentMissedClassesList([]);
+            return;
+        }
+        setIsLoadingMissedDates(true);
+        try {
+            const [attRes, leavesRes] = await Promise.all([
+                supabaseAuth
+                    .from('attendance')
+                    .select('date, on_behalf_of_date, status, classrooms(name)')
+                    .eq('student_id', studentId)
+                    .in('status', ['absent', 'excused'])
+                    .order('date', { ascending: false })
+                    .limit(20),
+                supabaseAuth
+                    .from('leave_requests')
+                    .select('class_date, status, reason, classrooms(name)')
+                    .eq('student_id', studentId)
+                    .order('class_date', { ascending: false })
+                    .limit(20)
+            ]);
+
+            const dateMap = new Map<string, { date: string; source: string; label: string }>();
+
+            (attRes.data || []).forEach((a: any) => {
+                const effectiveDate = (a.on_behalf_of_date || a.date)?.split('T')[0];
+                if (effectiveDate && !dateMap.has(effectiveDate)) {
+                    const roomName = (a.classrooms as any)?.name ? ` (${(a.classrooms as any).name})` : '';
+                    dateMap.set(effectiveDate, {
+                        date: effectiveDate,
+                        source: a.status,
+                        label: `${effectiveDate} • ${a.status.toUpperCase()}${roomName}`
+                    });
+                }
+            });
+
+            (leavesRes.data || []).forEach((l: any) => {
+                const effectiveDate = l.class_date?.split('T')[0];
+                if (effectiveDate && !dateMap.has(effectiveDate)) {
+                    const roomName = (l.classrooms as any)?.name ? ` (${(l.classrooms as any).name})` : '';
+                    dateMap.set(effectiveDate, {
+                        date: effectiveDate,
+                        source: 'leave',
+                        label: `${effectiveDate} • LEAVE (${l.status})${roomName}`
+                    });
+                }
+            });
+
+            const sorted = Array.from(dateMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+            setStudentMissedClassesList(sorted);
+            return sorted;
+        } catch (err) {
+            console.error('Error fetching missed classes:', err);
+            setStudentMissedClassesList([]);
+            return [];
+        } finally {
+            setIsLoadingMissedDates(false);
+        }
+    };
+
     const openMakeupModal = async () => {
         if (!teacherProfile) return;
         setEditingOverrideId(null);
         setShowOverrideModal(true);
         setIsOverrideRosterLoading(true);
+        setOverrideStudentSearch('');
+        setIsOverrideStudentDropdownOpen(false);
+        setIsCustomMissedDate(false);
         setOverrideForm({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '', missedSessionDate: '' });
         try {
             const enrolledIds = new Set(students.map(s => s.student_id));
@@ -2702,7 +2777,15 @@ export default function ClassroomDashboardPage({
             const available = (data || []).filter((s: any) => !enrolledIds.has(s.id) && isStudentOperationallyActive(s.status));
             setDirectoryStudentsForOverride(available);
             if (available.length > 0) {
-                setOverrideForm(prev => ({ ...prev, studentId: available[0].id }));
+                const firstStudentId = available[0].id;
+                setOverrideForm(prev => ({ ...prev, studentId: firstStudentId }));
+                const missed = await fetchStudentMissedClasses(firstStudentId);
+                if (missed && missed.length > 0) {
+                    setOverrideForm(prev => ({ ...prev, missedSessionDate: missed[0].date }));
+                    setIsCustomMissedDate(false);
+                } else {
+                    setIsCustomMissedDate(true);
+                }
             }
         } catch (err) {
             console.error('Error fetching directory for override:', err);
@@ -2716,6 +2799,8 @@ export default function ClassroomDashboardPage({
         setEditingOverrideId(override.id);
         setShowOverrideModal(true);
         setIsOverrideRosterLoading(true);
+        setOverrideStudentSearch('');
+        setIsOverrideStudentDropdownOpen(false);
         setOverrideForm({
             studentId: override.student_id,
             date: override.override_date,
@@ -2745,6 +2830,11 @@ export default function ClassroomDashboardPage({
                 });
             }
             setDirectoryStudentsForOverride(available);
+            const missed = await fetchStudentMissedClasses(override.student_id);
+            if (override.missed_session_date) {
+                const foundInList = missed?.some(m => m.date === override.missed_session_date);
+                setIsCustomMissedDate(!foundInList);
+            }
         } catch (err) {
             console.error('Error fetching directory for override:', err);
         } finally {
@@ -5393,21 +5483,87 @@ export default function ClassroomDashboardPage({
                                 </div>
                             ) : (
                                 <>
-                                    <div className="text-left">
-                                        <label className="block text-xs font-bold text-slate-505 dark:text-slate-400 uppercase tracking-wider mb-2">Select Student</label>
+                                    <div className="text-left relative">
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Select Student</label>
+                                        
+                                        {/* Search Input Filter */}
+                                        <div className="relative mb-2">
+                                            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                            <input
+                                                type="text"
+                                                placeholder="Type to search student name..."
+                                                value={overrideStudentSearch}
+                                                onChange={async (e) => {
+                                                    const query = e.target.value;
+                                                    setOverrideStudentSearch(query);
+                                                    
+                                                    // Auto-select the first matching student as user types
+                                                    const filtered = directoryStudentsForOverride.filter(s =>
+                                                        (s.name || '').toLowerCase().includes(query.toLowerCase())
+                                                    );
+                                                    if (filtered.length > 0 && (!overrideForm.studentId || !filtered.some(f => f.id === overrideForm.studentId))) {
+                                                        const autoSelected = filtered[0].id;
+                                                        setOverrideForm(f => ({ ...f, studentId: autoSelected }));
+                                                        const missed = await fetchStudentMissedClasses(autoSelected);
+                                                        if (missed && missed.length > 0) {
+                                                            setOverrideForm(f => ({ ...f, missedSessionDate: missed[0].date }));
+                                                            setIsCustomMissedDate(false);
+                                                        } else {
+                                                            setOverrideForm(f => ({ ...f, missedSessionDate: '' }));
+                                                            setIsCustomMissedDate(true);
+                                                        }
+                                                    }
+                                                }}
+                                                disabled={!!editingOverrideId}
+                                                className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-slate-800 dark:text-slate-100 disabled:opacity-60"
+                                            />
+                                            {overrideStudentSearch && (
+                                                <button
+                                                    type="button"
+                                                    onClick={async () => {
+                                                        setOverrideStudentSearch('');
+                                                    }}
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm font-black p-1 leading-none cursor-pointer"
+                                                >
+                                                    ×
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Custom Dropdown / Select */}
                                         <select
                                             value={overrideForm.studentId}
-                                            onChange={e => setOverrideForm(f => ({ ...f, studentId: e.target.value }))}
+                                            onChange={async (e) => {
+                                                const nextSid = e.target.value;
+                                                setOverrideForm(f => ({ ...f, studentId: nextSid }));
+                                                const missed = await fetchStudentMissedClasses(nextSid);
+                                                if (missed && missed.length > 0) {
+                                                    setOverrideForm(f => ({ ...f, missedSessionDate: missed[0].date }));
+                                                    setIsCustomMissedDate(false);
+                                                } else {
+                                                    setOverrideForm(f => ({ ...f, missedSessionDate: '' }));
+                                                    setIsCustomMissedDate(true);
+                                                }
+                                            }}
                                             disabled={!!editingOverrideId}
                                             className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all cursor-pointer text-slate-800 dark:text-slate-100"
                                         >
-                                            {directoryStudentsForOverride.map(s => (
-                                                <option key={s.id} value={s.id}>{s.name} ({s.level || 'Beginner'})</option>
-                                            ))}
+                                            {(() => {
+                                                const filtered = directoryStudentsForOverride.filter(s => {
+                                                    if (!overrideStudentSearch) return true;
+                                                    return (s.name || '').toLowerCase().includes(overrideStudentSearch.toLowerCase());
+                                                });
+                                                if (filtered.length === 0) {
+                                                    return <option disabled value="">No student found matching "{overrideStudentSearch}"</option>;
+                                                }
+                                                return filtered.map(s => (
+                                                    <option key={s.id} value={s.id}>{s.name} ({s.level || 'Beginner'})</option>
+                                                ));
+                                            })()}
                                         </select>
                                     </div>
                                     <div className="text-left">
-                                        <label className="block text-xs font-bold text-slate-505 dark:text-slate-400 uppercase tracking-wider mb-2">Class Session Date</label>
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Class Session Date</label>
                                         <input
                                             type="date"
                                             value={overrideForm.date}
@@ -5415,19 +5571,73 @@ export default function ClassroomDashboardPage({
                                             className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-slate-800 dark:text-slate-100"
                                         />
                                     </div>
+                                    
+                                    {/* Original Missed Class Date with Smart Auto-Detection Dropdown */}
                                     <div className="text-left">
-                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Original Missed Class Date <span className="text-rose-500">*</span></label>
-                                        <input
-                                            type="date"
-                                            required
-                                            value={overrideForm.missedSessionDate || ''}
-                                            onChange={e => setOverrideForm(f => ({ ...f, missedSessionDate: e.target.value }))}
-                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-slate-800 dark:text-slate-100"
-                                        />
-                                        <p className="text-[11px] text-slate-400 mt-1">Specify which missed class date this makeup session covers to ensure accurate fee credit linking.</p>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                Original Missed Class Date <span className="text-rose-500">*</span>
+                                            </label>
+                                            {studentMissedClassesList.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsCustomMissedDate(!isCustomMissedDate)}
+                                                    className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 underline cursor-pointer"
+                                                >
+                                                    {isCustomMissedDate ? '← Pick from missed classes' : 'Enter other date manually'}
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {isLoadingMissedDates ? (
+                                            <div className="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-xs font-bold text-slate-400">
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                                                Loading missed class history...
+                                            </div>
+                                        ) : !isCustomMissedDate && studentMissedClassesList.length > 0 ? (
+                                            <div className="space-y-1.5">
+                                                <select
+                                                    value={overrideForm.missedSessionDate || ''}
+                                                    onChange={e => {
+                                                        if (e.target.value === '__custom__') {
+                                                            setIsCustomMissedDate(true);
+                                                        } else {
+                                                            setOverrideForm(f => ({ ...f, missedSessionDate: e.target.value }));
+                                                        }
+                                                    }}
+                                                    className="w-full px-4 py-3 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-300 dark:border-emerald-800/60 rounded-xl text-sm font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                                                >
+                                                    {studentMissedClassesList.map(item => (
+                                                        <option key={item.date} value={item.date}>
+                                                            {item.label}
+                                                        </option>
+                                                    ))}
+                                                    <option value="__custom__">-- Other / Specify Manually --</option>
+                                                </select>
+                                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block">
+                                                    ✓ Auto-detected {studentMissedClassesList.length} missed/leave class(es) for this student.
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <input
+                                                    type="date"
+                                                    required
+                                                    value={overrideForm.missedSessionDate || ''}
+                                                    onChange={e => setOverrideForm(f => ({ ...f, missedSessionDate: e.target.value }))}
+                                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-slate-800 dark:text-slate-100"
+                                                />
+                                                <p className="text-[11px] text-slate-400 mt-1">
+                                                    {studentMissedClassesList.length === 0
+                                                        ? 'No recorded absence found. Specify which class date this makeup covers.'
+                                                        : 'Enter the custom missed class date.'}
+                                                </p>
+                                            </div>
+                                        )}
                                     </div>
+
                                     <div className="text-left">
-                                        <label className="block text-xs font-bold text-slate-550 dark:text-slate-400 uppercase tracking-wider mb-2">Reason / Private Notes</label>
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Reason / Private Notes</label>
                                         <textarea
                                             value={overrideForm.reason}
                                             onChange={e => setOverrideForm(f => ({ ...f, reason: e.target.value }))}

@@ -15,7 +15,8 @@ import {
     BookOpen,
     Video,
     MapPin,
-    ArrowRight
+    ArrowRight,
+    Search
 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import {
@@ -71,6 +72,7 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
 
     // Pathway 1: Join Existing Class State
     const [permanentClassrooms, setPermanentClassrooms] = useState<PermanentClassroomOption[]>([]);
+    const [classroomSearch, setClassroomSearch] = useState<string>('');
     const [selectedClassroomId, setSelectedClassroomId] = useState<string>('');
     const [makeupDate, setMakeupDate] = useState<string>('');
     const [existingNotes, setExistingNotes] = useState<string>('');
@@ -106,17 +108,21 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                     const defaultRoom = rooms.find(r => r.id !== missedSession.classroomId) || rooms[0];
                     setSelectedClassroomId(defaultRoom.id);
 
-                    // Pre-fill next occurrence date
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    const nextDates = getNextScheduleOccurrences(defaultRoom.daysOfWeek, todayStr, 1);
-                    if (nextDates.length > 0) {
-                        setMakeupDate(nextDates[0].date);
+                    // Pre-fill next occurrence or session date
+                    if (defaultRoom.isSpecialSession && defaultRoom.classDate) {
+                        setMakeupDate(defaultRoom.classDate);
+                    } else {
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        const nextDates = getNextScheduleOccurrences(defaultRoom.daysOfWeek, todayStr, 1);
+                        if (nextDates.length > 0) {
+                            setMakeupDate(nextDates[0].date);
+                        }
                     }
                 }
             })
             .catch(err => {
-                console.error('Failed to load permanent classrooms:', err);
-                setErrorMessage('Failed to load available permanent classrooms.');
+                console.error('Failed to load classrooms:', err);
+                setErrorMessage('Failed to load available classrooms.');
             })
             .finally(() => {
                 setIsLoadingClassrooms(false);
@@ -132,6 +138,17 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
 
     }, [isOpen, currentTeacherId, isAdmin, missedSession.classroomId, student?.name]);
 
+    // Filtered classrooms based on search
+    const filteredClassrooms = useMemo(() => {
+        if (!classroomSearch.trim()) return permanentClassrooms;
+        const q = classroomSearch.toLowerCase();
+        return permanentClassrooms.filter(r =>
+            r.name.toLowerCase().includes(q) ||
+            r.teacherName.toLowerCase().includes(q) ||
+            r.scheduleSummary.toLowerCase().includes(q)
+        );
+    }, [permanentClassrooms, classroomSearch]);
+
     // Selected classroom metadata
     const selectedClassroom = useMemo(() => {
         return permanentClassrooms.find(r => r.id === selectedClassroomId);
@@ -139,16 +156,19 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
 
     // Suggestions for selected classroom
     const upcomingDateSuggestions = useMemo(() => {
-        if (!selectedClassroom || selectedClassroom.daysOfWeek.length === 0) return [];
+        if (!selectedClassroom || selectedClassroom.isSpecialSession || selectedClassroom.daysOfWeek.length === 0) return [];
         const todayStr = new Date().toISOString().split('T')[0];
         return getNextScheduleOccurrences(selectedClassroom.daysOfWeek, todayStr, 4);
     }, [selectedClassroom]);
 
-    // When selected classroom changes, pick its earliest next date
+    // When selected classroom changes, pick its earliest next date or its scheduled date
     const handleClassroomChange = (newRoomId: string) => {
         setSelectedClassroomId(newRoomId);
         const room = permanentClassrooms.find(r => r.id === newRoomId);
-        if (room && room.daysOfWeek.length > 0) {
+        if (!room) return;
+        if (room.isSpecialSession && room.classDate) {
+            setMakeupDate(room.classDate);
+        } else if (room.daysOfWeek && room.daysOfWeek.length > 0) {
             const todayStr = new Date().toISOString().split('T')[0];
             const nextDates = getNextScheduleOccurrences(room.daysOfWeek, todayStr, 1);
             if (nextDates.length > 0) {
@@ -157,9 +177,10 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
         }
     };
 
-    // Validation for date match
+    // Validation for date match (only applies to recurring permanent classrooms)
     const dateScheduleMismatch = useMemo(() => {
         if (!selectedClassroom || !makeupDate) return null;
+        if (selectedClassroom.isSpecialSession) return null;
         if (selectedClassroom.daysOfWeek.length === 0) return null;
         const matches = isDateMatchingSchedules(makeupDate, selectedClassroom.daysOfWeek);
         if (!matches) {
@@ -385,19 +406,47 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                     {/* ──────────────────────────────────────────────────────────── */}
                     {makeupMode === 'existing_class' && (
                         <div className="space-y-4 pt-1 animate-in fade-in-50 duration-150">
-                            {/* Classroom Dropdown */}
-                            <div className="space-y-1.5">
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                                    Target Permanent Classroom <span className="text-rose-500">*</span>
-                                </label>
+                            {/* Classroom Dropdown & Search */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                                        Target Classroom / Special Session <span className="text-rose-500">*</span>
+                                    </label>
+                                    <span className="text-[10px] text-slate-400">Batches & Special Classes</span>
+                                </div>
+
+                                {/* Search filter input */}
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={classroomSearch}
+                                        onChange={(e) => setClassroomSearch(e.target.value)}
+                                        placeholder="Search classroom by name, batch, or date..."
+                                        className="w-full pl-8.5 pr-8 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#ecb613]/50 transition-all placeholder:text-slate-400"
+                                    />
+                                    {classroomSearch && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setClassroomSearch('')}
+                                            className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs px-1"
+                                            title="Clear search"
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+
                                 {isLoadingClassrooms ? (
                                     <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-400">
                                         <Loader2 className="size-3.5 animate-spin" />
-                                        <span>Loading available permanent classrooms...</span>
+                                        <span>Loading available classrooms and special sessions...</span>
                                     </div>
-                                ) : permanentClassrooms.length === 0 ? (
+                                ) : filteredClassrooms.length === 0 ? (
                                     <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300">
-                                        No active permanent classrooms found. Please switch to "Create Special Session".
+                                        {classroomSearch
+                                            ? `No classrooms found matching "${classroomSearch}".`
+                                            : 'No active classrooms found. Please switch to "Create Special Session".'}
                                     </div>
                                 ) : (
                                     <select
@@ -405,31 +454,67 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                                         onChange={(e) => handleClassroomChange(e.target.value)}
                                         className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#ecb613]/50 transition-all cursor-pointer"
                                     >
-                                        {permanentClassrooms.map((room) => (
-                                            <option key={room.id} value={room.id}>
-                                                {room.name} — {room.scheduleSummary} ({room.enrolledCount} enrolled)
-                                            </option>
-                                        ))}
+                                        {/* Regular Batches */}
+                                        {filteredClassrooms.filter(r => !r.isSpecialSession).length > 0 && (
+                                            <optgroup label="── Regular Batches ──">
+                                                {filteredClassrooms.filter(r => !r.isSpecialSession).map((room) => (
+                                                    <option key={room.id} value={room.id}>
+                                                        {room.name} — {room.scheduleSummary} ({room.enrolledCount} enrolled)
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        )}
+                                        {/* Special Sessions / Alternative Classes */}
+                                        {filteredClassrooms.filter(r => r.isSpecialSession).length > 0 && (
+                                            <optgroup label="── Special Classes / Alternative Sessions ──">
+                                                {filteredClassrooms.filter(r => r.isSpecialSession).map((room) => (
+                                                    <option key={room.id} value={room.id}>
+                                                        ⭐ {room.name} — {room.scheduleSummary}
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        )}
                                     </select>
                                 )}
                             </div>
 
                             {/* Selected Classroom Schedule Banner */}
                             {selectedClassroom && (
-                                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-850/60 border border-slate-200/80 dark:border-slate-800 text-xs space-y-1">
-                                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                                        <span className="font-bold text-slate-700 dark:text-slate-300">Instructor: {selectedClassroom.teacherName}</span>
-                                        <span>{selectedClassroom.enrolledCount} regular students</span>
+                                selectedClassroom.isSpecialSession ? (
+                                    <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/20 border border-purple-200/80 dark:border-purple-800 text-xs space-y-1">
+                                        <div className="flex items-center justify-between text-[11px] text-purple-700 dark:text-purple-300">
+                                            <span className="font-bold flex items-center gap-1">
+                                                <Sparkles className="size-3 text-purple-500" />
+                                                Special Session / Alternative Class
+                                            </span>
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                                {selectedClassroom.classDate}
+                                            </span>
+                                        </div>
+                                        <div className="text-[11px] text-purple-900 dark:text-purple-200 font-semibold">
+                                            {selectedClassroom.name}
+                                        </div>
+                                        <div className="text-[11px] text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                                            <Clock className="size-3 text-purple-400 shrink-0" />
+                                            <span>Instructor: {selectedClassroom.teacherName} • Timing: {selectedClassroom.scheduleSummary}</span>
+                                        </div>
                                     </div>
-                                    <div className="text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                                        <Clock className="size-3 text-slate-400 shrink-0" />
-                                        <span>Regular Schedule: {selectedClassroom.scheduleSummary}</span>
+                                ) : (
+                                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-850/60 border border-slate-200/80 dark:border-slate-800 text-xs space-y-1">
+                                        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                                            <span className="font-bold text-slate-700 dark:text-slate-300">Instructor: {selectedClassroom.teacherName}</span>
+                                            <span>{selectedClassroom.enrolledCount} regular students</span>
+                                        </div>
+                                        <div className="text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                                            <Clock className="size-3 text-slate-400 shrink-0" />
+                                            <span>Regular Schedule: {selectedClassroom.scheduleSummary}</span>
+                                        </div>
                                     </div>
-                                </div>
+                                )
                             )}
 
-                            {/* Quick Next Occurrences Picker */}
-                            {upcomingDateSuggestions.length > 0 && (
+                            {/* Quick Next Occurrences Picker (Only for regular recurring batches) */}
+                            {!selectedClassroom?.isSpecialSession && upcomingDateSuggestions.length > 0 && (
                                 <div className="space-y-1.5">
                                     <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                         Quick Select Upcoming Class Dates
@@ -465,8 +550,19 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                                     type="date"
                                     value={makeupDate}
                                     onChange={(e) => setMakeupDate(e.target.value)}
-                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#ecb613]/50 transition-all"
+                                    disabled={selectedClassroom?.isSpecialSession}
+                                    className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
+                                        selectedClassroom?.isSpecialSession
+                                            ? 'bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-500 cursor-not-allowed'
+                                            : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#ecb613]/50'
+                                    }`}
                                 />
+                                {selectedClassroom?.isSpecialSession && (
+                                    <p className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold flex items-center gap-1 mt-1">
+                                        <Sparkles className="size-3.5 shrink-0" />
+                                        <span>Date automatically linked to this special session ({selectedClassroom.classDate}).</span>
+                                    </p>
+                                )}
                                 {dateScheduleMismatch && (
                                     <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 mt-1">
                                         <AlertCircle className="size-3.5 shrink-0" />

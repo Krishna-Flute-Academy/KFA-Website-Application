@@ -9,6 +9,7 @@ import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { fetchAcademyTeachers } from '../../../../src/lib/teachers';
 import { createSpecialSession, getDefaultCreditTreatment, SpecialSessionPurpose } from '../../../../src/lib/special-sessions';
+import { buildAlternativeClassName } from '../../../../src/lib/alternative-class-sessions';
 import { serializeClassroomDescription, isValidMeetingUrl } from '../../../../src/lib/meeting-utils';
 import { isStudentOperationallyActive } from '../../../../src/lib/student-lifecycle';
 import { sortClassroomsByDayAndTime } from '../../../../src/lib/classroomSort';
@@ -238,7 +239,7 @@ export default function CreateClassPage() {
                         setFormData(prev => ({
                             ...prev,
                             type: 'temporary',
-                            name: prev.name || `${matchedHol.classroomName} — Replacement Class (On Behalf Of ${matchedHol.holiday_date})`,
+                            name: prev.name || buildAlternativeClassName(matchedHol.classroomName),
                             teacherId: prev.teacherId || batch?.teacher_id || profile.id,
                             purpose: 'other',
                             creditTreatment: 'consume_credit',
@@ -505,6 +506,21 @@ export default function CreateClassPage() {
                     ? ` [OnBehalfOfHoliday:${linkedHoliday.holiday_date}][HolidayClassroom:${linkedHoliday.classroom_id}][HolidayId:${linkedHoliday.id}]`
                     : '';
 
+                if (linkedHoliday) {
+                    // Prevent duplicate alternative Special Sessions for the same holiday
+                    const { data: existingAlt } = await supabaseAuth
+                        .from('classrooms')
+                        .select('id, name, status')
+                        .eq('type', 'temporary')
+                        .ilike('description', `%[HolidayId:${linkedHoliday.id}]%`);
+                    const activeAlt = (existingAlt || []).find((r: any) => (r.status || 'active').toLowerCase() !== 'archived');
+                    if (activeAlt) {
+                        alert(`An alternative class "${activeAlt.name}" already exists for this holiday. Reschedule it from the holiday instead of creating a new one.`);
+                        setSubmitting(false);
+                        return;
+                    }
+                }
+
                 // Canonical Special Session creation via shared service
                 await createSpecialSession(supabaseAuth, {
                     teacherId: formData.teacherId,
@@ -734,7 +750,7 @@ export default function CreateClassPage() {
                                                             setFormData(prev => ({
                                                                 ...prev,
                                                                 type: 'temporary',
-                                                                name: prev.name || `${hol.classroomName} — Replacement Class (On Behalf Of ${hol.holiday_date})`,
+                                                                name: buildAlternativeClassName(hol.classroomName),
                                                                 teacherId: prev.teacherId || batch?.teacher_id || prev.teacherId,
                                                                 purpose: 'other',
                                                                 creditTreatment: 'consume_credit',

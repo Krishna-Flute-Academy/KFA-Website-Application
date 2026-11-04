@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
+import { cancelAlternativeSpecialSession } from '../../../src/lib/alternative-class-sessions';
 import { sortClassroomsByDayAndTime, parseDayAndStartFromClassroom } from '../../../src/lib/classroomSort';
 import { HistoricalLeaveCorrectionModal } from '../../../src/components/teacher-dashboard/attendance/HistoricalLeaveCorrectionModal';
 import { HistoricalAttendanceCorrectionModal } from '../../../src/components/teacher-dashboard/attendance/HistoricalAttendanceCorrectionModal';
@@ -1124,7 +1125,12 @@ export default function AttendancePage() {
 
                         await Promise.all([
                             supabaseAuth.from('classrooms').update({ description: updatedDesc }).eq('id', batchId),
-                            supabaseAuth.from('temporary_classes').update({ credit_treatment: 'consume_credit' }).eq('classroom_id', batchId)
+                            supabaseAuth.from('temporary_classes').update({ credit_treatment: 'consume_credit' }).eq('classroom_id', batchId),
+                            supabaseAuth.from('session_student_overrides')
+                                .update({ credit_treatment: 'consume_credit' })
+                                .eq('target_classroom_id', batchId)
+                                .eq('override_date', selectedDate)
+                                .eq('credit_treatment', 'complimentary')
                         ]);
 
                         setTemporaryClasses(prev => prev.map(tc =>
@@ -1178,6 +1184,16 @@ export default function AttendancePage() {
         }
     };
 
+    // BR-22: alternative class is a Special Session; cancel it when the holiday/alternative is withdrawn
+    const cancelLinkedAlternativeSession = async (holidayId: string) => {
+        try {
+            await cancelAlternativeSpecialSession(supabaseAuth, holidayId);
+            setTemporaryClasses(prev => prev.filter(tc => !String(tc.description || '').includes(`[HolidayId:${holidayId}]`)));
+        } catch (sessErr) {
+            console.error('Error cancelling alternative class special session:', sessErr);
+        }
+    };
+
     const handleCancelHoliday = async (holiday: any) => {
         if (!holiday?.id) return;
         const reason = window.prompt(
@@ -1196,6 +1212,7 @@ export default function AttendancePage() {
                 p_reason: reason.trim()
             });
             if (error) throw error;
+            await cancelLinkedAlternativeSession(holiday.id);
             await fetchClassroomHolidays();
             fetchPendingReport();
         } catch (err: any) {
@@ -1222,6 +1239,7 @@ export default function AttendancePage() {
                 p_reason: reason.trim()
             });
             if (error) throw error;
+            await cancelLinkedAlternativeSession(holiday.id);
             await fetchClassroomHolidays();
             fetchPendingReport();
         } catch (err: any) {
@@ -1315,6 +1333,7 @@ export default function AttendancePage() {
     }, [classrooms, teacherProfile, fromDate, toDate]);
 
     const fetchLeaveRequestsRef = useRef(fetchLeaveRequests);
+    const fetchMissedReportRef = useRef<() => void>(() => {});
     useEffect(() => {
         fetchLeaveRequestsRef.current = fetchLeaveRequests;
     }, [fetchLeaveRequests]);
@@ -1326,7 +1345,7 @@ export default function AttendancePage() {
         }
     }, [teacherProfile, fetchLeaveRequests]);
 
-    // Realtime updates for leave requests
+    // Realtime updates for leave requests, attendance, and session overrides (makeups)
     useEffect(() => {
         if (!teacherProfile) return;
 
@@ -1337,6 +1356,7 @@ export default function AttendancePage() {
                 { event: '*', schema: 'public', table: 'leave_requests' },
                 () => {
                     fetchLeaveRequestsRef.current();
+                    fetchMissedReportRef.current?.();
                 }
             )
             .on(
@@ -1344,6 +1364,15 @@ export default function AttendancePage() {
                 { event: '*', schema: 'public', table: 'attendance' },
                 () => {
                     fetchLeaveRequestsRef.current();
+                    fetchMissedReportRef.current?.();
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'session_student_overrides' },
+                () => {
+                    fetchLeaveRequestsRef.current();
+                    fetchMissedReportRef.current?.();
                 }
             )
             .subscribe();
@@ -1966,16 +1995,17 @@ export default function AttendancePage() {
             }
 
             // 2. Fetch all student overrides (makeups) to match later (sorted chronologically)
-            const { data: overridesData, error: overridesErr } = await supabaseAuth
+            const { data: overridesDataRaw, error: overridesErr } = await supabaseAuth
                 .from('session_student_overrides')
-                .select('id, student_id, target_classroom_id, override_date, reason')
+                .select('id, student_id, target_classroom_id, override_date, missed_session_date, reason, booking_status, credit_treatment')
                 .in('student_id', studentIds)
                 .order('override_date', { ascending: true });
 
             if (overridesErr) {
                 console.error('Error fetching overrides:', overridesErr);
             }
-            setStudentOverrides(overridesData || []);
+            const overridesData = (overridesDataRaw || []).filter((o: any) => o.booking_status !== 'cancelled');
+            setStudentOverrides(overridesData);
 
             // 3. Fetch all attendance records of these students to check if they attended makeup classes
             const { data: attendanceDataForMakeup } = await supabaseAuth
@@ -2010,8 +2040,6 @@ export default function AttendancePage() {
 
             if (logsErr) throw logsErr;
 
-
-
             // Filter out logs that are actually missed makeup classes (overrides)
             // so they don't count as separate root missed classes.
             const regularLogs = (logsData || []).filter((r: any) => {
@@ -2044,7 +2072,7 @@ export default function AttendancePage() {
                 let isTemp = false;
 
                 if (!name) {
-                    const temp = temporaryClasses.find(tc => tc.id === row.classroom_id);
+                    const temp = temporaryClasses.find(tc => tc.classroom_id === row.classroom_id || tc.id === row.classroom_id);
                     if (temp) {
                         name = temp.title;
                         isTemp = true;
@@ -2056,26 +2084,37 @@ export default function AttendancePage() {
                     if (cl) {
                         name = cl.name;
                     } else {
-                        const { data: tc } = await supabaseAuth.from('temporary_classes').select('title').eq('id', row.classroom_id).maybeSingle();
+                        const { data: tc } = await supabaseAuth.from('temporary_classes').select('title').or(`classroom_id.eq.${row.classroom_id},id.eq.${row.classroom_id}`).maybeSingle();
                         name = tc?.title || 'Unknown Classroom';
                         isTemp = !!tc;
                     }
                 }
 
-                // Find matching scheduled makeup override
                 // Find matching scheduled makeup override (recursively trace chain)
                 const logDateClean = row.date.split('T')[0].split(' ')[0];
                 let initialMakeup = (overridesData || []).find((o: any) => {
                     if (!o.override_date || !row.date) return false;
+                    if (o.student_id !== row.student_id) return false;
+
                     const oDate = o.override_date.split('T')[0].split(' ')[0];
-                    
-                    // First try strict match with [MissedDate:YYYY-MM-DD] tag in reason
-                    if (o.reason && o.reason.includes(`[MissedDate:${logDateClean}]`)) {
-                        return o.student_id === row.student_id;
+                    const oMissedDate = o.missed_session_date ? o.missed_session_date.split('T')[0].split(' ')[0] : null;
+
+                    // 1. Exact match with missed_session_date column
+                    if (oMissedDate && oMissedDate === logDateClean) {
+                        return true;
                     }
-                    
-                    // Fallback to date order if no tag
-                    return o.student_id === row.student_id && oDate >= logDateClean;
+
+                    // 2. Strict match with [MissedDate:YYYY-MM-DD] tag in reason
+                    if (o.reason && o.reason.includes(`[MissedDate:${logDateClean}]`)) {
+                        return true;
+                    }
+
+                    // 3. Fallback to date order if no tag and no specific missed date recorded
+                    if (!oMissedDate && (!o.reason || !o.reason.includes('[MissedDate:'))) {
+                        return oDate >= logDateClean;
+                    }
+
+                    return false;
                 });
 
                 let currentMakeup = initialMakeup;
@@ -2092,11 +2131,19 @@ export default function AttendancePage() {
                         // It was missed! Find if there is another override scheduled for this missed date
                         const nextMakeup = (overridesData || []).find((o: any) => {
                             if (!o.override_date) return false;
+                            if (o.student_id !== row.student_id) return false;
+
                             const oDateClean = o.override_date.split('T')[0].split(' ')[0];
+                            const oMissedDate = o.missed_session_date ? o.missed_session_date.split('T')[0].split(' ')[0] : null;
+
+                            if (oMissedDate && oMissedDate === mDateClean) return true;
                             if (o.reason && o.reason.includes(`[MissedDate:${mDateClean}]`)) {
-                                return o.student_id === row.student_id;
+                                return true;
                             }
-                            return o.student_id === row.student_id && oDateClean > mDateClean;
+                            if (!oMissedDate && (!o.reason || !o.reason.includes('[MissedDate:'))) {
+                                return oDateClean > mDateClean;
+                            }
+                            return false;
                         });
                         
                         if (nextMakeup && nextMakeup.id !== currentMakeup.id) {
@@ -2160,6 +2207,19 @@ export default function AttendancePage() {
             setMissedLoading(false);
         }
     }, [teacherProfile, fromDate, toDate, missedStatusFilter, missedSearchQuery, classrooms, temporaryClasses]);
+
+    useEffect(() => {
+        fetchMissedReportRef.current = fetchMissedReport;
+    }, [fetchMissedReport]);
+
+    const resolveClassroomName = useCallback((classroomId: string) => {
+        if (!classroomId) return 'Classroom';
+        const perm = classrooms.find(c => c.id === classroomId);
+        if (perm) return perm.name;
+        const temp = temporaryClasses.find(tc => tc.classroom_id === classroomId || tc.id === classroomId);
+        if (temp) return temp.title;
+        return 'Classroom';
+    }, [classrooms, temporaryClasses]);
 
     const fetchPendingReport = useCallback(async () => {
         if (!teacherProfile || classrooms.length === 0) return;
@@ -4413,13 +4473,6 @@ export default function AttendancePage() {
                                                 {/* Mobile view of missed logs (visible on mobile only) */}
                                                 <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800/40">
                                                     {missedLogs.map((log) => {
-                                                        const scheduledMakeup = studentOverrides.find(o => {
-                                                            if (!o.override_date || !log.date) return false;
-                                                            const oDate = o.override_date.split('T')[0].split(' ')[0];
-                                                            const lDate = log.date.split('T')[0].split(' ')[0];
-                                                            return o.student_id === log.student_id && oDate >= lDate;
-                                                        });
-
                                                         return (
                                                             <div 
                                                                 key={log.id} 
@@ -4455,6 +4508,9 @@ export default function AttendancePage() {
                                                                             {log.scheduledMakeup ? (
                                                                                 <span className={log.isMakeupMissed ? 'text-rose-600' : 'text-emerald-600'}>
                                                                                     {log.isMakeupMissed ? 'Missed Makeup' : 'Scheduled'} ({formatLocalDateStr(log.scheduledMakeup.override_date)})
+                                                                                    <span className="block text-[10px] text-slate-500 font-normal">
+                                                                                        in {resolveClassroomName(log.scheduledMakeup.target_classroom_id)}
+                                                                                    </span>
                                                                                 </span>
                                                                             ) : (
                                                                                 <span className="text-slate-400 italic">No makeup</span>
@@ -4484,7 +4540,7 @@ export default function AttendancePage() {
                                                                                     student_id: log.student_id,
                                                                                     student_name: log.student_name,
                                                                                     date: log.scheduledMakeup.override_date,
-                                                                                    classroom_name: classrooms.find(c => c.id === log.scheduledMakeup.target_classroom_id)?.name || 'Makeup Classroom',
+                                                                                    classroom_name: resolveClassroomName(log.scheduledMakeup.target_classroom_id),
                                                                                     classroom_id: log.scheduledMakeup.target_classroom_id,
                                                                                     status: 'absent'
                                                                                 } : log;
@@ -4519,14 +4575,6 @@ export default function AttendancePage() {
                                                         </thead>
                                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
                                                         {missedLogs.map((log) => {
-                                                            // Check if there is already an override scheduled on or after this missed date
-                                                            const scheduledMakeup = studentOverrides.find(o => {
-                                                                if (!o.override_date || !log.date) return false;
-                                                                const oDate = o.override_date.split('T')[0].split(' ')[0];
-                                                                const lDate = log.date.split('T')[0].split(' ')[0];
-                                                                return o.student_id === log.student_id && oDate >= lDate;
-                                                            });
-
                                                             return (
                                                                 <tr 
                                                                     key={log.id} 
@@ -4579,7 +4627,7 @@ export default function AttendancePage() {
                                                                                     </span>
                                                                                 )}
                                                                                 <span className="text-[10px] mt-0.5 text-slate-500">
-                                                                                    {formatLocalDateStr(log.scheduledMakeup.override_date)} in {classrooms.find(c => c.id === log.scheduledMakeup.target_classroom_id)?.name || 'Classroom'}
+                                                                                    {formatLocalDateStr(log.scheduledMakeup.override_date)} in {resolveClassroomName(log.scheduledMakeup.target_classroom_id)}
                                                                                 </span>
                                                                             </div>
                                                                         ) : (
@@ -4609,7 +4657,7 @@ export default function AttendancePage() {
                                                                                         student_id: log.student_id,
                                                                                         student_name: log.student_name,
                                                                                         date: log.scheduledMakeup.override_date,
-                                                                                        classroom_name: classrooms.find(c => c.id === log.scheduledMakeup.target_classroom_id)?.name || 'Makeup Classroom',
+                                                                                        classroom_name: resolveClassroomName(log.scheduledMakeup.target_classroom_id),
                                                                                         classroom_id: log.scheduledMakeup.target_classroom_id,
                                                                                         status: 'absent'
                                                                                     } : log;

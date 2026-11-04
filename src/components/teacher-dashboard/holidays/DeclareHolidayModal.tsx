@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabaseAuth } from '../../../lib/supabase-auth';
+import { ensureAlternativeSessionsForHolidayDate } from '../../../lib/alternative-class-sessions';
 import { Calendar, AlertCircle, X, Clock, HelpCircle, Layers, CheckSquare } from 'lucide-react';
 
 interface DeclareHolidayModalProps {
@@ -241,6 +242,19 @@ export default function DeclareHolidayModal({
                 });
 
                 if (rpcError) throw rpcError;
+            }
+
+            // BR-22: every scheduled alternative class is materialised as a Special Session
+            if (holidayType === 'alternative_scheduled') {
+                try {
+                    await ensureAlternativeSessionsForHolidayDate(
+                        supabaseAuth,
+                        holidayDate,
+                        scope === 'current' ? [effectiveSingleRoomId] : scope === 'selected' ? selectedClassroomIds : undefined
+                    );
+                } catch (sessErr) {
+                    console.error('Error creating alternative class special session:', sessErr);
+                }
             }
 
             onSuccess();
