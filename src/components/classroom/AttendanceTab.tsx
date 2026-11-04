@@ -266,14 +266,31 @@ export default function AttendanceTab({
             </div>
 
             {/* Attendance Table Card */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden relative">
+                {activeHoliday && !attendanceLoading && activeAttendanceRoster.length > 0 && (
+                    <div className="bg-amber-50/90 dark:bg-amber-950/60 border-b border-amber-200 dark:border-amber-800/60 px-5 py-2.5 flex items-center justify-between text-xs text-amber-900 dark:text-amber-200">
+                        <span className="font-bold flex items-center gap-2">
+                            <span>🔒 Attendance Blurred & Locked for Declared Holiday</span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-200/80 dark:bg-amber-900/70 font-extrabold uppercase tracking-wider">
+                                0 Credit Deduction
+                            </span>
+                        </span>
+                        <span className="text-[11px] text-amber-800 dark:text-amber-300 font-medium">
+                            {activeHoliday.holiday_type === 'no_alternative'
+                                ? 'Holiday — No Alternative Class'
+                                : activeHoliday.alternative_date
+                                    ? `Take attendance on Alternative Class (${activeHoliday.alternative_date})`
+                                    : 'Schedule or create an Alternative Class to take attendance on behalf of this holiday'}
+                        </span>
+                    </div>
+                )}
                 {attendanceLoading ? (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
                         <Loader2 className="w-8 h-8 animate-spin text-[#ecb613] mb-2" />
                         <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Syncing attendance logs...</p>
                     </div>
                 ) : activeAttendanceRoster.length > 0 ? (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                    <div className={`divide-y divide-slate-100 dark:divide-slate-800/50 transition-all ${activeHoliday ? 'blur-[2px] opacity-45 pointer-events-none select-none' : ''}`}>
                         {activeAttendanceRoster.map((student) => {
                             const status = attendanceRecords[student.student_id];
                             const isSaving = isSavingAttendanceMap[student.student_id];

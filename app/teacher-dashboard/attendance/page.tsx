@@ -2,12 +2,16 @@
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { sortClassroomsByDayAndTime, parseDayAndStartFromClassroom } from '../../../src/lib/classroomSort';
 import { HistoricalLeaveCorrectionModal } from '../../../src/components/teacher-dashboard/attendance/HistoricalLeaveCorrectionModal';
 import { HistoricalAttendanceCorrectionModal } from '../../../src/components/teacher-dashboard/attendance/HistoricalAttendanceCorrectionModal';
 import { AttendanceCorrectionHistoryModal } from '../../../src/components/teacher-dashboard/attendance/AttendanceCorrectionHistoryModal';
 import { UnmarkAttendanceModal } from '../../../src/components/teacher-dashboard/attendance/UnmarkAttendanceModal';
+import DeclareHolidayModal from '../../../src/components/teacher-dashboard/holidays/DeclareHolidayModal';
+import ScheduleAlternativeModal from '../../../src/components/teacher-dashboard/holidays/ScheduleAlternativeModal';
+import HolidayAuditHistoryModal from '../../../src/components/teacher-dashboard/holidays/HolidayAuditHistoryModal';
 import { 
     Loader2, 
     Calendar as CalendarIcon, 
@@ -74,6 +78,7 @@ interface TemporaryClass {
     id: string;
     classroom_id?: string | null;
     title: string;
+    description?: string | null;
     class_date: string;
     start_time: string;
     end_time: string;
@@ -95,6 +100,10 @@ interface BatchItem {
     type: 'permanent' | 'temporary';
     time: string;
     startTime?: string;
+    activeHoliday?: any | null;
+    alternativeHoliday?: any | null;
+    linkedHolidayDate?: string | null;
+    linkedHolidayRoomId?: string | null;
 }
 
 interface AttendanceLog {
@@ -236,6 +245,25 @@ export default function AttendancePage() {
     const [showCorrectionAuditModal, setShowCorrectionAuditModal] = useState(false);
     const [auditModalClassroomId, setAuditModalClassroomId] = useState<string | undefined>(undefined);
     const [auditModalStudentId, setAuditModalStudentId] = useState<string | undefined>(undefined);
+
+    // Holiday Management State (BR-22 & BR-23)
+    const [classroomHolidays, setClassroomHolidays] = useState<any[]>([]);
+    const [declareHolidayModalState, setDeclareHolidayModalState] = useState<{
+        isOpen: boolean;
+        classroomId: string;
+        classroomName: string;
+        initialDate: string;
+    }>({ isOpen: false, classroomId: '', classroomName: '', initialDate: '' });
+    const [scheduleAltModalState, setScheduleAltModalState] = useState<{
+        isOpen: boolean;
+        holiday: any | null;
+        classroomName: string;
+    }>({ isOpen: false, holiday: null, classroomName: '' });
+    const [holidayAuditModalState, setHolidayAuditModalState] = useState<{
+        isOpen: boolean;
+        classroomId: string;
+        classroomName: string;
+    }>({ isOpen: false, classroomId: '', classroomName: '' });
 
     // On-Behalf-Of batch state mapping batchId -> on_behalf_of_date
     const [batchOnBehalfOfMap, setBatchOnBehalfOfMap] = useState<Record<string, string | null>>({});
@@ -418,17 +446,25 @@ export default function AttendancePage() {
                 });
                 setClassrooms(loadedClassrooms);
 
-                // 2. Fetch all batch schedules in parallel (ordered by time ascending)
+                // 2. Fetch all batch schedules & active classroom holidays in parallel
                 if (loadedClassrooms.length > 0) {
                     const roomIds = loadedClassrooms.map(c => c.id);
-                    const { data: schedulesData } = await supabaseAuth
-                        .from('batch_schedules')
-                        .select('*')
-                        .in('classroom_id', roomIds)
-                        .order('day_of_week', { ascending: true })
-                        .order('start_time', { ascending: true });
+                    const [{ data: schedulesData }, { data: holidaysData }] = await Promise.all([
+                        supabaseAuth
+                            .from('batch_schedules')
+                            .select('*')
+                            .in('classroom_id', roomIds)
+                            .order('day_of_week', { ascending: true })
+                            .order('start_time', { ascending: true }),
+                        supabaseAuth
+                            .from('classroom_holidays')
+                            .select('*')
+                            .in('classroom_id', roomIds)
+                            .eq('status', 'active')
+                    ]);
                     
                     setAllSchedules(schedulesData || []);
+                    setClassroomHolidays(holidaysData || []);
                 }
 
                 // 3. Fetch all temporary classes (ordered by time ascending)
@@ -472,12 +508,94 @@ export default function AttendancePage() {
         checkAuthAndLoad();
     }, [router]);
 
+    const fetchClassroomHolidays = useCallback(async (loadedRooms = classrooms) => {
+        if (!loadedRooms || loadedRooms.length === 0) {
+            setClassroomHolidays([]);
+            return [];
+        }
+        try {
+            const roomIds = loadedRooms.map(c => c.id);
+            const { data, error } = await supabaseAuth
+                .from('classroom_holidays')
+                .select('*')
+                .in('classroom_id', roomIds)
+                .eq('status', 'active');
+            if (!error && data) {
+                setClassroomHolidays(data);
+                return data;
+            }
+        } catch (err) {
+            console.error('Error fetching classroom holidays:', err);
+        }
+        return classroomHolidays;
+    }, [classrooms, classroomHolidays]);
+
     // Active batches scheduled on the selected date (sorted in time ascending order)
     const activeBatchesOnSelectedDate = useMemo((): BatchItem[] => {
         if (!selectedDate) return [];
         const [year, month, day] = selectedDate.split('-').map(Number);
         const dateObj = new Date(year, month - 1, day);
         const dayOfWeek = dateObj.getDay(); 
+
+        // Index active classroom holidays by classroom_id + holiday_date and classroom_id + alternative_date
+        const activeHolByClassDate = new Map<string, any>();
+        const altHolByClassDate = new Map<string, any>();
+        (classroomHolidays || []).forEach(h => {
+            if (h && h.classroom_id && (!h.status || h.status === 'active')) {
+                const holDate = String(h.holiday_date || '').split('T')[0];
+                const altDate = h.alternative_date ? String(h.alternative_date).split('T')[0] : '';
+                if (holDate) {
+                    activeHolByClassDate.set(`${h.classroom_id}_${holDate}`, { ...h, holiday_date: holDate, alternative_date: altDate || null });
+                }
+                if (altDate && (h.holiday_type === 'alternative_scheduled' || h.holiday_type === 'with_alternative')) {
+                    altHolByClassDate.set(`${h.classroom_id}_${altDate}`, { ...h, holiday_date: holDate, alternative_date: altDate });
+                }
+            }
+        });
+
+        // Track if any temporary Special Session on selectedDate already represents a classroom's holiday replacement
+        const tempCoveredHolidayRoomSet = new Set<string>();
+        const activeTemporary = temporaryClasses
+            .filter(tc => tc.class_date === selectedDate && (tc.lifecycle_status || 'scheduled').toLowerCase() !== 'cancelled')
+            .map(tc => {
+                const desc = String(tc.description || '');
+                const holDateMatch = desc.match(/\[OnBehalfOfHoliday:(\d{4}-\d{2}-\d{2})\]/);
+                const holClassMatch = desc.match(/\[HolidayClassroom:([0-9a-fA-F-]+)\]/);
+                const holIdMatch = desc.match(/\[HolidayId:([0-9a-fA-F-]+)\]/);
+                let linkedHolidayDate = holDateMatch ? holDateMatch[1] : null;
+                let linkedHolidayRoomId = holClassMatch ? holClassMatch[1] : null;
+                let matchedHol = (linkedHolidayRoomId && linkedHolidayDate)
+                    ? activeHolByClassDate.get(`${linkedHolidayRoomId}_${linkedHolidayDate}`) || null
+                    : (holIdMatch ? (classroomHolidays || []).find(h => h.id === holIdMatch[1] && (!h.status || h.status === 'active')) || null : null);
+
+                // Fallback: if this temporary session matches the alternative_date + start_time of an active holiday
+                if (!matchedHol) {
+                    const tcStart5 = String(tc.start_time || '').slice(0, 5);
+                    matchedHol = (classroomHolidays || []).find(h =>
+                        h && (!h.status || h.status === 'active') &&
+                        (h.holiday_type === 'alternative_scheduled' || h.holiday_type === 'with_alternative') &&
+                        String(h.alternative_date || '').split('T')[0] === selectedDate &&
+                        (!h.alternative_start_time || String(h.alternative_start_time).slice(0, 5) === tcStart5)
+                    ) || null;
+                }
+                if (matchedHol) {
+                    linkedHolidayDate = String(matchedHol.holiday_date || '').split('T')[0] || linkedHolidayDate;
+                    linkedHolidayRoomId = matchedHol.classroom_id || linkedHolidayRoomId;
+                }
+                if (linkedHolidayRoomId && linkedHolidayDate) {
+                    tempCoveredHolidayRoomSet.add(`${linkedHolidayRoomId}_${linkedHolidayDate}`);
+                }
+                return {
+                    id: tc.classroom_id || tc.id,
+                    name: tc.title || 'Temporary Session',
+                    type: 'temporary' as const,
+                    time: `${formatTime12hr(tc.start_time.slice(0, 5))} - ${formatTime12hr(tc.end_time.slice(0, 5))}`,
+                    startTime: tc.start_time,
+                    alternativeHoliday: matchedHol,
+                    linkedHolidayDate,
+                    linkedHolidayRoomId
+                };
+            });
 
         const processedRoomIds = new Set<string>();
         const activePermanent: BatchItem[] = [];
@@ -492,12 +610,16 @@ export default function AttendancePage() {
                     const parsed = parseDayAndStartFromClassroom(room);
                     const startTimeStr = s.start_time || (parsed.startTimeMinutes < 24 * 60 ? `${String(Math.floor(parsed.startTimeMinutes / 60)).padStart(2, '0')}:${String(parsed.startTimeMinutes % 60).padStart(2, '0')}:00` : '00:00:00');
                     const endTimeStr = s.end_time || '01:00:00';
+                    const activeHol = activeHolByClassDate.get(`${room.id}_${selectedDate}`) || null;
+                    const altHol = altHolByClassDate.get(`${room.id}_${selectedDate}`) || null;
                     activePermanent.push({
                         id: room.id,
                         name: room.name || 'Classroom',
                         type: 'permanent',
                         time: `${formatTime12hr(startTimeStr.slice(0, 5))} - ${formatTime12hr(endTimeStr.slice(0, 5))}`,
-                        startTime: startTimeStr
+                        startTime: startTimeStr,
+                        activeHoliday: activeHol,
+                        alternativeHoliday: altHol
                     });
                 }
             });
@@ -514,31 +636,50 @@ export default function AttendancePage() {
                     const startTimeStr = parsed.startTimeMinutes < 24 * 60 ? `${String(Math.floor(parsed.startTimeMinutes / 60)).padStart(2, '0')}:${String(parsed.startTimeMinutes % 60).padStart(2, '0')}:00` : '00:00:00';
                     const endMin = (parsed.startTimeMinutes + 60) % (24 * 60);
                     const endTimeStr = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}:00`;
+                    const activeHol = activeHolByClassDate.get(`${room.id}_${selectedDate}`) || null;
+                    const altHol = altHolByClassDate.get(`${room.id}_${selectedDate}`) || null;
                     activePermanent.push({
                         id: room.id,
                         name: room.name || 'Classroom',
                         type: 'permanent',
                         time: `${formatTime12hr(startTimeStr.slice(0, 5))} - ${formatTime12hr(endTimeStr.slice(0, 5))}`,
-                        startTime: startTimeStr
+                        startTime: startTimeStr,
+                        activeHoliday: activeHol,
+                        alternativeHoliday: altHol
                     });
                 }
             }
         });
 
-        const activeTemporary = temporaryClasses
-            .filter(tc => tc.class_date === selectedDate && (tc.lifecycle_status || 'scheduled').toLowerCase() !== 'cancelled')
-            .map(tc => ({
-                id: tc.classroom_id || tc.id,
-                name: tc.title || 'Temporary Session',
-                type: 'temporary' as const,
-                time: `${formatTime12hr(tc.start_time.slice(0, 5))} - ${formatTime12hr(tc.end_time.slice(0, 5))}`,
-                startTime: tc.start_time
-            }));
+        // 3. Include any permanent classroom that has an active scheduled alternative class (BR-22) on selectedDate
+        //    (when selectedDate is not the classroom's regular weekday and not already represented by a linked Special Session)
+        classrooms.forEach(room => {
+            if (processedRoomIds.has(room.id)) return;
+            const altHol = altHolByClassDate.get(`${room.id}_${selectedDate}`);
+            if (!altHol) return;
+            if (tempCoveredHolidayRoomSet.has(`${room.id}_${altHol.holiday_date}`)) return;
+
+            processedRoomIds.add(room.id);
+            const fallbackSched = allSchedules.find(s => s.classroom_id === room.id);
+            const startTimeStr = altHol.alternative_start_time || fallbackSched?.start_time || '10:00:00';
+            const endTimeStr = altHol.alternative_end_time || fallbackSched?.end_time || '11:00:00';
+            activePermanent.push({
+                id: room.id,
+                name: room.name || 'Classroom',
+                type: 'permanent',
+                time: `${formatTime12hr(startTimeStr.slice(0, 5))} - ${formatTime12hr(endTimeStr.slice(0, 5))}`,
+                startTime: startTimeStr,
+                activeHoliday: null,
+                alternativeHoliday: altHol,
+                linkedHolidayDate: altHol.holiday_date,
+                linkedHolidayRoomId: room.id
+            });
+        });
 
         const combined = [...activePermanent, ...activeTemporary];
         combined.sort((a, b) => (a.startTime || '00:00:00').localeCompare(b.startTime || '00:00:00'));
         return combined;
-    }, [selectedDate, allSchedules, classrooms, temporaryClasses]);
+    }, [selectedDate, allSchedules, classrooms, temporaryClasses, classroomHolidays]);
 
     // Helper to calculate dot indicators for the calendar month
     const scheduledDatesSet = useMemo(() => {
@@ -557,8 +698,13 @@ export default function AttendancePage() {
                 .filter(tc => (tc.lifecycle_status || 'scheduled').toLowerCase() !== 'cancelled')
                 .map(tc => tc.class_date)
         );
+        (classroomHolidays || []).forEach(h => {
+            if (h && (!h.status || h.status === 'active') && h.alternative_date) {
+                tempDates.add(String(h.alternative_date).split('T')[0]);
+            }
+        });
         return { scheduledDaysOfWeek, tempDates };
-    }, [allSchedules, classrooms, temporaryClasses]);
+    }, [allSchedules, classrooms, temporaryClasses, classroomHolidays]);
 
     const hasClassesOnDate = useCallback((dateStr: string) => {
         if (!dateStr) return false;
@@ -643,7 +789,7 @@ export default function AttendancePage() {
                 const attendanceStatsMap = new Map<string, { present: number; absent: number; late: number; excused: number }>();
                 const loadedOnBehalfMap: Record<string, string | null> = {};
                 activeBatchesOnSelectedDate.forEach(batch => {
-                    loadedOnBehalfMap[batch.id] = null;
+                    loadedOnBehalfMap[batch.id] = batch.alternativeHoliday?.holiday_date || batch.linkedHolidayDate || null;
                 });
                 (attRows || []).forEach((r: any) => {
                     if (r.on_behalf_of_date && !loadedOnBehalfMap[r.classroom_id]) {
@@ -853,7 +999,9 @@ export default function AttendancePage() {
             });
 
             setBatchAttendanceMap(prev => ({ ...prev, [batchId]: attendanceMap }));
-            setBatchOnBehalfOfMap(prev => ({ ...prev, [batchId]: existingOnBehalfOf }));
+            const batchObj = activeBatchesOnSelectedDate.find(b => b.id === batchId);
+            const defaultOnBehalf = existingOnBehalfOf || batchObj?.alternativeHoliday?.holiday_date || batchObj?.linkedHolidayDate || null;
+            setBatchOnBehalfOfMap(prev => ({ ...prev, [batchId]: defaultOnBehalf }));
 
         } catch (err) {
             console.error('Error expanding batch:', err);
@@ -888,12 +1036,52 @@ export default function AttendancePage() {
         return dates;
     }, [allSchedules]);
 
-    const handleSetBatchOnBehalfOf = async (batchId: string, targetDate: string | null) => {
+    const handleSetBatchOnBehalfOf = async (batchId: string, rawSelection: string | null) => {
         const prevValue = batchOnBehalfOfMap[batchId] || null;
+        let selectedHolidayIdFromOption: string | null = null;
+        let targetDate: string | null = rawSelection;
+
+        if (rawSelection && rawSelection.startsWith('HOLIDAY:')) {
+            const parts = rawSelection.split(':');
+            selectedHolidayIdFromOption = parts[1] || null;
+            targetDate = parts[2] || null;
+        }
+
         setBatchOnBehalfOfMap(prev => ({ ...prev, [batchId]: targetDate }));
 
         try {
+            const batchObj = activeBatchesOnSelectedDate.find(b => b.id === batchId);
+            const tcRow = temporaryClasses.find(tc => (tc.classroom_id || tc.id) === batchId);
+
             if (!targetDate) {
+                // If this batch was previously linked to an active holiday on selectedDate, revert that holiday back to alternative_pending
+                const linkedHol = (classroomHolidays || []).find(h =>
+                    h.status === 'active' &&
+                    (h.holiday_type === 'alternative_scheduled' || h.holiday_type === 'with_alternative') &&
+                    String(h.alternative_date || '').split('T')[0] === selectedDate &&
+                    (h.classroom_id === batchId || batchObj?.linkedHolidayRoomId === h.classroom_id || String(h.holiday_date).split('T')[0] === prevValue)
+                );
+                if (linkedHol) {
+                    const { error: revErr } = await supabaseAuth.rpc('revert_holiday_alternative_to_pending', {
+                        p_holiday_id: linkedHol.id,
+                        p_reason: 'Unlinked replacement class from Attendance section'
+                    });
+                    if (revErr) throw revErr;
+
+                    if (tcRow) {
+                        const cleanDesc = String(tcRow.description || '')
+                            .replace(/\s*\[OnBehalfOfHoliday:[^\]]+\]/g, '')
+                            .replace(/\s*\[HolidayClassroom:[^\]]+\]/g, '')
+                            .replace(/\s*\[HolidayId:[^\]]+\]/g, '')
+                            .trim();
+                        await supabaseAuth.from('classrooms').update({ description: cleanDesc }).eq('id', batchId);
+                        setTemporaryClasses(prev => prev.map(tc =>
+                            (tc.classroom_id || tc.id) === batchId ? { ...tc, description: cleanDesc } : tc
+                        ));
+                    }
+                    await fetchClassroomHolidays();
+                }
+
                 // Clearing on-behalf-of mapping for all attendance rows in this batch on selectedDate
                 const { error } = await supabaseAuth
                     .from('attendance')
@@ -902,6 +1090,54 @@ export default function AttendancePage() {
                     .eq('date', selectedDate);
                 if (error) throw error;
             } else {
+                // Resolve matching active holiday either by explicit holiday ID or by classroom + date
+                const matchingHol = selectedHolidayIdFromOption
+                    ? (classroomHolidays || []).find(h => h.id === selectedHolidayIdFromOption && h.status === 'active')
+                    : (classroomHolidays || []).find(
+                        h => h.status === 'active' &&
+                             String(h.holiday_date).split('T')[0] === targetDate &&
+                             (h.classroom_id === batchId || batchObj?.linkedHolidayRoomId === h.classroom_id || batchObj?.type === 'temporary')
+                    );
+
+                if (matchingHol && matchingHol.holiday_type !== 'no_alternative') {
+                    const altStartTime = tcRow?.start_time || batchObj?.startTime || null;
+                    const altEndTime = tcRow?.end_time || null;
+
+                    const { error: schedErr } = await supabaseAuth.rpc('schedule_holiday_alternative', {
+                        p_holiday_id: matchingHol.id,
+                        p_alternative_date: selectedDate,
+                        p_alt_start_time: altStartTime,
+                        p_alt_end_time: altEndTime,
+                        p_reason: `Linked to ${batchObj?.name || 'replacement class'} on ${selectedDate}`
+                    });
+                    if (schedErr) throw schedErr;
+
+                    // If this batch is a Special Session (temporary_classes), persist linkage tags in shadow classroom description & credit_treatment
+                    if (tcRow) {
+                        const baseDesc = String(tcRow.description || '')
+                            .replace(/\s*\[OnBehalfOfHoliday:[^\]]+\]/g, '')
+                            .replace(/\s*\[HolidayClassroom:[^\]]+\]/g, '')
+                            .replace(/\s*\[HolidayId:[^\]]+\]/g, '')
+                            .trim();
+                        const holDateClean = String(matchingHol.holiday_date).split('T')[0];
+                        const updatedDesc = `${baseDesc} [OnBehalfOfHoliday:${holDateClean}][HolidayClassroom:${matchingHol.classroom_id}][HolidayId:${matchingHol.id}]`.trim();
+
+                        await Promise.all([
+                            supabaseAuth.from('classrooms').update({ description: updatedDesc }).eq('id', batchId),
+                            supabaseAuth.from('temporary_classes').update({ credit_treatment: 'consume_credit' }).eq('classroom_id', batchId)
+                        ]);
+
+                        setTemporaryClasses(prev => prev.map(tc =>
+                            (tc.classroom_id || tc.id) === batchId
+                                ? { ...tc, description: updatedDesc, credit_treatment: 'consume_credit' }
+                                : tc
+                        ));
+                    }
+
+                    await fetchClassroomHolidays();
+                    fetchPendingReport();
+                }
+
                 // Fetch attendance rows for this batch and date
                 const { data: attRows, error: fetchErr } = await supabaseAuth
                     .from('attendance')
@@ -939,6 +1175,58 @@ export default function AttendancePage() {
             console.error('Error updating on_behalf_of_date for batch:', err);
             setBatchOnBehalfOfMap(prev => ({ ...prev, [batchId]: prevValue }));
             alert(`Failed to update on-behalf date: ${err.message || err}`);
+        }
+    };
+
+    const handleCancelHoliday = async (holiday: any) => {
+        if (!holiday?.id) return;
+        const reason = window.prompt(
+            `Cancel declared holiday on ${holiday.holiday_date}?\nPlease enter a cancellation reason (minimum 3 characters):`,
+            'Regular class restored by teacher'
+        );
+        if (!reason || reason.trim().length < 3) {
+            if (reason !== null) {
+                alert('A valid cancellation reason (minimum 3 characters) is required.');
+            }
+            return;
+        }
+        try {
+            const { error } = await supabaseAuth.rpc('cancel_classroom_holiday', {
+                p_holiday_id: holiday.id,
+                p_reason: reason.trim()
+            });
+            if (error) throw error;
+            await fetchClassroomHolidays();
+            fetchPendingReport();
+        } catch (err: any) {
+            console.error('Error cancelling holiday:', err);
+            alert(err?.message || 'Failed to cancel holiday.');
+        }
+    };
+
+    const handleRevertHolidayToPending = async (holiday: any) => {
+        if (!holiday?.id) return;
+        const reason = window.prompt(
+            `Revert scheduled alternative date (${holiday.alternative_date}) back to Alternative Pending?\nPlease enter a reason (minimum 3 characters):`,
+            'Rescheduling replacement date later'
+        );
+        if (!reason || reason.trim().length < 3) {
+            if (reason !== null) {
+                alert('A valid reason (minimum 3 characters) is required.');
+            }
+            return;
+        }
+        try {
+            const { error } = await supabaseAuth.rpc('revert_holiday_alternative_to_pending', {
+                p_holiday_id: holiday.id,
+                p_reason: reason.trim()
+            });
+            if (error) throw error;
+            await fetchClassroomHolidays();
+            fetchPendingReport();
+        } catch (err: any) {
+            console.error('Error reverting holiday alternative:', err);
+            alert(err?.message || 'Failed to revert alternative to pending.');
         }
     };
 
@@ -1236,7 +1524,11 @@ export default function AttendancePage() {
         });
 
         try {
-            let onBehalfDate = batchOnBehalfOfMap[batchId] || null;
+            const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === batchId);
+            if (batchForRoom?.activeHoliday) {
+                throw new Error(`Cannot record attendance: ${selectedDate} is declared as a holiday for this classroom.`);
+            }
+            let onBehalfDate = batchOnBehalfOfMap[batchId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
             if (onBehalfDate) {
                 // Ensure student doesn't already have an on_behalf_of_date record for this target date in another class
                 const { data: conflict } = await supabaseAuth
@@ -1269,6 +1561,10 @@ export default function AttendancePage() {
                 teacherId: teacherProfile?.id,
                 supabase: supabaseAuth
             }).catch(e => console.error('Error checking fee balance transition:', e));
+
+            if (onBehalfDate || classroomHolidays.length > 0) {
+                fetchPendingReport();
+            }
 
             // Recalculate summary stats for this batch header dynamically
             // Read the previous status from the batchAttendanceMap state before the optimistic update
@@ -1596,12 +1892,18 @@ export default function AttendancePage() {
         // Optimistic update
         setDateAttendanceMap(prev => ({ ...prev, [key]: status }));
         try {
+            const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === classroomId);
+            if (batchForRoom?.activeHoliday) {
+                throw new Error(`Cannot record attendance: ${selectedDate} is declared as a holiday for this classroom.`);
+            }
+            const onBehalfDate = batchOnBehalfOfMap[classroomId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
             const { error } = await supabaseAuth
                 .from('attendance')
                 .insert({
                     student_id: studentId,
                     classroom_id: classroomId,
                     date: selectedDate,
+                    on_behalf_of_date: onBehalfDate,
                     status: status.toLowerCase(),
                     marked_by: teacherProfile.id
                 });
@@ -1612,6 +1914,9 @@ export default function AttendancePage() {
                 teacherId: teacherProfile?.id,
                 supabase: supabaseAuth
             }).catch(e => console.error('Error checking fee balance transition:', e));
+            if (onBehalfDate || classroomHolidays.length > 0) {
+                fetchPendingReport();
+            }
             // Also sync batchAttendanceMap if batch is expanded
             setBatchAttendanceMap(prev => {
                 const currentBatch = prev[classroomId] || {};
@@ -1866,7 +2171,7 @@ export default function AttendancePage() {
                 return;
             }
 
-            const [permRes, overridesRes, attRes, coveredRes] = await Promise.all([
+            const [permRes, overridesRes, attRes, coveredRes, holidaysRes] = await Promise.all([
                 supabaseAuth
                     .from('classroom_students')
                     .select('classroom_id, student_id, joined_at, users!student_id(name, profile_pic_url, teacher_id, status, join_date, created_at)')
@@ -1879,14 +2184,21 @@ export default function AttendancePage() {
                 supabaseAuth
                     .from('attendance')
                     .select('id, student_id, classroom_id, date, status, on_behalf_of_date')
-                    .gte('date', fromDate)
-                    .lte('date', toDate),
+                    .gte('date', fromDate),
                 supabaseAuth
                     .from('attendance')
                     .select('id, student_id, classroom_id, date, status, on_behalf_of_date')
-                    .gte('on_behalf_of_date', fromDate)
-                    .lte('on_behalf_of_date', toDate)
+                    .gte('on_behalf_of_date', fromDate),
+                supabaseAuth
+                    .from('classroom_holidays')
+                    .select('*')
+                    .in('classroom_id', roomIds)
+                    .eq('status', 'active')
             ]);
+
+            if (holidaysRes.data) {
+                setClassroomHolidays(holidaysRes.data);
+            }
 
             const derived = derivePendingAttendanceSessions({
                 fromDate,
@@ -1897,7 +2209,8 @@ export default function AttendancePage() {
                 permanentStudents: permRes.data || [],
                 sessionOverrides: overridesRes.data || [],
                 attendanceRows: attRes.data || [],
-                coveredAttendanceRows: coveredRes.data || []
+                coveredAttendanceRows: coveredRes.data || [],
+                classroomHolidays: holidaysRes.data || []
             });
 
             setPendingSessions(derived);
@@ -1928,16 +2241,39 @@ export default function AttendancePage() {
         status: 'present' | 'absent' | 'late' | 'excused'
     ) => {
         if (!teacherProfile) return;
+        if (session.holidayInfo) {
+            if (session.holidayInfo.alternativeStatus === 'not_scheduled' || !session.holidayInfo.alternativeDate) {
+                const fullHol = classroomHolidays.find(h => h.id === session.holidayInfo?.id) || {
+                    id: session.holidayInfo.id,
+                    classroom_id: session.classroomId,
+                    holiday_date: session.holidayInfo.holidayDate,
+                    holiday_type: session.holidayInfo.holidayType,
+                    alternative_date: session.holidayInfo.alternativeDate,
+                    alternative_start_time: session.holidayInfo.alternativeStartTime,
+                    alternative_end_time: session.holidayInfo.alternativeEndTime,
+                    reason: session.holidayInfo.reason
+                };
+                setScheduleAltModalState({
+                    isOpen: true,
+                    holiday: fullHol,
+                    classroomName: session.classroomName
+                });
+                return;
+            }
+        }
         const markKey = `${session.sessionKey}_${studentId}`;
         setPendingMarkingMap(prev => ({ ...prev, [markKey]: true }));
 
         try {
+            const targetAttendanceDate = session.holidayInfo?.alternativeDate || session.date;
+            const targetOnBehalfDate = session.holidayInfo ? session.holidayInfo.holidayDate : null;
             const { error } = await supabaseAuth
                 .from('attendance')
                 .upsert({
                     student_id: studentId,
                     classroom_id: session.classroomId,
-                    date: session.date,
+                    date: targetAttendanceDate,
+                    on_behalf_of_date: targetOnBehalfDate,
                     status: status,
                     marked_by: teacherProfile.id
                 }, {
@@ -2601,7 +2937,49 @@ export default function AttendancePage() {
                             </button>
                         </div>
 
-                        <div className="flex items-center gap-2 w-full lg:w-auto">
+                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full lg:w-auto">
+                            {/* Declare Holiday Button (BR-22 & BR-23) */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const defaultRoom = classrooms.find(c => c.id === expandedBatchId) ||
+                                        classrooms.find(c => activeBatchesOnSelectedDate.some(b => b.id === c.id && b.type === 'permanent')) ||
+                                        classrooms[0];
+                                    setDeclareHolidayModalState({
+                                        isOpen: true,
+                                        classroomId: defaultRoom?.id || '',
+                                        classroomName: defaultRoom?.name || 'Classroom',
+                                        initialDate: selectedDate
+                                    });
+                                }}
+                                className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                                title="Declare classroom holiday (Single or Multiple Classes — With or Without Alternative Class)"
+                            >
+                                <span>🏖️</span>
+                                <span>Declare Holiday</span>
+                            </button>
+
+                            {/* Holiday Audit Log Button */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const defaultRoom = classrooms.find(c => c.id === expandedBatchId) ||
+                                        classrooms.find(c => activeBatchesOnSelectedDate.some(b => b.id === c.id && b.type === 'permanent')) ||
+                                        classrooms[0];
+                                    if (!defaultRoom) return;
+                                    setHolidayAuditModalState({
+                                        isOpen: true,
+                                        classroomId: defaultRoom.id,
+                                        classroomName: defaultRoom.name
+                                    });
+                                }}
+                                className="px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                                title="View Holiday Declaration & Rescheduling Audit History"
+                            >
+                                <span>📋</span>
+                                <span className="hidden xl:inline">Holiday History</span>
+                            </button>
+
                             {/* Audit Trail Button */}
                             <button
                                 type="button"
@@ -2900,7 +3278,26 @@ export default function AttendancePage() {
                                                                 }`}>
                                                                     {batch.type === 'permanent' ? '👥 Classroom' : '⚡ Special Session'}
                                                                 </span>
-                                                                {batchOnBehalfOfMap[batch.id] && (
+                                                                {batch.activeHoliday && (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                                                        {batch.activeHoliday.holiday_type === 'no_alternative'
+                                                                            ? '🏖️ Holiday — No Alternative'
+                                                                            : batch.activeHoliday.holiday_type === 'alternative_pending'
+                                                                                ? '⏳ Holiday — Alt Pending'
+                                                                                : `🏖️ Holiday — Alt: ${formatLocalDateStr(batch.activeHoliday.alternative_date)}`}
+                                                                    </span>
+                                                                )}
+                                                                {batch.activeHoliday && (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                                        0 Credit Deduction
+                                                                    </span>
+                                                                )}
+                                                                {(batch.alternativeHoliday || batch.linkedHolidayDate) && !batch.activeHoliday && (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
+                                                                        🔄 On Behalf Of {formatLocalDateStr(batch.alternativeHoliday?.holiday_date || batch.linkedHolidayDate!)}
+                                                                    </span>
+                                                                )}
+                                                                {batchOnBehalfOfMap[batch.id] && !batch.alternativeHoliday && !batch.linkedHolidayDate && (
                                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
                                                                         🗓️ Taken on behalf of {formatLocalDateStr(batchOnBehalfOfMap[batch.id]!)}
                                                                     </span>
@@ -2911,7 +3308,29 @@ export default function AttendancePage() {
 
                                                     {/* Summary Status indicator */}
                                                     <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-1">
-                                                        {summary && summary.total > 0 ? (
+                                                        {batch.type === 'permanent' && !batch.activeHoliday && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setDeclareHolidayModalState({
+                                                                        isOpen: true,
+                                                                        classroomId: batch.id,
+                                                                        classroomName: batch.name,
+                                                                        initialDate: selectedDate
+                                                                    });
+                                                                }}
+                                                                className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-300 text-[10px] font-bold transition-colors cursor-pointer"
+                                                                title="Declare Holiday for this class"
+                                                            >
+                                                                <span>🏖️ Holiday</span>
+                                                            </button>
+                                                        )}
+                                                        {batch.activeHoliday ? (
+                                                            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-1 sm:px-2.5 sm:py-1 bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-full whitespace-nowrap">
+                                                                🔒 Holiday Locked
+                                                            </span>
+                                                        ) : summary && summary.total > 0 ? (
                                                             <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-1 sm:px-2.5 sm:py-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 border border-emerald-100 dark:border-emerald-900 rounded-full whitespace-nowrap">
                                                                 Marked {summary.present + summary.late + summary.absent + summary.excused}/{summary.total}
                                                             </span>
@@ -2931,45 +3350,207 @@ export default function AttendancePage() {
                                                 {/* Accordion Content */}
                                                 {isExpanded && (
                                                     <div className="border-t border-slate-100 dark:border-slate-800 p-3.5 sm:p-4 bg-slate-50/50 dark:bg-slate-850/20">
-                                                        {/* Optional On-Behalf-Of Control */}
-                                                        <div className="mb-3.5 p-3 sm:p-3.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-800/80 flex flex-wrap items-center justify-between gap-2.5 text-xs shadow-xs">
-                                                            <div className="flex items-center gap-2.5 min-w-0">
-                                                                <span className="text-lg shrink-0">🗓️</span>
-                                                                <div className="min-w-0">
+                                                        {/* ── Declared Holiday Banner & Actions (BR-22 & BR-23) ── */}
+                                                        {batch.activeHoliday && (
+                                                            <div className="mb-3.5 p-3.5 sm:p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                                <div className="space-y-1">
                                                                     <div className="flex items-center gap-2 flex-wrap">
-                                                                        <span className="font-bold text-slate-900 dark:text-slate-100">
-                                                                            Take this class on behalf of another scheduled class?
+                                                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200">
+                                                                            {batch.activeHoliday.holiday_type === 'no_alternative'
+                                                                                ? '🏖️ Holiday — No Alternative Class'
+                                                                                : batch.activeHoliday.holiday_type === 'alternative_pending'
+                                                                                    ? '⏳ Holiday — Alternative Class Pending'
+                                                                                    : '🏖️ Holiday — Alternative Scheduled'}
                                                                         </span>
-                                                                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300">
-                                                                            Class Accounting
+                                                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                                                                            0 Credit Deduction
                                                                         </span>
                                                                     </div>
-                                                                    {batchOnBehalfOfMap[batch.id] ? (
-                                                                        <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
-                                                                            ✓ Today ({formatLocalDateStr(selectedDate)}) counts towards {formatLocalDateStr(batchOnBehalfOfMap[batch.id]!)}
-                                                                        </p>
-                                                                    ) : (
-                                                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                                                            Default: Regular scheduled class for {formatLocalDateStr(selectedDate)}
+                                                                    <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                                                                        {batch.activeHoliday.holiday_type === 'no_alternative' ? (
+                                                                            <>No replacement class or attendance on this date. Unused credits remain intact.</>
+                                                                        ) : batch.activeHoliday.holiday_type === 'alternative_pending' ? (
+                                                                            <>Alternative class date &amp; time not set yet. Schedule the alternative date or create a Special Session on behalf of this holiday.</>
+                                                                        ) : (() => {
+                                                                            const altDateClean = String(batch.activeHoliday.alternative_date || '').split('T')[0];
+                                                                            const linkedSpecialClass = temporaryClasses.find(tc => {
+                                                                                if ((tc.lifecycle_status || 'scheduled').toLowerCase() === 'cancelled') return false;
+                                                                                const desc = String(tc.description || '');
+                                                                                if (desc.includes(`[HolidayId:${batch.activeHoliday.id}]`)) return true;
+                                                                                if (desc.includes(`[OnBehalfOfHoliday:${batch.activeHoliday.holiday_date}]`) && desc.includes(`[HolidayClassroom:${batch.id}]`)) return true;
+                                                                                return tc.class_date === altDateClean && (!batch.activeHoliday.alternative_start_time || String(tc.start_time || '').slice(0, 5) === String(batch.activeHoliday.alternative_start_time).slice(0, 5));
+                                                                            });
+                                                                            const startStr = batch.activeHoliday.alternative_start_time || linkedSpecialClass?.start_time;
+                                                                            const endStr = batch.activeHoliday.alternative_end_time || linkedSpecialClass?.end_time;
+                                                                            return (
+                                                                                <>
+                                                                                    Alternative class:{' '}
+                                                                                    {linkedSpecialClass?.title ? (
+                                                                                        <strong className="text-amber-950 dark:text-white">{linkedSpecialClass.title}</strong>
+                                                                                    ) : null}
+                                                                                    {linkedSpecialClass?.title ? ' on ' : 'scheduled on '}
+                                                                                    <strong className="underline">{formatLocalDateStr(batch.activeHoliday.alternative_date, true)}</strong>
+                                                                                    {startStr ? ` (${formatTime12hr(String(startStr).slice(0, 5))}${endStr ? ` - ${formatTime12hr(String(endStr).slice(0, 5))}` : ''})` : ''}.
+                                                                                    {' '}Take attendance on the alternative class.
+                                                                                </>
+                                                                            );
+                                                                        })()}
+                                                                    </p>
+                                                                    {batch.activeHoliday.reason && (
+                                                                        <p className="text-[11px] text-amber-700 dark:text-amber-400 italic">
+                                                                            Reason: {batch.activeHoliday.reason}
                                                                         </p>
                                                                     )}
                                                                 </div>
+                                                                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                                                    {batch.activeHoliday.holiday_type === 'alternative_pending' && (
+                                                                        <>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setScheduleAltModalState({
+                                                                                    isOpen: true,
+                                                                                    holiday: batch.activeHoliday,
+                                                                                    classroomName: batch.name
+                                                                                })}
+                                                                                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs transition-all cursor-pointer shadow-xs"
+                                                                            >
+                                                                                📅 Schedule Alternative
+                                                                            </button>
+                                                                            <Link
+                                                                                href={`/teacher-dashboard/classrooms/add?type=temporary&holidayId=${batch.activeHoliday.id}&classroomId=${batch.id}&holidayDate=${batch.activeHoliday.holiday_date}`}
+                                                                                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-all cursor-pointer shadow-xs inline-flex items-center gap-1"
+                                                                            >
+                                                                                <span>⚡ Create Special Session (On Behalf)</span>
+                                                                            </Link>
+                                                                        </>
+                                                                    )}
+                                                                    {(batch.activeHoliday.holiday_type === 'alternative_scheduled' || batch.activeHoliday.holiday_type === 'with_alternative') && (
+                                                                        <>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    if (batch.activeHoliday.alternative_date) {
+                                                                                        setSelectedDate(batch.activeHoliday.alternative_date);
+                                                                                    }
+                                                                                }}
+                                                                                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-all cursor-pointer shadow-xs"
+                                                                            >
+                                                                                ➡️ Go to Alternative ({formatLocalDateStr(batch.activeHoliday.alternative_date)})
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setScheduleAltModalState({
+                                                                                    isOpen: true,
+                                                                                    holiday: batch.activeHoliday,
+                                                                                    classroomName: batch.name
+                                                                                })}
+                                                                                className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 font-bold text-xs transition-all cursor-pointer"
+                                                                            >
+                                                                                ✏️ Reschedule
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleRevertHolidayToPending(batch.activeHoliday)}
+                                                                                className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition-all cursor-pointer"
+                                                                            >
+                                                                                ⏳ Revert to Pending
+                                                                            </button>
+                                                                        </>
+                                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleCancelHoliday(batch.activeHoliday)}
+                                                                        className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold text-xs transition-all cursor-pointer"
+                                                                    >
+                                                                        Cancel Holiday
+                                                                    </button>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                <select
-                                                                    value={batchOnBehalfOfMap[batch.id] || ''}
-                                                                    onChange={(e) => handleSetBatchOnBehalfOf(batch.id, e.target.value || null)}
-                                                                    className="text-xs font-bold px-3 py-1.5 rounded-lg border-2 border-amber-400 dark:border-amber-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/50 outline-hidden cursor-pointer shadow-xs"
-                                                                >
-                                                                    <option value="">No (Regular Class)</option>
-                                                                    {getUpcomingScheduledDatesForBatch(batch.id, selectedDate).map(dStr => (
-                                                                        <option key={dStr} value={dStr}>
-                                                                            Yes, on behalf of {formatLocalDateStr(dStr, true)}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
+                                                        )}
+
+                                                        {/* ── Alternative Class Banner (BR-22) ── */}
+                                                        {(batch.alternativeHoliday || batch.linkedHolidayDate) && !batch.activeHoliday && (
+                                                            <div className="mb-3.5 p-3.5 sm:p-4 rounded-xl bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-300 dark:border-blue-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                                <div className="space-y-1">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-200 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200">
+                                                                            🔄 Alternative Class (On Behalf Of {formatLocalDateStr(batch.alternativeHoliday?.holiday_date || batch.linkedHolidayDate!, true)})
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-xs font-semibold text-blue-900 dark:text-blue-200">
+                                                                        Attendance recorded in this class counts on behalf of the declared holiday on{' '}
+                                                                        <strong>{formatLocalDateStr(batch.alternativeHoliday?.holiday_date || batch.linkedHolidayDate!, true)}</strong>.
+                                                                        Present/Late/Uninformed Absent deducts <strong>1 credit</strong> (no double deduction, no makeup entitlement).
+                                                                    </p>
+                                                                </div>
                                                             </div>
-                                                        </div>
+                                                        )}
+
+                                                        {/* Optional On-Behalf-Of Control */}
+                                                        {!batch.activeHoliday && (
+                                                            <div className="mb-3.5 p-3 sm:p-3.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-800/80 flex flex-wrap items-center justify-between gap-2.5 text-xs shadow-xs">
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    <span className="text-lg shrink-0">🗓️</span>
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                                                                                Take this class on behalf of another scheduled or holiday class?
+                                                                            </span>
+                                                                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300">
+                                                                                Class Accounting
+                                                                            </span>
+                                                                        </div>
+                                                                        {batchOnBehalfOfMap[batch.id] ? (
+                                                                            <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                                                                ✓ Today ({formatLocalDateStr(selectedDate)}) counts towards {formatLocalDateStr(batchOnBehalfOfMap[batch.id]!)}
+                                                                            </p>
+                                                                        ) : (
+                                                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                                                Default: Regular scheduled class for {formatLocalDateStr(selectedDate)}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 shrink-0">
+                                                                    {(() => {
+                                                                        const currentTargetDate = batchOnBehalfOfMap[batch.id] || '';
+                                                                        const matchedHolidayOption = classroomHolidays.find((h: any) =>
+                                                                            h.status === 'active' &&
+                                                                            h.holiday_type !== 'no_alternative' &&
+                                                                            String(h.holiday_date).split('T')[0] === currentTargetDate &&
+                                                                            (h.classroom_id === batch.id || batch.linkedHolidayRoomId === h.classroom_id || batch.type === 'temporary')
+                                                                        );
+                                                                        const selectValue = matchedHolidayOption
+                                                                            ? `HOLIDAY:${matchedHolidayOption.id}:${String(matchedHolidayOption.holiday_date).split('T')[0]}`
+                                                                            : currentTargetDate;
+                                                                        return (
+                                                                            <select
+                                                                                value={selectValue}
+                                                                                onChange={(e) => handleSetBatchOnBehalfOf(batch.id, e.target.value || null)}
+                                                                                className="text-xs font-bold px-3 py-1.5 rounded-lg border-2 border-amber-400 dark:border-amber-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/50 outline-hidden cursor-pointer shadow-xs"
+                                                                            >
+                                                                                <option value="">No (Regular Class)</option>
+                                                                                {classroomHolidays
+                                                                                    .filter((h: any) => h.status === 'active' && h.holiday_type !== 'no_alternative' && (h.classroom_id === batch.id || batch.type === 'temporary'))
+                                                                                    .map((h: any) => {
+                                                                                        const holDateStr = String(h.holiday_date).split('T')[0];
+                                                                                        return (
+                                                                                            <option key={`hol_${h.id}`} value={`HOLIDAY:${h.id}:${holDateStr}`}>
+                                                                                                🏖️ Holiday on {formatLocalDateStr(holDateStr, true)}{h.classroom_id !== batch.id ? ` — ${classrooms.find(c => c.id === h.classroom_id)?.name || 'Class'}` : ''}
+                                                                                            </option>
+                                                                                        );
+                                                                                    })}
+                                                                                {getUpcomingScheduledDatesForBatch(batch.id, selectedDate).map(dStr => (
+                                                                                    <option key={dStr} value={dStr}>
+                                                                                        Yes, on behalf of {formatLocalDateStr(dStr, true)}
+                                                                                    </option>
+                                                                                ))}
+                                                                            </select>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+                                                            </div>
+                                                        )}
 
                                                         {isBatchLoading ? (
                                                             <div className="flex flex-col items-center justify-center py-6">
@@ -2977,7 +3558,15 @@ export default function AttendancePage() {
                                                                 <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Loading Roster...</p>
                                                             </div>
                                                         ) : batchRoster.length > 0 ? (
-                                                            <div className="space-y-2">
+                                                            <div className="relative">
+                                                                {batch.activeHoliday && (
+                                                                    <div className="mb-2.5 px-3 py-2 rounded-xl bg-amber-100/90 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 flex items-center justify-between gap-2 text-xs font-bold text-amber-900 dark:text-amber-200">
+                                                                        <span>
+                                                                            🔒 Attendance is blurred and locked because this class is marked as a Holiday ({batch.activeHoliday.holiday_type === 'no_alternative' ? 'No Alternative' : 'Attendance taken in Alternative Class'}).
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                                <div className={`space-y-2 transition-all ${batch.activeHoliday ? 'blur-[2px] opacity-45 pointer-events-none select-none' : ''}`}>
                                                                 {batchRoster.map((student) => {
                                                                     const status = batchAttendance[student.id];
                                                                     const coveredInfo = coveredAttendanceMap[student.id];
@@ -3080,6 +3669,7 @@ export default function AttendancePage() {
                                                                         </div>
                                                                     );
                                                                 })}
+                                                                </div>
                                                             </div>
                                                         ) : (
                                                             <div className="py-6 text-center text-slate-400 text-xs font-semibold">
@@ -3186,16 +3776,24 @@ export default function AttendancePage() {
 
                                             return (
                                                 <div className="divide-y divide-slate-100 dark:divide-slate-800/40">
-                                                    {sortedGrouped.map(([cid, group]) => (
+                                                    {sortedGrouped.map(([cid, group]) => {
+                                                        const groupBatch = activeBatchesOnSelectedDate.find(b => b.id === cid);
+                                                        const groupHoliday = groupBatch?.activeHoliday;
+                                                        return (
                                                         <div key={cid}>
                                                             {/* Batch sub-header */}
-                                                            <div className="px-3 py-2 sm:px-5 sm:py-2.5 bg-slate-50/70 dark:bg-slate-800/40 flex items-center gap-2">
+                                                            <div className="px-3 py-2 sm:px-5 sm:py-2.5 bg-slate-50/70 dark:bg-slate-800/40 flex items-center gap-2 flex-wrap">
                                                                 <School className="w-3.5 h-3.5 text-[#ecb613] shrink-0" />
                                                                 <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest truncate">{group.name}</span>
+                                                                {groupHoliday && (
+                                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                                                        🔒 Holiday Locked ({groupHoliday.holiday_type === 'no_alternative' ? 'No Alternative' : 'Alt Class'})
+                                                                    </span>
+                                                                )}
                                                                 <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-wider shrink-0">{group.entries.length} student{group.entries.length !== 1 ? 's' : ''}</span>
                                                             </div>
                                                             {/* Students */}
-                                                            <div className="divide-y divide-slate-50 dark:divide-slate-800/20">
+                                                            <div className={`divide-y divide-slate-50 dark:divide-slate-800/20 ${groupHoliday ? 'blur-[2px] opacity-45 pointer-events-none select-none' : ''}`}>
                                                                 {group.entries.map((entry) => {
                                                                     const attKey = `${entry.student.id}_${entry.classroom_id}`;
                                                                     const status = dateAttendanceMap[attKey];
@@ -3294,7 +3892,8 @@ export default function AttendancePage() {
                                                                 })}
                                                             </div>
                                                         </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             );
                                         })()}
@@ -3526,7 +4125,17 @@ export default function AttendancePage() {
                                                                                 Special Session
                                                                             </span>
                                                                         )}
-                                                                        {session.markedCount === 0 ? (
+                                                                        {session.holidayInfo ? (
+                                                                            session.holidayInfo.alternativeStatus === 'not_scheduled' ? (
+                                                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                                                                    🏖️ Holiday Marked — Alternative Class Not Scheduled Yet
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
+                                                                                    🏖️ Holiday Marked — Alt Class Attendance Pending ({formatLocalDateStr(session.holidayInfo.alternativeDate!, true)})
+                                                                                </span>
+                                                                            )
+                                                                        ) : session.markedCount === 0 ? (
                                                                             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400">
                                                                                 Fully Unmarked (0/{session.totalExpectedCount})
                                                                             </span>
@@ -3536,30 +4145,82 @@ export default function AttendancePage() {
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                                                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium flex-wrap">
                                                                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
                                                                         <span>{formatLocalDateStr(session.date, true)}</span>
                                                                         <span>•</span>
                                                                         <Clock className="w-3.5 h-3.5 text-slate-400" />
                                                                         <span>{session.timeFormatted}</span>
+                                                                        {session.holidayInfo?.reason && (
+                                                                            <>
+                                                                                <span>•</span>
+                                                                                <span className="text-amber-700 dark:text-amber-400 italic">Reason: {session.holidayInfo.reason}</span>
+                                                                            </>
+                                                                        )}
                                                                     </div>
                                                                 </div>
 
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setSelectedDate(session.date);
-                                                                        setMode('class');
-                                                                        handleExpandBatch(session.classroomId, session.isTemporary, true);
-                                                                    }}
-                                                                    className="self-start sm:self-auto px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-[#ecb613] hover:text-[#ecb613] transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                                                                >
-                                                                    <span>Open in Calendar</span>
-                                                                    <ArrowRight className="w-3 h-3" />
-                                                                </button>
+                                                                <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                                                                    {session.holidayInfo && session.holidayInfo.alternativeStatus === 'not_scheduled' && (
+                                                                        <>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    const holRow = classroomHolidays.find((h: any) => h.id === session.holidayInfo?.id);
+                                                                                    setScheduleAltModalState({
+                                                                                        isOpen: true,
+                                                                                        holiday: holRow || {
+                                                                                            id: session.holidayInfo!.id,
+                                                                                            classroom_id: session.classroomId,
+                                                                                            holiday_date: session.date,
+                                                                                            holiday_type: 'alternative_pending',
+                                                                                            reason: session.holidayInfo!.reason
+                                                                                        },
+                                                                                        classroomName: session.classroomName
+                                                                                    });
+                                                                                }}
+                                                                                className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black transition-all cursor-pointer shadow-xs"
+                                                                            >
+                                                                                📅 Schedule Alternative
+                                                                            </button>
+                                                                            <Link
+                                                                                href={`/teacher-dashboard/classrooms/add?type=temporary&holidayId=${session.holidayInfo.id}&classroomId=${session.classroomId}&holidayDate=${session.date}`}
+                                                                                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs inline-flex items-center gap-1"
+                                                                            >
+                                                                                <span>⚡ Create Special Session (On Behalf)</span>
+                                                                            </Link>
+                                                                        </>
+                                                                    )}
+                                                                    {session.holidayInfo && session.holidayInfo.alternativeDate && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setSelectedDate(session.holidayInfo!.alternativeDate!);
+                                                                                setMode('class');
+                                                                                handleExpandBatch(session.classroomId, session.isTemporary, true);
+                                                                            }}
+                                                                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                                                        >
+                                                                            <span>Open Alternative ({formatLocalDateStr(session.holidayInfo.alternativeDate)})</span>
+                                                                            <ArrowRight className="w-3 h-3" />
+                                                                        </button>
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setSelectedDate(session.date);
+                                                                            setMode('class');
+                                                                            handleExpandBatch(session.classroomId, session.isTemporary, true);
+                                                                        }}
+                                                                        className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-[#ecb613] hover:text-[#ecb613] transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                                                    >
+                                                                        <span>Open in Calendar</span>
+                                                                        <ArrowRight className="w-3 h-3" />
+                                                                    </button>
+                                                                </div>
                                                             </div>
 
                                                             {/* Student Pending Rows */}
-                                                            <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                                            <div className={`divide-y divide-slate-100 dark:divide-slate-800/50 ${session.holidayInfo?.alternativeStatus === 'not_scheduled' ? 'blur-[1.5px] opacity-45 pointer-events-none select-none' : ''}`}>
                                                                 {session.pendingStudents.map((student) => {
                                                                     const markKey = `${session.sessionKey}_${student.studentId}`;
                                                                     const isMarking = !!pendingMarkingMap[markKey];
@@ -4622,6 +5283,49 @@ export default function AttendancePage() {
                     }}
                 />
             )}
+
+            {/* Holiday Management Modals (BR-22 & BR-23) */}
+            <DeclareHolidayModal
+                isOpen={declareHolidayModalState.isOpen}
+                onClose={() => setDeclareHolidayModalState(prev => ({ ...prev, isOpen: false }))}
+                classroomId={declareHolidayModalState.classroomId || expandedBatchId || classrooms[0]?.id}
+                classroomName={declareHolidayModalState.classroomName || classrooms.find(c => c.id === expandedBatchId)?.name || classrooms[0]?.name}
+                initialDate={declareHolidayModalState.initialDate || selectedDate}
+                onSuccess={async () => {
+                    await fetchClassroomHolidays();
+                    if (expandedBatchId) {
+                        const batch = activeBatchesOnSelectedDate.find(b => b.id === expandedBatchId);
+                        handleExpandBatch(expandedBatchId, batch?.type === 'temporary', true);
+                    }
+                    if (mode === 'missed') {
+                        fetchPendingReport();
+                    }
+                }}
+            />
+
+            <ScheduleAlternativeModal
+                isOpen={scheduleAltModalState.isOpen}
+                onClose={() => setScheduleAltModalState(prev => ({ ...prev, isOpen: false }))}
+                holiday={scheduleAltModalState.holiday}
+                classroomName={scheduleAltModalState.classroomName}
+                onSuccess={async () => {
+                    await fetchClassroomHolidays();
+                    if (expandedBatchId) {
+                        const batch = activeBatchesOnSelectedDate.find(b => b.id === expandedBatchId);
+                        handleExpandBatch(expandedBatchId, batch?.type === 'temporary', true);
+                    }
+                    if (mode === 'missed') {
+                        fetchPendingReport();
+                    }
+                }}
+            />
+
+            <HolidayAuditHistoryModal
+                isOpen={holidayAuditModalState.isOpen}
+                onClose={() => setHolidayAuditModalState(prev => ({ ...prev, isOpen: false }))}
+                classroomId={holidayAuditModalState.classroomId}
+                classroomName={holidayAuditModalState.classroomName}
+            />
         </div>
     );
 }

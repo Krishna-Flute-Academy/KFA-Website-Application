@@ -8,8 +8,8 @@ interface DeclareHolidayModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: () => void;
-    classroomId: string;
-    classroomName: string;
+    classroomId?: string;
+    classroomName?: string;
     initialDate?: string;
 }
 
@@ -23,13 +23,15 @@ export default function DeclareHolidayModal({
     isOpen,
     onClose,
     onSuccess,
-    classroomId,
-    classroomName,
+    classroomId = '',
+    classroomName = 'Select Classroom',
     initialDate = ''
 }: DeclareHolidayModalProps) {
     const [holidayDate, setHolidayDate] = useState(initialDate || new Date().toISOString().split('T')[0]);
     const [holidayType, setHolidayType] = useState<'no_alternative' | 'alternative_pending' | 'alternative_scheduled'>('alternative_pending');
     const [scope, setScope] = useState<'current' | 'all_scheduled' | 'selected'>('current');
+    const [targetSingleRoomId, setTargetSingleRoomId] = useState<string>(classroomId || '');
+    const [allRooms, setAllRooms] = useState<{ id: string; name: string }[]>([]);
     const [alternativeDate, setAlternativeDate] = useState('');
     const [altStartTime, setAltStartTime] = useState('');
     const [altEndTime, setAltEndTime] = useState('');
@@ -39,8 +41,21 @@ export default function DeclareHolidayModal({
 
     // Selected classrooms multi-selection state (Task 1)
     const [eligibleClassrooms, setEligibleClassrooms] = useState<EligibleClassroom[]>([]);
-    const [selectedClassroomIds, setSelectedClassroomIds] = useState<string[]>([classroomId]);
+    const [selectedClassroomIds, setSelectedClassroomIds] = useState<string[]>(classroomId ? [classroomId] : []);
     const [loadingClassrooms, setLoadingClassrooms] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            if (initialDate) {
+                setHolidayDate(initialDate);
+            }
+            if (classroomId) {
+                setTargetSingleRoomId(classroomId);
+                setScope('current');
+            }
+            setError(null);
+        }
+    }, [isOpen, initialDate, classroomId]);
 
     // Fetch eligible classrooms whenever holidayDate or isOpen changes
     useEffect(() => {
@@ -66,7 +81,7 @@ export default function DeclareHolidayModal({
 
                 let classQuery = supabaseAuth
                     .from('classrooms')
-                    .select('id, name, teacher_id')
+                    .select('id, name, teacher_id, type')
                     .eq('status', 'active');
 
                 if (!isAdmin) {
@@ -76,12 +91,21 @@ export default function DeclareHolidayModal({
                 const { data: rooms, error: roomErr } = await classQuery;
                 if (roomErr) throw roomErr;
 
-                if (!rooms || rooms.length === 0) {
-                    if (isMounted) setEligibleClassrooms([]);
+                const permanentRooms = (rooms || []).filter((r: any) => r.type !== 'temporary');
+
+                if (permanentRooms.length === 0) {
+                    if (isMounted) {
+                        setAllRooms([]);
+                        setEligibleClassrooms([]);
+                    }
                     return;
                 }
 
-                const roomIds = rooms.map(r => r.id);
+                if (isMounted) {
+                    setAllRooms(permanentRooms.map((r: any) => ({ id: r.id, name: r.name })));
+                }
+
+                const roomIds = permanentRooms.map((r: any) => r.id);
 
                 const { data: schedules, error: schedErr } = await supabaseAuth
                     .from('batch_schedules')
@@ -100,8 +124,8 @@ export default function DeclareHolidayModal({
                 }
 
                 const eligible: EligibleClassroom[] = [];
-                for (const r of rooms) {
-                    if (schedMap.has(r.id) || r.id === classroomId) {
+                for (const r of permanentRooms) {
+                    if (schedMap.has(r.id) || (classroomId && r.id === classroomId)) {
                         eligible.push({
                             id: r.id,
                             name: r.name,
@@ -112,9 +136,15 @@ export default function DeclareHolidayModal({
 
                 if (isMounted) {
                     setEligibleClassrooms(eligible);
+                    setTargetSingleRoomId(prev => {
+                        if (prev && permanentRooms.some((r: any) => r.id === prev)) return prev;
+                        if (classroomId && permanentRooms.some((r: any) => r.id === classroomId)) return classroomId;
+                        if (eligible.length > 0) return eligible[0].id;
+                        return permanentRooms[0]?.id || '';
+                    });
                     setSelectedClassroomIds(prev => {
                         const filtered = prev.filter(id => eligible.some(e => e.id === id));
-                        return filtered.length > 0 ? filtered : (eligible.some(e => e.id === classroomId) ? [classroomId] : (eligible[0] ? [eligible[0].id] : []));
+                        return filtered.length > 0 ? filtered : (classroomId && eligible.some(e => e.id === classroomId) ? [classroomId] : (eligible[0] ? [eligible[0].id] : []));
                     });
                 }
             } catch (err) {
@@ -133,6 +163,13 @@ export default function DeclareHolidayModal({
 
     if (!isOpen) return null;
 
+    const effectiveSingleRoomId = targetSingleRoomId || classroomId;
+    const effectiveSingleRoomName =
+        allRooms.find(r => r.id === effectiveSingleRoomId)?.name ||
+        eligibleClassrooms.find(r => r.id === effectiveSingleRoomId)?.name ||
+        classroomName ||
+        'Selected Classroom';
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
@@ -140,6 +177,11 @@ export default function DeclareHolidayModal({
         const cleanReason = reason.trim();
         if (cleanReason.length < 3) {
             setError('Please provide a valid reason (minimum 3 characters).');
+            return;
+        }
+
+        if (scope === 'current' && !effectiveSingleRoomId) {
+            setError('Please select a classroom for the holiday declaration.');
             return;
         }
 
@@ -189,7 +231,7 @@ export default function DeclareHolidayModal({
                 if (rpcError) throw rpcError;
             } else {
                 const { data, error: rpcError } = await supabaseAuth.rpc('declare_classroom_holiday', {
-                    p_classroom_id: classroomId,
+                    p_classroom_id: effectiveSingleRoomId,
                     p_holiday_date: holidayDate,
                     p_holiday_type: holidayType,
                     p_reason: cleanReason,
@@ -223,7 +265,7 @@ export default function DeclareHolidayModal({
                         <div>
                             <h3 className="font-bold text-lg leading-tight">Declare Classroom Holiday</h3>
                             <p className="text-xs text-amber-100 mt-0.5">
-                                {scope === 'all_scheduled' ? 'All Scheduled Classrooms on Date' : scope === 'selected' ? `${selectedClassroomIds.length} Selected Classroom${selectedClassroomIds.length === 1 ? '' : 's'}` : classroomName}
+                                {scope === 'all_scheduled' ? 'All Scheduled Classrooms on Date' : scope === 'selected' ? `${selectedClassroomIds.length} Selected Classroom${selectedClassroomIds.length === 1 ? '' : 's'}` : effectiveSingleRoomName}
                             </p>
                         </div>
                     </div>
@@ -248,7 +290,7 @@ export default function DeclareHolidayModal({
                     {/* Scope Selector: 3 Modes */}
                     <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                            Target Classrooms Scope
+                            Target Classrooms Scope (Single or Multiple Classes)
                         </label>
                         <div className="grid grid-cols-3 gap-2 text-xs">
                             <button
@@ -261,8 +303,8 @@ export default function DeclareHolidayModal({
                                         : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                                 }`}
                             >
-                                <div className="truncate">This Classroom</div>
-                                <div className="text-[10px] font-normal text-slate-500 mt-0.5 truncate">{classroomName}</div>
+                                <div className="truncate">Single Class</div>
+                                <div className="text-[10px] font-normal text-slate-500 mt-0.5 truncate">{effectiveSingleRoomName}</div>
                             </button>
                             <button
                                 type="button"
@@ -294,10 +336,31 @@ export default function DeclareHolidayModal({
                                     <CheckSquare className="w-3.5 h-3.5" />
                                     <span>Selected</span>
                                 </div>
-                                <div className="text-[10px] font-normal text-slate-500 mt-0.5">Multi-select</div>
+                                <div className="text-[10px] font-normal text-slate-500 mt-0.5">Multiple classes</div>
                             </button>
                         </div>
                     </div>
+
+                    {/* Single Classroom Selector when scope === 'current' and multiple classrooms exist */}
+                    {scope === 'current' && allRooms.length > 0 && (
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                                Classroom *
+                            </label>
+                            <select
+                                id="singleClassroomSelect"
+                                value={effectiveSingleRoomId}
+                                onChange={(e) => setTargetSingleRoomId(e.target.value)}
+                                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                            >
+                                {allRooms.map(r => (
+                                    <option key={r.id} value={r.id}>
+                                        {r.name}{eligibleClassrooms.some(ec => ec.id === r.id) ? ' (Scheduled on Date)' : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     {/* Selected Classrooms Checkbox Multi-Selection Container (Task 1) */}
                     {scope === 'selected' && (

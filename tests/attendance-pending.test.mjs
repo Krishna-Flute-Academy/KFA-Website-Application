@@ -340,3 +340,119 @@ test('12. calculatePendingSummary and filtering', () => {
     assert.equal(bobOnly[0].pendingStudents.length, 1);
     assert.equal(bobOnly[0].pendingStudents[0].studentName, 'Bob');
 });
+
+test('13. BR-23: Holiday with No Alternative Class -> NEVER shown as pending', () => {
+    const fixedNow = new Date('2026-11-10T16:00:00Z');
+    const result = derivePendingAttendanceSessions({
+        fromDate: '2026-11-01',
+        toDate: '2026-11-10',
+        classrooms: [{ id: 'cls-sat', name: 'Saturday Flute Batch' }],
+        batchSchedules: [{ classroom_id: 'cls-sat', day_of_week: 6, start_time: '10:00:00', end_time: '11:00:00' }],
+        temporaryClasses: [],
+        permanentStudents: [
+            { classroom_id: 'cls-sat', student_id: 'st-1', joined_at: '2026-08-01', users: { name: 'Rahul', status: 'active' } }
+        ],
+        sessionOverrides: [],
+        attendanceRows: [],
+        coveredAttendanceRows: [],
+        classroomHolidays: [
+            {
+                id: 'hol-no-alt',
+                classroom_id: 'cls-sat',
+                holiday_date: '2026-11-07',
+                holiday_type: 'no_alternative',
+                reason: 'Diwali Holiday',
+                status: 'active'
+            }
+        ],
+        referenceNow: fixedNow
+    });
+
+    assert.equal(result.length, 0, 'Holiday with no_alternative must never appear in pending attendance');
+});
+
+test('14. BR-22: Holiday with Alternative Pending -> shown in pending with alternativeStatus = not_scheduled', () => {
+    const fixedNow = new Date('2026-11-10T16:00:00Z');
+    const result = derivePendingAttendanceSessions({
+        fromDate: '2026-11-01',
+        toDate: '2026-11-10',
+        classrooms: [{ id: 'cls-sat', name: 'Saturday Flute Batch' }],
+        batchSchedules: [{ classroom_id: 'cls-sat', day_of_week: 6, start_time: '10:00:00', end_time: '11:00:00' }],
+        temporaryClasses: [],
+        permanentStudents: [
+            { classroom_id: 'cls-sat', student_id: 'st-1', joined_at: '2026-08-01', users: { name: 'Rahul', status: 'active' } }
+        ],
+        sessionOverrides: [],
+        attendanceRows: [],
+        coveredAttendanceRows: [],
+        classroomHolidays: [
+            {
+                id: 'hol-alt-pend',
+                classroom_id: 'cls-sat',
+                holiday_date: '2026-11-07',
+                holiday_type: 'alternative_pending',
+                reason: 'Teacher concert; replacement TBD',
+                status: 'active'
+            }
+        ],
+        referenceNow: fixedNow
+    });
+
+    assert.equal(result.length, 1);
+    assert.ok(result[0].holidayInfo, 'Session must carry holidayInfo');
+    assert.equal(result[0].holidayInfo.holidayType, 'alternative_pending');
+    assert.equal(result[0].holidayInfo.alternativeStatus, 'not_scheduled');
+    assert.equal(result[0].pendingStudents.length, 1);
+});
+
+test('15. BR-22: Holiday with Alternative Scheduled -> pending until alternative attendance is marked, then cleared', () => {
+    const fixedNow = new Date('2026-11-10T16:00:00Z');
+    const baseParams = {
+        fromDate: '2026-11-01',
+        toDate: '2026-11-10',
+        classrooms: [{ id: 'cls-sat', name: 'Saturday Flute Batch' }],
+        batchSchedules: [{ classroom_id: 'cls-sat', day_of_week: 6, start_time: '10:00:00', end_time: '11:00:00' }],
+        temporaryClasses: [],
+        permanentStudents: [
+            { classroom_id: 'cls-sat', student_id: 'st-1', joined_at: '2026-08-01', users: { name: 'Rahul', status: 'active' } },
+            { classroom_id: 'cls-sat', student_id: 'st-2', joined_at: '2026-08-01', users: { name: 'Saransh', status: 'active' } }
+        ],
+        sessionOverrides: [],
+        classroomHolidays: [
+            {
+                id: 'hol-alt-sched',
+                classroom_id: 'cls-sat',
+                holiday_date: '2026-11-07',
+                holiday_type: 'alternative_scheduled',
+                alternative_date: '2026-11-05',
+                alternative_start_time: '18:00:00',
+                alternative_end_time: '19:00:00',
+                reason: 'Saturday class moved to Thursday',
+                status: 'active'
+            }
+        ],
+        referenceNow: fixedNow
+    };
+
+    // Before marking alternative class attendance -> shown as pending with alternativeStatus = 'attendance_pending'
+    const unmarkedResult = derivePendingAttendanceSessions({
+        ...baseParams,
+        attendanceRows: [],
+        coveredAttendanceRows: []
+    });
+    assert.equal(unmarkedResult.length, 1);
+    assert.equal(unmarkedResult[0].holidayInfo?.alternativeStatus, 'attendance_pending');
+    assert.equal(unmarkedResult[0].holidayInfo?.alternativeDate, '2026-11-05');
+    assert.equal(unmarkedResult[0].pendingStudents.length, 2);
+
+    // After marking alternative class attendance for all students -> cleared from pending!
+    const markedResult = derivePendingAttendanceSessions({
+        ...baseParams,
+        attendanceRows: [
+            { student_id: 'st-1', classroom_id: 'cls-sat', date: '2026-11-05', on_behalf_of_date: '2026-11-07', status: 'present' },
+            { student_id: 'st-2', classroom_id: 'cls-sat', date: '2026-11-05', on_behalf_of_date: '2026-11-07', status: 'absent' }
+        ],
+        coveredAttendanceRows: []
+    });
+    assert.equal(markedResult.length, 0, 'Once alternative class is scheduled AND attendance is marked, session must not be pending');
+});

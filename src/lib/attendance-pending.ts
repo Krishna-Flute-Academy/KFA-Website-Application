@@ -29,6 +29,17 @@ export interface PendingStudentItem {
     missedDate?: string | null;
 }
 
+export interface PendingHolidayInfo {
+    id: string;
+    holidayDate: string;
+    holidayType: 'alternative_pending' | 'alternative_scheduled' | 'with_alternative' | 'no_alternative';
+    alternativeDate: string | null;
+    alternativeStartTime: string | null;
+    alternativeEndTime: string | null;
+    reason: string;
+    alternativeStatus: 'not_scheduled' | 'attendance_pending';
+}
+
 export interface PendingClassSession {
     sessionKey: string; // `${classroomId}_${dateStr}`
     classroomId: string;
@@ -41,6 +52,7 @@ export interface PendingClassSession {
     pendingStudents: PendingStudentItem[];
     markedCount: number;
     totalExpectedCount: number;
+    holidayInfo?: PendingHolidayInfo | null;
 }
 
 export interface PendingSummary {
@@ -85,6 +97,7 @@ export function derivePendingAttendanceSessions(params: {
     sessionOverrides: any[];  // session_student_overrides rows
     attendanceRows: any[];    // physical attendance rows in range
     coveredAttendanceRows: any[]; // on_behalf_of_date rows mapped to range
+    classroomHolidays?: any[]; // active classroom_holidays rows
     referenceNow?: Date;
 }): PendingClassSession[] {
     const {
@@ -97,14 +110,12 @@ export function derivePendingAttendanceSessions(params: {
         sessionOverrides,
         attendanceRows,
         coveredAttendanceRows,
+        classroomHolidays = [],
         referenceNow = new Date()
     } = params;
 
     const todayStr = referenceNow.toISOString().split('T')[0];
     const effectiveToDate = toDate > todayStr ? todayStr : toDate;
-    if (fromDate > effectiveToDate) {
-        return [];
-    }
 
     // 1. Build lookup maps for physical and covered attendance
     // Map: `${student_id}_${classroom_id}_${date}` -> status
@@ -125,6 +136,33 @@ export function derivePendingAttendanceSessions(params: {
             if (cleanTargetDate !== cleanActualDate) {
                 coveredAttMap.set(`${r.student_id}_${cleanTargetDate}`, r.status.toLowerCase());
             }
+        }
+    });
+    // Also index any on_behalf_of_date present directly in attendanceRows
+    (attendanceRows || []).forEach(r => {
+        if (r.student_id && r.on_behalf_of_date && r.status) {
+            const cleanTargetDate = r.on_behalf_of_date.split('T')[0];
+            const cleanActualDate = r.date ? r.date.split('T')[0] : '';
+            if (cleanTargetDate !== cleanActualDate) {
+                coveredAttMap.set(`${r.student_id}_${cleanTargetDate}`, r.status.toLowerCase());
+            }
+        }
+    });
+
+    // 1b. Index active classroom holidays by `${classroom_id}_${holiday_date}`
+    const activeHolidayByClassDate = new Map<string, any>();
+    const activeHolidaysList: any[] = [];
+    (classroomHolidays || []).forEach(h => {
+        if (h && h.classroom_id && h.holiday_date && (!h.status || h.status === 'active')) {
+            const cleanHolDate = String(h.holiday_date).split('T')[0];
+            const cleanAltDate = h.alternative_date ? String(h.alternative_date).split('T')[0] : null;
+            const normalized = {
+                ...h,
+                holiday_date: cleanHolDate,
+                alternative_date: cleanAltDate
+            };
+            activeHolidayByClassDate.set(`${h.classroom_id}_${cleanHolDate}`, normalized);
+            activeHolidaysList.push(normalized);
         }
     });
 
@@ -150,17 +188,137 @@ export function derivePendingAttendanceSessions(params: {
 
     // 4. Generate all calendar dates in range [fromDate, effectiveToDate]
     const dateList: string[] = [];
-    let cur = new Date(fromDate + 'T00:00:00');
-    const end = new Date(effectiveToDate + 'T00:00:00');
-    while (cur <= end) {
-        const y = cur.getFullYear();
-        const m = String(cur.getMonth() + 1).padStart(2, '0');
-        const d = String(cur.getDate()).padStart(2, '0');
-        dateList.push(`${y}-${m}-${d}`);
-        cur.setDate(cur.getDate() + 1);
+    if (fromDate <= effectiveToDate) {
+        let cur = new Date(fromDate + 'T00:00:00');
+        const end = new Date(effectiveToDate + 'T00:00:00');
+        while (cur <= end) {
+            const y = cur.getFullYear();
+            const m = String(cur.getMonth() + 1).padStart(2, '0');
+            const d = String(cur.getDate()).padStart(2, '0');
+            dateList.push(`${y}-${m}-${d}`);
+            cur.setDate(cur.getDate() + 1);
+        }
     }
 
     const pendingSessions: PendingClassSession[] = [];
+    const processedHolidayKeys = new Set<string>();
+
+    // Helper to resolve schedule start/end time for a permanent room on a given date
+    const getRoomScheduleTimes = (room: any, dayOfWeek: number): { startTime: string; endTime: string } => {
+        const roomSchedules = (batchSchedules || []).filter(
+            s => s.classroom_id === room.id && s.day_of_week === dayOfWeek
+        );
+        if (roomSchedules.length > 0) {
+            return {
+                startTime: roomSchedules[0].start_time || '00:00:00',
+                endTime: roomSchedules[0].end_time || '01:00:00'
+            };
+        }
+        const parsed = parseDayAndStartFromClassroom(room);
+        if (parsed.dayOfWeek === dayOfWeek) {
+            const startTime = parsed.startTimeMinutes < 24 * 60
+                ? `${String(Math.floor(parsed.startTimeMinutes / 60)).padStart(2, '0')}:${String(parsed.startTimeMinutes % 60).padStart(2, '0')}:00`
+                : '00:00:00';
+            const endMin = (parsed.startTimeMinutes + 60) % (24 * 60);
+            const endTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}:00`;
+            return { startTime, endTime };
+        }
+        const anySched = (batchSchedules || []).find(s => s.classroom_id === room.id);
+        if (anySched) {
+            return {
+                startTime: anySched.start_time || '10:00:00',
+                endTime: anySched.end_time || '11:00:00'
+            };
+        }
+        return { startTime: '', endTime: '' };
+    };
+
+    // Helper to evaluate a holiday with alternative (BR-22) for a room and holiday record
+    const evaluateHolidaySession = (room: any, activeHoliday: any, fallbackStart: string, fallbackEnd: string) => {
+        const holDateStr = activeHoliday.holiday_date;
+        const altDateStr = activeHoliday.alternative_date;
+        const holType = activeHoliday.holiday_type;
+
+        if (holType === 'no_alternative') {
+            return;
+        }
+
+        const expectedStudents: {
+            studentId: string;
+            name: string;
+            profilePicUrl?: string | null;
+            isMakeup?: boolean;
+            isGuest?: boolean;
+            missedDate?: string | null;
+        }[] = [];
+
+        const enrolledRows = permByClass.get(room.id) || [];
+        enrolledRows.forEach(row => {
+            const sId = row.student_id;
+            const hasAttOnAlt = Boolean(altDateStr && physicalAttMap.has(`${sId}_${room.id}_${altDateStr}`));
+            const hasCovered = coveredAttMap.has(`${sId}_${holDateStr}`);
+            const hasAtt = hasAttOnAlt || hasCovered;
+            if (isStudentOperationallyActive(row.users?.status) && isStudentEnrolledOnDate(row, holDateStr, hasAtt)) {
+                expectedStudents.push({
+                    studentId: sId,
+                    name: row.users?.name || 'Unknown Student',
+                    profilePicUrl: row.users?.profile_pic_url
+                });
+            }
+        });
+
+        let markedCount = 0;
+        const pendingList: PendingStudentItem[] = [];
+
+        for (const st of expectedStudents) {
+            const coveredStatus = coveredAttMap.get(`${st.studentId}_${holDateStr}`);
+            const altPhysicalStatus = altDateStr
+                ? physicalAttMap.get(`${st.studentId}_${room.id}_${altDateStr}`)
+                : undefined;
+
+            if (coveredStatus || altPhysicalStatus) {
+                markedCount++;
+            } else {
+                pendingList.push({
+                    studentId: st.studentId,
+                    studentName: st.name,
+                    profilePicUrl: st.profilePicUrl,
+                    isMakeup: st.isMakeup,
+                    isGuest: st.isGuest,
+                    missedDate: st.missedDate
+                });
+            }
+        }
+
+        const isNotScheduledYet = holType === 'alternative_pending' || !altDateStr;
+        if (isNotScheduledYet || pendingList.length > 0) {
+            const sTime = activeHoliday.alternative_start_time || fallbackStart || '10:00:00';
+            const eTime = activeHoliday.alternative_end_time || fallbackEnd || '11:00:00';
+            pendingSessions.push({
+                sessionKey: `${room.id}_${holDateStr}`,
+                classroomId: room.id,
+                classroomName: room.name || 'Classroom',
+                date: holDateStr,
+                startTime: sTime,
+                endTime: eTime,
+                timeFormatted: `${formatTime12hr(sTime.slice(0, 5))} – ${formatTime12hr(eTime.slice(0, 5))}`,
+                isTemporary: false,
+                pendingStudents: pendingList,
+                markedCount,
+                totalExpectedCount: expectedStudents.length,
+                holidayInfo: {
+                    id: activeHoliday.id || `${room.id}_${holDateStr}`,
+                    holidayDate: holDateStr,
+                    holidayType: holType,
+                    alternativeDate: altDateStr,
+                    alternativeStartTime: activeHoliday.alternative_start_time || null,
+                    alternativeEndTime: activeHoliday.alternative_end_time || null,
+                    reason: activeHoliday.reason || 'Declared Holiday',
+                    alternativeStatus: isNotScheduledYet ? 'not_scheduled' : 'attendance_pending'
+                }
+            });
+        }
+    };
 
     // 5. Evaluate each date in the range
     for (const dateStr of dateList) {
@@ -170,6 +328,18 @@ export function derivePendingAttendanceSessions(params: {
         // 5a. Permanent classrooms scheduled for this dayOfWeek
         for (const room of classrooms) {
             if (room.status === 'archived' || room.lifecycle_status === 'cancelled') {
+                continue;
+            }
+
+            const activeHoliday = activeHolidayByClassDate.get(`${room.id}_${dateStr}`);
+            if (activeHoliday) {
+                processedHolidayKeys.add(`${room.id}_${dateStr}`);
+                if (activeHoliday.holiday_type === 'no_alternative') {
+                    // BR-23: Holiday with No Alternative is NEVER pending
+                    continue;
+                }
+                const { startTime, endTime } = getRoomScheduleTimes(room, dayOfWeek);
+                evaluateHolidaySession(room, activeHoliday, startTime, endTime);
                 continue;
             }
 
@@ -292,6 +462,18 @@ export function derivePendingAttendanceSessions(params: {
             const tcEndTime = tc.end_time || '01:00:00';
             const tcStartTime = tc.start_time || '00:00:00';
 
+            // If this temporary class is linked to an active holiday via [OnBehalfOfHoliday:YYYY-MM-DD]
+            // and that holiday is already tracked as a holiday session, avoid duplicate pending cards
+            const desc = String(tc.description || '');
+            const holTagMatch = desc.match(/\[OnBehalfOfHoliday:(\d{4}-\d{2}-\d{2})\]/);
+            const holClassMatch = desc.match(/\[HolidayClassroom:([0-9a-fA-F-]+)\]/);
+            if (holTagMatch && holClassMatch) {
+                const linkedHolKey = `${holClassMatch[1]}_${holTagMatch[1]}`;
+                if (activeHolidayByClassDate.has(linkedHolKey)) {
+                    continue;
+                }
+            }
+
             if (!isSessionEnded(dateStr, tcEndTime, referenceNow)) {
                 continue;
             }
@@ -347,6 +529,31 @@ export function derivePendingAttendanceSessions(params: {
                 });
             }
         }
+    }
+
+    // 5c. Also evaluate any active alternative_pending or alternative_scheduled holidays
+    // declared on or after fromDate that were not already processed in the completed-date loop
+    // (e.g., holiday declared for today or an upcoming class where alternative class attendance is not marked yet).
+    const roomById = new Map<string, any>();
+    (classrooms || []).forEach(r => {
+        if (r && r.id && r.status !== 'archived' && r.lifecycle_status !== 'cancelled') {
+            roomById.set(r.id, r);
+        }
+    });
+
+    for (const activeHoliday of activeHolidaysList) {
+        const key = `${activeHoliday.classroom_id}_${activeHoliday.holiday_date}`;
+        if (processedHolidayKeys.has(key)) continue;
+        if (activeHoliday.holiday_date < fromDate) continue;
+        if (activeHoliday.holiday_type === 'no_alternative') continue;
+
+        const room = roomById.get(activeHoliday.classroom_id);
+        if (!room) continue;
+
+        processedHolidayKeys.add(key);
+        const dow = new Date(activeHoliday.holiday_date + 'T00:00:00').getDay();
+        const { startTime, endTime } = getRoomScheduleTimes(room, dow);
+        evaluateHolidaySession(room, activeHoliday, startTime, endTime);
     }
 
     // Sort chronologically (oldest date first so the teacher tackles older backlog first)

@@ -41,6 +41,8 @@ export default function CreateClassPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
     const [studentMissedDates, setStudentMissedDates] = useState<Record<string, string>>({});
+    const [activeHolidays, setActiveHolidays] = useState<any[]>([]);
+    const [selectedHolidayId, setSelectedHolidayId] = useState<string>('');
 
     const [formData, setFormData] = useState({
         name: '',
@@ -142,11 +144,12 @@ export default function CreateClassPage() {
                     setTeachers(teachersData);
                 }
 
-                // 4. Fetch Students and existing Permanent Classrooms + Rosters
+                // 4. Fetch Students and existing Permanent Classrooms + Rosters + Active Holidays
                 const [
                     { data: studentsData, error: studentsError },
                     { data: classroomsData },
-                    { data: rosterData }
+                    { data: rosterData },
+                    { data: holidaysData }
                 ] = await Promise.all([
                     supabaseAuth
                         .from('users')
@@ -163,7 +166,13 @@ export default function CreateClassPage() {
                         .select('id, name, teacher_id, type, status'),
                     supabaseAuth
                         .from('classroom_students')
-                        .select('classroom_id, student_id')
+                        .select('classroom_id, student_id'),
+                    supabaseAuth
+                        .from('classroom_holidays')
+                        .select('*')
+                        .eq('status', 'active')
+                        .in('holiday_type', ['alternative_pending', 'alternative_scheduled', 'with_alternative'])
+                        .order('holiday_date', { ascending: false })
                 ]);
 
                 if (studentsError) throw studentsError;
@@ -203,6 +212,40 @@ export default function CreateClassPage() {
                     studentIds: studentIdsByRoom.get(c.id) || []
                 }));
                 setExistingBatches(batchesList);
+
+                const holidaysWithRoomName = (holidaysData || []).map((h: any) => ({
+                    ...h,
+                    classroomName: roomNameById.get(h.classroom_id) || 'Classroom'
+                }));
+                setActiveHolidays(holidaysWithRoomName);
+
+                if (typeof window !== 'undefined') {
+                    const params = new URLSearchParams(window.location.search);
+                    const urlHolidayId = params.get('holidayId');
+                    const urlClassroomId = params.get('classroomId');
+                    const urlHolidayDate = params.get('holidayDate');
+                    const matchedHol = holidaysWithRoomName.find((h: any) =>
+                        (urlHolidayId && h.id === urlHolidayId) ||
+                        (urlClassroomId && urlHolidayDate && h.classroom_id === urlClassroomId && h.holiday_date === urlHolidayDate)
+                    );
+                    if (matchedHol) {
+                        setSelectedHolidayId(matchedHol.id);
+                        const batch = batchesList.find(b => b.id === matchedHol.classroom_id);
+                        if (batch) {
+                            setSelectedBatchImportId(batch.id);
+                            setSelectedStudents(batch.studentIds);
+                        }
+                        setFormData(prev => ({
+                            ...prev,
+                            type: 'temporary',
+                            name: prev.name || `${matchedHol.classroomName} — Replacement Class (On Behalf Of ${matchedHol.holiday_date})`,
+                            teacherId: prev.teacherId || batch?.teacher_id || profile.id,
+                            purpose: 'other',
+                            creditTreatment: 'consume_credit',
+                            classDate: matchedHol.alternative_date || prev.classDate
+                        }));
+                    }
+                }
 
                 const formattedStudents: Student[] = activeStudentsRaw.map((s: any) => {
                     const sRoomIds = roomIdsByStudent.get(s.id) || [];
@@ -455,21 +498,41 @@ export default function CreateClassPage() {
                     return;
                 }
 
+                const linkedHoliday = selectedHolidayId
+                    ? activeHolidays.find((h: any) => h.id === selectedHolidayId)
+                    : null;
+                const holidayMetadataTag = linkedHoliday
+                    ? ` [OnBehalfOfHoliday:${linkedHoliday.holiday_date}][HolidayClassroom:${linkedHoliday.classroom_id}][HolidayId:${linkedHoliday.id}]`
+                    : '';
+
                 // Canonical Special Session creation via shared service
                 await createSpecialSession(supabaseAuth, {
                     teacherId: formData.teacherId,
                     name: formData.name,
-                    description: formData.description,
+                    description: `${formData.description || ''}${holidayMetadataTag}`.trim(),
                     deliveryFormat: formData.deliveryFormat as 'offline' | 'online',
                     meetingLink: formData.deliveryFormat === 'online' ? formData.meetingLink : undefined,
                     classDate: formData.classDate,
                     startTime: formData.startTime,
                     endTime: formData.endTime,
                     purpose: formData.purpose,
-                    creditTreatment: formData.creditTreatment,
+                    creditTreatment: linkedHoliday ? 'consume_credit' : formData.creditTreatment,
                     selectedStudents: selectedStudents,
                     studentMissedDates: studentMissedDates
                 });
+
+                if (linkedHoliday) {
+                    const { error: schedHolErr } = await supabaseAuth.rpc('schedule_holiday_alternative', {
+                        p_holiday_id: linkedHoliday.id,
+                        p_alternative_date: formData.classDate,
+                        p_alt_start_time: formData.startTime ? `${formData.startTime}:00` : null,
+                        p_alt_end_time: formData.endTime ? `${formData.endTime}:00` : null,
+                        p_reason: formData.name || 'Special Session created on behalf of holiday'
+                    });
+                    if (schedHolErr) {
+                        console.error('Error linking special session to holiday:', schedHolErr);
+                    }
+                }
             }
 
             if (typeof window !== 'undefined') {
@@ -649,6 +712,50 @@ export default function CreateClassPage() {
                                         <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-4">
                                             <div className="flex items-center gap-2 text-xs font-black uppercase text-amber-700 dark:text-amber-400 tracking-wider">
                                                 <span>⚡ Special Session Configuration</span>
+                                            </div>
+                                            {/* Optional On Behalf Of Declared Holiday Selector (BR-22) */}
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">
+                                                    🏖️ On Behalf Of Declared Holiday Class (Optional — BR-22)
+                                                </label>
+                                                <select
+                                                    value={selectedHolidayId}
+                                                    onChange={(e) => {
+                                                        const holId = e.target.value;
+                                                        setSelectedHolidayId(holId);
+                                                        if (!holId) return;
+                                                        const hol = activeHolidays.find((h: any) => h.id === holId);
+                                                        if (hol) {
+                                                            const batch = existingBatches.find(b => b.id === hol.classroom_id);
+                                                            if (batch) {
+                                                                setSelectedBatchImportId(batch.id);
+                                                                setSelectedStudents(batch.studentIds);
+                                                            }
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                type: 'temporary',
+                                                                name: prev.name || `${hol.classroomName} — Replacement Class (On Behalf Of ${hol.holiday_date})`,
+                                                                teacherId: prev.teacherId || batch?.teacher_id || prev.teacherId,
+                                                                purpose: 'other',
+                                                                creditTreatment: 'consume_credit',
+                                                                classDate: hol.alternative_date || prev.classDate
+                                                            }));
+                                                        }
+                                                    }}
+                                                    className="w-full px-4 py-3 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
+                                                >
+                                                    <option value="">-- No (Regular Special Session / Makeup) --</option>
+                                                    {activeHolidays.map((h: any) => (
+                                                        <option key={h.id} value={h.id}>
+                                                            🏖️ {h.classroomName} — Holiday on {h.holiday_date} ({h.holiday_type === 'alternative_pending' ? 'Alt Pending' : `Alt: ${h.alternative_date}`})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                {selectedHolidayId && (
+                                                    <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 mt-1.5">
+                                                        ✓ This Special Session will be linked as the official replacement class for the selected holiday. Present/Late/Uninformed Absent will deduct 1 regular credit on behalf of the holiday class.
+                                                    </p>
+                                                )}
                                             </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div>

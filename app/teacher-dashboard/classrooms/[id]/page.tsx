@@ -2647,12 +2647,18 @@ export default function ClassroomDashboardPage({
         // Initial attendance marking (no existing record)
         setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: true }));
         try {
+            const altHolidayForDate = classroomHolidays.find((h: any) =>
+                h.status === 'active' &&
+                (h.holiday_type === 'with_alternative' || h.holiday_type === 'alternative_scheduled') &&
+                h.alternative_date === attendanceDate
+            );
             const { data: inserted, error } = await supabaseAuth
                 .from('attendance')
                 .insert({
                     student_id: studentId,
                     classroom_id: classroomId,
                     date: attendanceDate,
+                    on_behalf_of_date: altHolidayForDate ? altHolidayForDate.holiday_date : null,
                     status: status.toLowerCase(),
                     marked_by: teacherProfile.id
                 })
