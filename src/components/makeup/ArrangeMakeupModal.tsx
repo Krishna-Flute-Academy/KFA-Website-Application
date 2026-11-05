@@ -22,6 +22,7 @@ import { supabaseAuth } from '../../lib/supabase-auth';
 import {
     fetchAvailablePermanentClassrooms,
     scheduleMakeupInExistingClass,
+    rescheduleMakeup,
     scheduleMakeupAsSpecialSession,
     getNextScheduleOccurrences,
     isDateMatchingSchedules,
@@ -47,6 +48,7 @@ export interface ArrangeMakeupModalProps {
         classroomId?: string;
         classroomName?: string;
     };
+    existingOverrideId?: string;
     currentTeacherId?: string;
     isAdmin?: boolean;
     teachers?: Array<{ id: string; name: string; profile_pic_url?: string | null }>;
@@ -58,6 +60,7 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
     onSuccess,
     student,
     missedSession,
+    existingOverrideId,
     currentTeacherId,
     isAdmin = false,
     teachers = []
@@ -298,14 +301,25 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                     throw new Error(`Please select an available class on ${formattedSelectedDate || 'this date'}.`);
                 }
 
-                const res = await scheduleMakeupInExistingClass(supabaseAuth, {
-                    studentId: student.id,
-                    targetClassroomId: selectedClassroomId,
-                    makeupDate,
-                    missedSessionDate: missedSession.date,
-                    notes: existingNotes,
-                    studentName: student.name
-                });
+                let res;
+                if (existingOverrideId) {
+                    res = await rescheduleMakeup(supabaseAuth, {
+                        overrideId: existingOverrideId,
+                        newTargetClassroomId: selectedClassroomId,
+                        newMakeupDate: makeupDate,
+                        missedSessionDate: missedSession.date,
+                        notes: existingNotes
+                    });
+                } else {
+                    res = await scheduleMakeupInExistingClass(supabaseAuth, {
+                        studentId: student.id,
+                        targetClassroomId: selectedClassroomId,
+                        makeupDate,
+                        missedSessionDate: missedSession.date,
+                        notes: existingNotes,
+                        studentName: student.name
+                    });
+                }
 
                 onSuccess(res);
                 onClose();

@@ -5227,6 +5227,7 @@ export default function AttendancePage() {
                         classroomId: makeupStudent.classroom_id,
                         classroomName: makeupStudent.classroom_name
                     }}
+                    existingOverrideId={editingMakeupId || undefined}
                     currentTeacherId={teacherProfile?.id}
                     isAdmin={teacherProfile?.role === 'admin'}
                 />
