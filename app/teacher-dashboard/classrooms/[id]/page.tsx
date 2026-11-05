@@ -2578,16 +2578,31 @@ export default function ClassroomDashboardPage({
         }
         if (!attId) return;
 
-        const sName = students.find(s => s.id === studentId)?.name || sessionOverrides.find(o => o.student_id === studentId)?.users?.name || 'Student';
-        setAttendanceUnmarkTarget({
-            attendanceId: attId,
-            studentId,
-            studentName: sName,
-            classroomId,
-            classroomName: classroom?.name || 'Classroom',
-            classDate: attendanceDate,
-            currentStatus: attendanceRecords[studentId] || 'present'
+        const prevStatus = attendanceRecords[studentId] || 'present';
+        // Optimistically remove
+        setAttendanceRecords(prev => {
+            const next = { ...prev };
+            delete next[studentId];
+            return next;
         });
+
+        try {
+            const { error: rpcErr } = await supabaseAuth.rpc('unmark_historical_attendance', {
+                p_attendance_id: attId,
+                p_reason: 'Attendance unmarked by teacher'
+            });
+            if (rpcErr) throw rpcErr;
+
+            fetchClassroomAttendance();
+        } catch (err: any) {
+            console.error('Error unmarking attendance:', err);
+            alert(`Failed to unmark attendance: ${err.message || err}`);
+            // Revert
+            setAttendanceRecords(prev => ({
+                ...prev,
+                [studentId]: prevStatus
+            }));
+        }
     };
 
     const handleMarkClassroomAttendance = async (studentId: string, status: string) => {
@@ -2627,7 +2642,8 @@ export default function ClassroomDashboardPage({
         }
 
         const currentStatus = attendanceRecords[studentId];
-        // If an attendance status was already recorded, modifying it must use the audited correction workflow (BR-10, BR-11, BR-12)
+        // If an attendance status was already recorded, modifying it directly uses the audited RPC
+        // without demanding a justification modal
         if (currentStatus && currentStatus !== status) {
             let attId = attendanceIdMap[studentId];
             if (!attId) {
@@ -2641,17 +2657,25 @@ export default function ClassroomDashboardPage({
                 attId = row?.id;
             }
             if (attId) {
-                const sName = students.find(s => s.id === studentId)?.name || sessionOverrides.find(o => o.student_id === studentId)?.users?.name || 'Student';
-                setAttendanceCorrectionTarget({
-                    attendanceId: attId,
-                    studentId,
-                    studentName: sName,
-                    classroomId,
-                    classroomName: classroom?.name || 'Classroom',
-                    classDate: attendanceDate,
-                    currentStatus
-                });
-                return;
+                // Optimistically update
+                setAttendanceRecords(prev => ({ ...prev, [studentId]: status as 'present' | 'absent' | 'excused' | 'late' }));
+                try {
+                    const { error: rpcErr } = await supabaseAuth.rpc('correct_historical_attendance', {
+                        p_attendance_id: attId,
+                        p_new_status: status.toLowerCase(),
+                        p_reason: 'Attendance updated by teacher',
+                        p_authorized_credit_delta: null
+                    });
+                    if (rpcErr) throw rpcErr;
+
+                    fetchClassroomAttendance();
+                    return;
+                } catch (err: any) {
+                    console.error('Error updating attendance:', err);
+                    alert(`Failed to update attendance: ${err.message || err}`);
+                    setAttendanceRecords(prev => ({ ...prev, [studentId]: currentStatus }));
+                    return;
+                }
             }
         }
 

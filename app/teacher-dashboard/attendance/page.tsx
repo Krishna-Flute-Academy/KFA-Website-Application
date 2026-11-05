@@ -247,6 +247,9 @@ export default function AttendancePage() {
     const [auditModalClassroomId, setAuditModalClassroomId] = useState<string | undefined>(undefined);
     const [auditModalStudentId, setAuditModalStudentId] = useState<string | undefined>(undefined);
 
+    // In-flight attendance save tracker to guard against double clicks and rapid state changes
+    const [savingAttendanceMap, setSavingAttendanceMap] = useState<Record<string, boolean>>({});
+
     // Holiday Management State (BR-22 & BR-23)
     const [classroomHolidays, setClassroomHolidays] = useState<any[]>([]);
     const [declareHolidayModalState, setDeclareHolidayModalState] = useState<{
@@ -554,47 +557,25 @@ export default function AttendancePage() {
             }
         });
 
-        // Track if any temporary Special Session on selectedDate already represents a classroom's holiday replacement
-        const tempCoveredHolidayRoomSet = new Set<string>();
+        // Active temporary classes for selected date (excluding any legacy/auto-created alternative shadow sessions)
         const activeTemporary = temporaryClasses
-            .filter(tc => tc.class_date === selectedDate && (tc.lifecycle_status || 'scheduled').toLowerCase() !== 'cancelled')
-            .map(tc => {
+            .filter(tc => {
+                if (tc.class_date !== selectedDate) return false;
+                if ((tc.lifecycle_status || 'scheduled').toLowerCase() === 'cancelled') return false;
                 const desc = String(tc.description || '');
-                const holDateMatch = desc.match(/\[OnBehalfOfHoliday:(\d{4}-\d{2}-\d{2})\]/);
-                const holClassMatch = desc.match(/\[HolidayClassroom:([0-9a-fA-F-]+)\]/);
-                const holIdMatch = desc.match(/\[HolidayId:([0-9a-fA-F-]+)\]/);
-                let linkedHolidayDate = holDateMatch ? holDateMatch[1] : null;
-                let linkedHolidayRoomId = holClassMatch ? holClassMatch[1] : null;
-                let matchedHol = (linkedHolidayRoomId && linkedHolidayDate)
-                    ? activeHolByClassDate.get(`${linkedHolidayRoomId}_${linkedHolidayDate}`) || null
-                    : (holIdMatch ? (classroomHolidays || []).find(h => h.id === holIdMatch[1] && (!h.status || h.status === 'active')) || null : null);
-
-                // Fallback: if this temporary session matches the alternative_date + start_time of an active holiday
-                if (!matchedHol) {
-                    const tcStart5 = String(tc.start_time || '').slice(0, 5);
-                    matchedHol = (classroomHolidays || []).find(h =>
-                        h && (!h.status || h.status === 'active') &&
-                        (h.holiday_type === 'alternative_scheduled' || h.holiday_type === 'with_alternative') &&
-                        String(h.alternative_date || '').split('T')[0] === selectedDate &&
-                        (!h.alternative_start_time || String(h.alternative_start_time).slice(0, 5) === tcStart5)
-                    ) || null;
-                }
-                if (matchedHol) {
-                    linkedHolidayDate = String(matchedHol.holiday_date || '').split('T')[0] || linkedHolidayDate;
-                    linkedHolidayRoomId = matchedHol.classroom_id || linkedHolidayRoomId;
-                }
-                if (linkedHolidayRoomId && linkedHolidayDate) {
-                    tempCoveredHolidayRoomSet.add(`${linkedHolidayRoomId}_${linkedHolidayDate}`);
-                }
+                if (desc.includes('[OnBehalfOfHoliday:')) return false;
+                return true;
+            })
+            .map(tc => {
                 return {
                     id: tc.classroom_id || tc.id,
                     name: tc.title || 'Temporary Session',
                     type: 'temporary' as const,
                     time: `${formatTime12hr(tc.start_time.slice(0, 5))} - ${formatTime12hr(tc.end_time.slice(0, 5))}`,
                     startTime: tc.start_time,
-                    alternativeHoliday: matchedHol,
-                    linkedHolidayDate,
-                    linkedHolidayRoomId
+                    alternativeHoliday: null,
+                    linkedHolidayDate: null,
+                    linkedHolidayRoomId: null
                 };
             });
 
@@ -653,12 +634,10 @@ export default function AttendancePage() {
         });
 
         // 3. Include any permanent classroom that has an active scheduled alternative class (BR-22) on selectedDate
-        //    (when selectedDate is not the classroom's regular weekday and not already represented by a linked Special Session)
         classrooms.forEach(room => {
             if (processedRoomIds.has(room.id)) return;
             const altHol = altHolByClassDate.get(`${room.id}_${selectedDate}`);
             if (!altHol) return;
-            if (tempCoveredHolidayRoomSet.has(`${room.id}_${altHol.holiday_date}`)) return;
 
             processedRoomIds.add(room.id);
             const fallbackSched = allSchedules.find(s => s.classroom_id === room.id);
@@ -1418,6 +1397,9 @@ export default function AttendancePage() {
     const handleUnmarkBatchAttendance = async (batchId: string, studentId: string) => {
         if (!teacherProfile) return;
 
+        const lockKey = `${batchId}_${studentId}`;
+        if (savingAttendanceMap[lockKey]) return;
+
         const coveredInfo = coveredAttendanceMap[studentId];
         if (coveredInfo) {
             alert(`Cannot unmark attendance: This student was already counted on ${formatLocalDateStr(coveredInfo.actualDate)} on behalf of this date.`);
@@ -1437,27 +1419,85 @@ export default function AttendancePage() {
         const prevStatus = batchAttendanceMap[batchId]?.[studentId];
         if (!prevStatus) return;
 
-        // Fetch attendance record to open UnmarkAttendanceModal
-        const { data: existingRow } = await supabaseAuth
-            .from('attendance')
-            .select('id, student_id, classroom_id, date, status')
-            .eq('classroom_id', batchId)
-            .eq('student_id', studentId)
-            .eq('date', selectedDate)
-            .maybeSingle();
+        setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: true }));
+        try {
+            // Fetch attendance record to unmark
+            const { data: existingRow } = await supabaseAuth
+                .from('attendance')
+                .select('id, student_id, classroom_id, date, status')
+                .eq('classroom_id', batchId)
+                .eq('student_id', studentId)
+                .eq('date', selectedDate)
+                .maybeSingle();
 
-        if (existingRow) {
-            const sName = batchStudentsMap[batchId]?.find(s => s.id === studentId)?.name || 'Student';
-            const cName = classrooms.find(c => c.id === batchId)?.name || temporaryClasses.find(t => t.id === batchId)?.title || 'Classroom';
-            setAttendanceUnmarkTarget({
-                attendanceId: existingRow.id,
-                studentId,
-                studentName: sName,
-                classroomId: batchId,
-                classroomName: cName,
-                classDate: selectedDate,
-                currentStatus: existingRow.status
-            });
+            if (existingRow) {
+                // Optimistically update
+                setBatchAttendanceMap(prev => {
+                    const curr = { ...(prev[batchId] || {}) };
+                    delete curr[studentId];
+                    return {
+                        ...prev,
+                        [batchId]: curr
+                    };
+                });
+                const k = `${studentId}_${batchId}`;
+                setDateAttendanceMap(prev => {
+                    const next = { ...prev };
+                    delete next[k];
+                    return next;
+                });
+
+                // Update batch summary
+                setBatchSummaries(prev => {
+                    const batchSummary = prev[batchId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
+                    let presentDiff = prevStatus === 'present' ? -1 : 0;
+                    let absentDiff = prevStatus === 'absent' ? -1 : 0;
+                    let lateDiff = prevStatus === 'late' ? -1 : 0;
+                    let excusedDiff = prevStatus === 'excused' ? -1 : 0;
+                    return {
+                        ...prev,
+                        [batchId]: {
+                            ...batchSummary,
+                            present: Math.max(0, batchSummary.present + presentDiff),
+                            absent: Math.max(0, batchSummary.absent + absentDiff),
+                            late: Math.max(0, batchSummary.late + lateDiff),
+                            excused: Math.max(0, batchSummary.excused + excusedDiff)
+                        }
+                    };
+                });
+
+                try {
+                    const { error: rpcErr } = await supabaseAuth.rpc('unmark_historical_attendance', {
+                        p_attendance_id: existingRow.id,
+                        p_reason: 'Attendance unmarked by teacher'
+                    });
+                    if (rpcErr) {
+                        const errMsg = (rpcErr.message || rpcErr.details || '').toLowerCase();
+                        if (!errMsg.includes('not found')) {
+                            throw rpcErr;
+                        }
+                    }
+
+                    fetchPendingReport().catch(e => console.error('Error refreshing pending report:', e));
+                } catch (err: any) {
+                    console.error('Error unmarking attendance:', err?.message || err?.details || err);
+                    alert(`Failed to unmark attendance: ${err.message || err}`);
+                    // Revert
+                    setBatchAttendanceMap(prev => ({
+                        ...prev,
+                        [batchId]: {
+                            ...(prev[batchId] || {}),
+                            [studentId]: prevStatus
+                        }
+                    }));
+                    setDateAttendanceMap(prev => ({
+                        ...prev,
+                        [k]: prevStatus
+                    }));
+                }
+            }
+        } finally {
+            setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: false }));
         }
     };
 
@@ -1468,6 +1508,9 @@ export default function AttendancePage() {
         status: 'present' | 'absent' | 'late' | 'excused'
     ) => {
         if (!teacherProfile) return;
+
+        const lockKey = `${batchId}_${studentId}`;
+        if (savingAttendanceMap[lockKey]) return;
 
         let coveredInfo = coveredAttendanceMap[studentId];
         if (!coveredInfo) {
@@ -1512,151 +1555,252 @@ export default function AttendancePage() {
             return;
         }
 
-        const currentBatchStatus = batchAttendanceMap[batchId]?.[studentId];
-        // If an attendance status was already recorded, modifying it must go through
-        // the authoritative audited historical correction workflow (BR-10, BR-11, BR-12)
-        if (currentBatchStatus && currentBatchStatus !== status) {
-            const { data: existingRow } = await supabaseAuth
-                .from('attendance')
-                .select('id, student_id, classroom_id, date, status')
-                .eq('classroom_id', batchId)
-                .eq('student_id', studentId)
-                .eq('date', selectedDate)
-                .maybeSingle();
-
-            if (existingRow) {
-                const sName = batchStudentsMap[batchId]?.find(s => s.id === studentId)?.name || 'Student';
-                const cName = classrooms.find(c => c.id === batchId)?.name || temporaryClasses.find(t => t.id === batchId)?.title || 'Classroom';
-                setAttendanceCorrectionTarget({
-                    id: existingRow.id,
-                    student_id: studentId,
-                    student_name: sName,
-                    classroom_id: batchId,
-                    classroom_name: cName,
-                    date: selectedDate,
-                    status: existingRow.status
-                });
-                return;
-            }
-        }
-
-        // Optimistically update
-        setBatchAttendanceMap(prev => {
-            const currentBatch = prev[batchId] || {};
-            return {
-                ...prev,
-                [batchId]: {
-                    ...currentBatch,
-                    [studentId]: status
-                }
-            };
-        });
-
+        setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: true }));
         try {
-            const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === batchId);
-            if (batchForRoom?.activeHoliday) {
-                throw new Error(`Cannot record attendance: ${selectedDate} is declared as a holiday for this classroom.`);
-            }
-            let onBehalfDate = batchOnBehalfOfMap[batchId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
-            if (onBehalfDate) {
-                // Ensure student doesn't already have an on_behalf_of_date record for this target date in another class
-                const { data: conflict } = await supabaseAuth
+            const currentBatchStatus = batchAttendanceMap[batchId]?.[studentId];
+            const k = `${studentId}_${batchId}`;
+
+            // If an attendance status was already recorded, modifying it directly uses the audited RPC
+            // without demanding a justification modal
+            if (currentBatchStatus && currentBatchStatus !== status) {
+                const { data: existingRow } = await supabaseAuth
                     .from('attendance')
-                    .select('id')
+                    .select('id, student_id, classroom_id, date, status')
+                    .eq('classroom_id', batchId)
                     .eq('student_id', studentId)
-                    .eq('on_behalf_of_date', onBehalfDate)
-                    .neq('classroom_id', batchId)
-                    .limit(1);
-                if (conflict && conflict.length > 0) {
-                    onBehalfDate = null;
+                    .eq('date', selectedDate)
+                    .maybeSingle();
+
+                if (existingRow) {
+                    // Optimistically update
+                    setBatchAttendanceMap(prev => {
+                        const currentBatch = prev[batchId] || {};
+                        return {
+                            ...prev,
+                            [batchId]: {
+                                ...currentBatch,
+                                [studentId]: status
+                            }
+                        };
+                    });
+                    setDateAttendanceMap(prev => ({
+                        ...prev,
+                        [k]: status
+                    }));
+
+                    try {
+                        const { error: rpcErr } = await supabaseAuth.rpc('correct_historical_attendance', {
+                            p_attendance_id: existingRow.id,
+                            p_new_status: status.toLowerCase(),
+                            p_reason: 'Attendance updated by teacher',
+                            p_authorized_credit_delta: null
+                        });
+
+                        if (rpcErr) {
+                            const errMsg = (rpcErr.message || rpcErr.details || '').toLowerCase();
+                            if (errMsg.includes('not found')) {
+                                // If row was concurrently removed, fallback to insert
+                                console.warn('Attendance record not found in RPC, inserting fresh record:', existingRow.id);
+                                const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === batchId);
+                                const onBehalfDate = batchOnBehalfOfMap[batchId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
+                                const { error: insErr } = await supabaseAuth
+                                    .from('attendance')
+                                    .insert({
+                                        student_id: studentId,
+                                        classroom_id: batchId,
+                                        date: selectedDate,
+                                        status: status.toLowerCase(),
+                                        marked_by: teacherProfile.id,
+                                        on_behalf_of_date: onBehalfDate
+                                    });
+                                if (insErr) throw insErr;
+                            } else {
+                                throw rpcErr;
+                            }
+                        }
+
+                        handleFeeBalanceTransitionNotifications({
+                            studentId,
+                            teacherId: teacherProfile?.id,
+                            supabase: supabaseAuth
+                        }).catch(e => console.error('Error checking fee balance transition:', e));
+
+                        fetchPendingReport().catch(e => console.error('Error refreshing pending report:', e));
+
+                        // Recalculate summary stats for this batch header dynamically
+                        setBatchSummaries(prev => {
+                            const batchSummary = prev[batchId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
+                            let presentDiff = 0;
+                            let absentDiff = 0;
+                            let lateDiff = 0;
+                            let excusedDiff = 0;
+
+                            if (currentBatchStatus === 'present') presentDiff--;
+                            if (currentBatchStatus === 'absent') absentDiff--;
+                            if (currentBatchStatus === 'late') lateDiff--;
+                            if (currentBatchStatus === 'excused') excusedDiff--;
+
+                            if (status === 'present') presentDiff++;
+                            if (status === 'absent') absentDiff++;
+                            if (status === 'late') lateDiff++;
+                            if (status === 'excused') excusedDiff++;
+
+                            return {
+                                ...prev,
+                                [batchId]: {
+                                    ...batchSummary,
+                                    present: Math.max(0, batchSummary.present + presentDiff),
+                                    absent: Math.max(0, batchSummary.absent + absentDiff),
+                                    late: Math.max(0, batchSummary.late + lateDiff),
+                                    excused: Math.max(0, batchSummary.excused + excusedDiff)
+                                }
+                            };
+                        });
+                        return;
+                    } catch (err: any) {
+                        console.error('Error updating attendance:', err?.message || err?.details || err);
+                        alert(`Failed to update attendance: ${err.message || err}`);
+                        // Revert
+                        setBatchAttendanceMap(prev => ({
+                            ...prev,
+                            [batchId]: {
+                                ...(prev[batchId] || {}),
+                                [studentId]: currentBatchStatus
+                            }
+                        }));
+                        setDateAttendanceMap(prev => ({
+                            ...prev,
+                            [k]: currentBatchStatus
+                        }));
+                        return;
+                    }
                 }
             }
 
-            const { error } = await supabaseAuth
-                .from('attendance')
-                .insert({
-                    student_id: studentId,
-                    classroom_id: batchId,
-                    date: selectedDate,
-                    status: (status as string).toLowerCase(),
-                    marked_by: teacherProfile.id,
-                    on_behalf_of_date: onBehalfDate
-                });
-
-            if (error) throw error;
-
-            handleFeeBalanceTransitionNotifications({
-                studentId,
-                teacherId: teacherProfile?.id,
-                supabase: supabaseAuth
-            }).catch(e => console.error('Error checking fee balance transition:', e));
-
-            if (onBehalfDate || classroomHolidays.length > 0) {
-                fetchPendingReport();
-            }
-
-            // Recalculate summary stats for this batch header dynamically
-            // Read the previous status from the batchAttendanceMap state before the optimistic update
-            const prevRecords = batchAttendanceMap[batchId] || {};
-            const prevStatus = prevRecords[studentId];
-
-            setBatchSummaries(prev => {
-                const batchSummary = prev[batchId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
-
-                let presentDiff = 0;
-                let absentDiff = 0;
-                let lateDiff = 0;
-                let excusedDiff = 0;
-
-                // Remove previous contribution
-                if (prevStatus === 'present') presentDiff--;
-                if (prevStatus === 'absent') absentDiff--;
-                if (prevStatus === 'late') lateDiff--;
-                if (prevStatus === 'excused') excusedDiff--;
-
-                // Add new contribution
-                if (status === 'present') presentDiff++;
-                if (status === 'absent') absentDiff++;
-                if (status === 'late') lateDiff++;
-                if (status === 'excused') excusedDiff++;
-
-                const nextSummary = {
-                    ...batchSummary,
-                    present: Math.max(0, batchSummary.present + presentDiff),
-                    absent: Math.max(0, batchSummary.absent + absentDiff),
-                    late: Math.max(0, batchSummary.late + lateDiff),
-                    excused: Math.max(0, batchSummary.excused + excusedDiff)
-                };
-
-                return { ...prev, [batchId]: nextSummary };
-            });
-
-            // Removed wasteful fetchMissedReport() call here.
-            // It runs automatically when switching to the Missed tab anyway.
-
-        } catch (err: any) {
-            console.error('Error marking attendance:', err);
-            alert(`Failed to save attendance: ${err.message || err}`);
-            
-            // Revert state
-            const { data } = await supabaseAuth
-                .from('attendance')
-                .select('status')
-                .eq('classroom_id', batchId)
-                .eq('student_id', studentId)
-                .eq('date', selectedDate)
-                .single();
-            
+            // Fresh mark (insert)
+            // Optimistically update
             setBatchAttendanceMap(prev => {
                 const currentBatch = prev[batchId] || {};
                 return {
                     ...prev,
                     [batchId]: {
                         ...currentBatch,
-                        [studentId]: data?.status || undefined
+                        [studentId]: status
                     }
                 };
             });
+            setDateAttendanceMap(prev => ({
+                ...prev,
+                [k]: status
+            }));
+
+            try {
+                const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === batchId);
+                if (batchForRoom?.activeHoliday) {
+                    throw new Error(`Cannot record attendance: ${selectedDate} is declared as a holiday for this classroom.`);
+                }
+                let onBehalfDate = batchOnBehalfOfMap[batchId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
+                if (onBehalfDate) {
+                    // Ensure student doesn't already have an on_behalf_of_date record for this target date in another class
+                    const { data: conflict } = await supabaseAuth
+                        .from('attendance')
+                        .select('id')
+                        .eq('student_id', studentId)
+                        .eq('on_behalf_of_date', onBehalfDate)
+                        .neq('classroom_id', batchId)
+                        .limit(1);
+                    if (conflict && conflict.length > 0) {
+                        onBehalfDate = null;
+                    }
+                }
+
+                const { error } = await supabaseAuth
+                    .from('attendance')
+                    .insert({
+                        student_id: studentId,
+                        classroom_id: batchId,
+                        date: selectedDate,
+                        status: (status as string).toLowerCase(),
+                        marked_by: teacherProfile.id,
+                        on_behalf_of_date: onBehalfDate
+                    });
+
+                if (error) throw error;
+
+                handleFeeBalanceTransitionNotifications({
+                    studentId,
+                    teacherId: teacherProfile?.id,
+                    supabase: supabaseAuth
+                }).catch(e => console.error('Error checking fee balance transition:', e));
+
+                fetchPendingReport().catch(e => console.error('Error refreshing pending report:', e));
+
+                // Recalculate summary stats for this batch header dynamically
+                const prevRecords = batchAttendanceMap[batchId] || {};
+                const prevStatus = prevRecords[studentId];
+
+                setBatchSummaries(prev => {
+                    const batchSummary = prev[batchId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
+
+                    let presentDiff = 0;
+                    let absentDiff = 0;
+                    let lateDiff = 0;
+                    let excusedDiff = 0;
+
+                    // Remove previous contribution
+                    if (prevStatus === 'present') presentDiff--;
+                    if (prevStatus === 'absent') absentDiff--;
+                    if (prevStatus === 'late') lateDiff--;
+                    if (prevStatus === 'excused') excusedDiff--;
+
+                    // Add new contribution
+                    if (status === 'present') presentDiff++;
+                    if (status === 'absent') absentDiff++;
+                    if (status === 'late') lateDiff++;
+                    if (status === 'excused') excusedDiff++;
+
+                    const nextSummary = {
+                        ...batchSummary,
+                        present: Math.max(0, batchSummary.present + presentDiff),
+                        absent: Math.max(0, batchSummary.absent + absentDiff),
+                        late: Math.max(0, batchSummary.late + lateDiff),
+                        excused: Math.max(0, batchSummary.excused + excusedDiff)
+                    };
+
+                    return { ...prev, [batchId]: nextSummary };
+                });
+
+            } catch (err: any) {
+                console.error('Error marking attendance:', err?.message || err?.details || err);
+                alert(`Failed to save attendance: ${err.message || err}`);
+                
+                // Revert state
+                const { data } = await supabaseAuth
+                    .from('attendance')
+                    .select('status')
+                    .eq('classroom_id', batchId)
+                    .eq('student_id', studentId)
+                    .eq('date', selectedDate)
+                    .single();
+                
+                setBatchAttendanceMap(prev => {
+                    const currentBatch = prev[batchId] || {};
+                    return {
+                        ...prev,
+                        [batchId]: {
+                            ...currentBatch,
+                            [studentId]: data?.status || undefined
+                        }
+                    };
+                });
+                setDateAttendanceMap(prev => {
+                    const next = { ...prev };
+                    delete next[k];
+                    return next;
+                });
+            }
+        } finally {
+            setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: false }));
         }
     };
 
@@ -1817,6 +1961,9 @@ export default function AttendancePage() {
     const handleUnmarkDateAttendance = async (studentId: string, classroomId: string) => {
         if (!teacherProfile) return;
 
+        const lockKey = `${classroomId}_${studentId}`;
+        if (savingAttendanceMap[lockKey]) return;
+
         const coveredInfo = coveredAttendanceMap[studentId];
         if (coveredInfo) {
             alert(`Cannot unmark attendance: This student was already counted on ${formatLocalDateStr(coveredInfo.actualDate)} on behalf of this date.`);
@@ -1827,26 +1974,62 @@ export default function AttendancePage() {
         const prevStatus = dateAttendanceMap[key];
         if (!prevStatus) return;
 
-        const { data: existingRow } = await supabaseAuth
-            .from('attendance')
-            .select('id, student_id, classroom_id, date, status')
-            .eq('classroom_id', classroomId)
-            .eq('student_id', studentId)
-            .eq('date', selectedDate)
-            .maybeSingle();
+        setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: true }));
+        try {
+            const { data: existingRow } = await supabaseAuth
+                .from('attendance')
+                .select('id, student_id, classroom_id, date, status')
+                .eq('classroom_id', classroomId)
+                .eq('student_id', studentId)
+                .eq('date', selectedDate)
+                .maybeSingle();
 
-        if (existingRow) {
-            const sName = dateStudentsData.find(e => e.student.id === studentId)?.student.name || 'Student';
-            const cName = classrooms.find(c => c.id === classroomId)?.name || temporaryClasses.find(t => t.id === classroomId)?.title || 'Classroom';
-            setAttendanceUnmarkTarget({
-                attendanceId: existingRow.id,
-                studentId,
-                studentName: sName,
-                classroomId,
-                classroomName: cName,
-                classDate: selectedDate,
-                currentStatus: existingRow.status
-            });
+            if (existingRow) {
+                setDateAttendanceMap(prev => {
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                });
+                setBatchAttendanceMap(prev => {
+                    const curr = { ...(prev[classroomId] || {}) };
+                    delete curr[studentId];
+                    return {
+                        ...prev,
+                        [classroomId]: curr
+                    };
+                });
+
+                try {
+                    const { error: rpcErr } = await supabaseAuth.rpc('unmark_historical_attendance', {
+                        p_attendance_id: existingRow.id,
+                        p_reason: 'Attendance unmarked by teacher'
+                    });
+                    if (rpcErr) {
+                        const errMsg = (rpcErr.message || rpcErr.details || '').toLowerCase();
+                        if (!errMsg.includes('not found')) {
+                            throw rpcErr;
+                        }
+                    }
+
+                    fetchPendingReport().catch(e => console.error('Error refreshing pending report:', e));
+                } catch (err: any) {
+                    console.error('Error unmarking attendance:', err?.message || err?.details || err);
+                    alert(`Failed to unmark attendance: ${err.message || err}`);
+                    setDateAttendanceMap(prev => ({
+                        ...prev,
+                        [key]: prevStatus
+                    }));
+                    setBatchAttendanceMap(prev => ({
+                        ...prev,
+                        [classroomId]: {
+                            ...(prev[classroomId] || {}),
+                            [studentId]: prevStatus
+                        }
+                    }));
+                }
+            }
+        } finally {
+            setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: false }));
         }
     };
 
@@ -1857,6 +2040,9 @@ export default function AttendancePage() {
         status: 'present' | 'absent' | 'late' | 'excused'
     ) => {
         if (!teacherProfile) return;
+
+        const lockKey = `${classroomId}_${studentId}`;
+        if (savingAttendanceMap[lockKey]) return;
 
         let coveredInfo = coveredAttendanceMap[studentId];
         if (!coveredInfo) {
@@ -1891,75 +2077,129 @@ export default function AttendancePage() {
             return;
         }
 
-        const currentDateStatus = dateAttendanceMap[key];
-        // If an attendance status was already recorded, modifying it must go through
-        // the authoritative audited historical correction workflow (BR-10, BR-11, BR-12)
-        if (currentDateStatus && currentDateStatus !== status) {
-            const { data: existingRow } = await supabaseAuth
-                .from('attendance')
-                .select('id, student_id, classroom_id, date, status')
-                .eq('classroom_id', classroomId)
-                .eq('student_id', studentId)
-                .eq('date', selectedDate)
-                .maybeSingle();
-
-            if (existingRow) {
-                const sName = dateStudentsData.find(e => e.student.id === studentId)?.student.name || 'Student';
-                const cName = classrooms.find(c => c.id === classroomId)?.name || temporaryClasses.find(t => t.id === classroomId)?.title || 'Classroom';
-                setAttendanceCorrectionTarget({
-                    id: existingRow.id,
-                    student_id: studentId,
-                    student_name: sName,
-                    classroom_id: classroomId,
-                    classroom_name: cName,
-                    date: selectedDate,
-                    status: existingRow.status
-                });
-                return;
-            }
-        }
-        // Optimistic update
-        setDateAttendanceMap(prev => ({ ...prev, [key]: status }));
+        setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: true }));
         try {
-            const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === classroomId);
-            if (batchForRoom?.activeHoliday) {
-                throw new Error(`Cannot record attendance: ${selectedDate} is declared as a holiday for this classroom.`);
-            }
-            const onBehalfDate = batchOnBehalfOfMap[classroomId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
-            const { error } = await supabaseAuth
-                .from('attendance')
-                .insert({
-                    student_id: studentId,
-                    classroom_id: classroomId,
-                    date: selectedDate,
-                    on_behalf_of_date: onBehalfDate,
-                    status: status.toLowerCase(),
-                    marked_by: teacherProfile.id
-                });
-            if (error) throw error;
+            const currentDateStatus = dateAttendanceMap[key];
+            // If an attendance status was already recorded, modifying it directly uses the audited RPC
+            // without demanding a justification modal
+            if (currentDateStatus && currentDateStatus !== status) {
+                const { data: existingRow } = await supabaseAuth
+                    .from('attendance')
+                    .select('id, student_id, classroom_id, date, status')
+                    .eq('classroom_id', classroomId)
+                    .eq('student_id', studentId)
+                    .eq('date', selectedDate)
+                    .maybeSingle();
 
-            handleFeeBalanceTransitionNotifications({
-                studentId,
-                teacherId: teacherProfile?.id,
-                supabase: supabaseAuth
-            }).catch(e => console.error('Error checking fee balance transition:', e));
-            if (onBehalfDate || classroomHolidays.length > 0) {
-                fetchPendingReport();
+                if (existingRow) {
+                    // Optimistic update
+                    setDateAttendanceMap(prev => ({ ...prev, [key]: status }));
+                    setBatchAttendanceMap(prev => ({
+                        ...prev,
+                        [classroomId]: {
+                            ...(prev[classroomId] || {}),
+                            [studentId]: status
+                        }
+                    }));
+
+                    try {
+                        const { error: rpcErr } = await supabaseAuth.rpc('correct_historical_attendance', {
+                            p_attendance_id: existingRow.id,
+                            p_new_status: status.toLowerCase(),
+                            p_reason: 'Attendance updated by teacher',
+                            p_authorized_credit_delta: null
+                        });
+
+                        if (rpcErr) {
+                            const errMsg = (rpcErr.message || rpcErr.details || '').toLowerCase();
+                            if (errMsg.includes('not found')) {
+                                console.warn('Attendance record not found in RPC, inserting fresh record:', existingRow.id);
+                                const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === classroomId);
+                                const onBehalfDate = batchOnBehalfOfMap[classroomId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
+                                const { error: insErr } = await supabaseAuth
+                                    .from('attendance')
+                                    .insert({
+                                        student_id: studentId,
+                                        classroom_id: classroomId,
+                                        date: selectedDate,
+                                        status: status.toLowerCase(),
+                                        marked_by: teacherProfile.id,
+                                        on_behalf_of_date: onBehalfDate
+                                    });
+                                if (insErr) throw insErr;
+                            } else {
+                                throw rpcErr;
+                            }
+                        }
+
+                        handleFeeBalanceTransitionNotifications({
+                            studentId,
+                            teacherId: teacherProfile?.id,
+                            supabase: supabaseAuth
+                        }).catch(e => console.error('Error checking fee balance transition:', e));
+
+                        fetchPendingReport().catch(e => console.error('Error refreshing pending report:', e));
+                        return;
+                    } catch (err: any) {
+                        console.error('Error updating attendance:', err?.message || err?.details || err);
+                        alert(`Failed to update attendance: ${err.message || err}`);
+                        setDateAttendanceMap(prev => ({ ...prev, [key]: currentDateStatus }));
+                        setBatchAttendanceMap(prev => ({
+                            ...prev,
+                            [classroomId]: {
+                                ...(prev[classroomId] || {}),
+                                [studentId]: currentDateStatus
+                            }
+                        }));
+                        return;
+                    }
+                }
             }
-            // Also sync batchAttendanceMap if batch is expanded
-            setBatchAttendanceMap(prev => {
-                const currentBatch = prev[classroomId] || {};
-                return { ...prev, [classroomId]: { ...currentBatch, [studentId]: status } };
-            });
-        } catch (err: any) {
-            console.error('Error marking attendance:', err);
-            alert(`Failed to save attendance: ${err.message || err}`);
-            // Revert
-            setDateAttendanceMap(prev => {
-                const next = { ...prev };
-                delete next[key];
-                return next;
-            });
+            // Optimistic update
+            setDateAttendanceMap(prev => ({ ...prev, [key]: status }));
+            try {
+                const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === classroomId);
+                if (batchForRoom?.activeHoliday) {
+                    throw new Error(`Cannot record attendance: ${selectedDate} is declared as a holiday for this classroom.`);
+                }
+                const onBehalfDate = batchOnBehalfOfMap[classroomId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
+                const { error } = await supabaseAuth
+                    .from('attendance')
+                    .insert({
+                        student_id: studentId,
+                        classroom_id: classroomId,
+                        date: selectedDate,
+                        on_behalf_of_date: onBehalfDate,
+                        status: status.toLowerCase(),
+                        marked_by: teacherProfile.id
+                    });
+                if (error) throw error;
+
+                handleFeeBalanceTransitionNotifications({
+                    studentId,
+                    teacherId: teacherProfile?.id,
+                    supabase: supabaseAuth
+                }).catch(e => console.error('Error checking fee balance transition:', e));
+
+                fetchPendingReport().catch(e => console.error('Error refreshing pending report:', e));
+
+                // Also sync batchAttendanceMap if batch is expanded
+                setBatchAttendanceMap(prev => {
+                    const currentBatch = prev[classroomId] || {};
+                    return { ...prev, [classroomId]: { ...currentBatch, [studentId]: status } };
+                });
+            } catch (err: any) {
+                console.error('Error marking attendance:', err?.message || err?.details || err);
+                alert(`Failed to save attendance: ${err.message || err}`);
+                // Revert
+                setDateAttendanceMap(prev => {
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                });
+            }
+        } finally {
+            setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: false }));
         }
     };
 
@@ -3695,29 +3935,29 @@ export default function AttendancePage() {
                                                                                     { key: 'excused', label: 'Excused', shortLabel: 'E', activeClass: 'bg-slate-600 text-white shadow-sm border-slate-600', inactiveClass: 'border-slate-200 text-slate-600 dark:border-slate-700' }
                                                                                 ] as const).map(opt => {
                                                                                     const isActive = currentStatus === opt.key;
+                                                                                    const studentLockKey = `${batch.id}_${student.id}`;
+                                                                                    const isSaving = !!savingAttendanceMap[studentLockKey];
+                                                                                    const isDisabled = isCoveredLocked || isSaving;
                                                                                     return (
                                                                                         <button
                                                                                             key={opt.key}
-                                                                                            disabled={isCoveredLocked}
+                                                                                            disabled={isDisabled}
                                                                                             title={isCoveredLocked 
                                                                                                 ? `Attendance covered on ${formatLocalDateStr(coveredInfo.actualDate)}` 
-                                                                                                : (isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`)}
+                                                                                                : (isActive ? "Click to unmark attendance" : `Mark as ${opt.label}`)}
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation();
-                                                                                                if (isCoveredLocked) return;
+                                                                                                if (isDisabled) return;
                                                                                                 handleMarkBatchAttendance(batch.id, student.id, opt.key);
-                                                                                            }}
-                                                                                            onDoubleClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                if (isCoveredLocked) return;
-                                                                                                handleUnmarkBatchAttendance(batch.id, student.id);
                                                                                             }}
                                                                                             className={`w-7 h-7 sm:w-auto sm:h-auto sm:px-3 sm:py-1 rounded-lg text-xs font-bold uppercase border transition-all duration-200 flex items-center justify-center ${
                                                                                                 isCoveredLocked
                                                                                                     ? (isActive 
                                                                                                         ? `${opt.activeClass} opacity-85 cursor-not-allowed` 
                                                                                                         : 'border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 opacity-40 cursor-not-allowed')
-                                                                                                    : (isActive ? `${opt.activeClass} cursor-pointer` : `${opt.inactiveClass} bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer`)
+                                                                                                    : isSaving
+                                                                                                        ? `${isActive ? opt.activeClass : opt.inactiveClass} opacity-50 cursor-wait animate-pulse`
+                                                                                                        : (isActive ? `${opt.activeClass} cursor-pointer` : `${opt.inactiveClass} bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer`)
                                                                                             }`}
                                                                                         >
                                                                                             <span className="hidden sm:inline">{opt.label}</span>
@@ -3916,29 +4156,29 @@ export default function AttendancePage() {
                                                                                     { key: 'excused' as const, label: 'Excused', shortLabel: 'E', activeClass: 'bg-slate-600 text-white shadow-sm border-slate-600', inactiveClass: 'border-slate-200 text-slate-600 dark:border-slate-700' }
                                                                                 ]).map(opt => {
                                                                                     const isActive = currentStatus === opt.key;
+                                                                                    const studentLockKey = `${entry.classroom_id}_${entry.student.id}`;
+                                                                                    const isSaving = !!savingAttendanceMap[studentLockKey];
+                                                                                    const isDisabled = isCoveredLocked || isSaving;
                                                                                     return (
                                                                                         <button
                                                                                             key={opt.key}
-                                                                                            disabled={isCoveredLocked}
+                                                                                            disabled={isDisabled}
                                                                                             title={isCoveredLocked 
                                                                                                 ? `Attendance covered on ${formatLocalDateStr(coveredInfo.actualDate)}` 
-                                                                                                : (isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`)}
+                                                                                                : (isActive ? "Click to unmark attendance" : `Mark as ${opt.label}`)}
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation();
-                                                                                                if (isCoveredLocked) return;
+                                                                                                if (isDisabled) return;
                                                                                                 handleMarkDateAttendance(entry.student.id, entry.classroom_id, opt.key);
-                                                                                            }}
-                                                                                            onDoubleClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                if (isCoveredLocked) return;
-                                                                                                handleUnmarkDateAttendance(entry.student.id, entry.classroom_id);
                                                                                             }}
                                                                                             className={`w-7 h-7 sm:w-auto sm:h-auto sm:px-3.5 sm:py-1.5 rounded-lg text-xs font-black uppercase border transition-all duration-200 flex items-center justify-center ${
                                                                                                 isCoveredLocked
                                                                                                     ? (isActive 
                                                                                                         ? `${opt.activeClass} opacity-85 cursor-not-allowed` 
                                                                                                         : 'border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 opacity-40 cursor-not-allowed')
-                                                                                                    : (isActive ? opt.activeClass : `${opt.inactiveClass} bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer`)
+                                                                                                    : isSaving
+                                                                                                        ? `${isActive ? opt.activeClass : opt.inactiveClass} opacity-50 cursor-wait animate-pulse`
+                                                                                                        : (isActive ? opt.activeClass : `${opt.inactiveClass} bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer`)
                                                                                             }`}
                                                                                         >
                                                                                             <span className="hidden sm:inline">{opt.label}</span>

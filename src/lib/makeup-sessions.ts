@@ -274,15 +274,25 @@ export async function scheduleMakeupInExistingClass(
 
     const isTemporary = classroom.type === 'temporary';
 
-    // 2. Validate day of week matching only for permanent classrooms with schedules
+    // 2. Validate day of week matching only for permanent classrooms with schedules (unless on an active alternative class date)
     if (!isTemporary) {
-        const daysOfWeek: number[] = (classroom.batch_schedules || []).map((s: any) => s.day_of_week);
-        if (daysOfWeek.length > 0) {
-            const makeupDay = getDayOfWeekFromDateStr(makeupDate);
-            if (!daysOfWeek.includes(makeupDay)) {
-                const expectedDays = daysOfWeek.map(d => DAY_NAMES[d]).join(' or ');
-                const actualDay = DAY_NAMES[makeupDay];
-                throw new Error(`Invalid date! ${classroom.name} only runs on ${expectedDays} (selected date is a ${actualDay}).`);
+        const { data: altHoliday } = await supabaseClient
+            .from('classroom_holidays')
+            .select('id')
+            .eq('classroom_id', targetClassroomId)
+            .eq('alternative_date', makeupDate)
+            .eq('status', 'active')
+            .maybeSingle();
+
+        if (!altHoliday) {
+            const daysOfWeek: number[] = (classroom.batch_schedules || []).map((s: any) => s.day_of_week);
+            if (daysOfWeek.length > 0) {
+                const makeupDay = getDayOfWeekFromDateStr(makeupDate);
+                if (!daysOfWeek.includes(makeupDay)) {
+                    const expectedDays = daysOfWeek.map(d => DAY_NAMES[d]).join(' or ');
+                    const actualDay = DAY_NAMES[makeupDay];
+                    throw new Error(`Invalid date! ${classroom.name} only runs on ${expectedDays} (selected date is a ${actualDay}).`);
+                }
             }
         }
     }

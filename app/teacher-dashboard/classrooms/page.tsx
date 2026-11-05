@@ -184,6 +184,7 @@ export default function ClassroomsPage() {
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
     const [formatFilter, setFormatFilter] = useState<'all' | 'online' | 'offline'>('all');
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+    const [classroomHolidays, setClassroomHolidays] = useState<any[]>([]);
 
     interface TodoItem {
         id: string;
@@ -824,19 +825,27 @@ export default function ClassroomsPage() {
                 ? supabaseAuth.from('session_student_overrides').select('target_classroom_id, student_id, users!student_id(id, name, profile_pic_url, status)').in('target_classroom_id', tempRoomIds)
                 : Promise.resolve({ data: [] });
 
+            const holidaysReq = supabaseAuth
+                .from('classroom_holidays')
+                .select('*')
+                .eq('status', 'active');
+
             const [
                 { data: allSchedules },
                 { data: permStudentsData },
                 { data: tempStudentsData },
-                { data: tempOverridesData }
+                { data: tempOverridesData },
+                { data: holidaysData }
             ] = await Promise.all([
                 schedulesReq,
                 permStudentsReq,
                 tempStudentsReq,
-                tempOverridesReq
+                tempOverridesReq,
+                holidaysReq
             ]);
 
             setRawSchedules(allSchedules || []);
+            setClassroomHolidays(holidaysData || []);
 
             const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
             const scheduleMap: Record<string, string> = {};
@@ -1141,14 +1150,21 @@ export default function ClassroomsPage() {
 
         const scheduledDaysOfWeek = new Set(activeSchedules.map(s => s.day_of_week));
         const tempDates = new Set(filteredTemp.map(tc => (tc as any).class_date));
-        return { scheduledDaysOfWeek, tempDates };
-    }, [rawSchedules, classrooms, tempClassrooms, statusFilter, formatFilter, searchQuery]);
+        const altDates = new Set(
+            (classroomHolidays || [])
+                .filter((h: any) => h.status === 'active' && h.alternative_date && activePermIds.has(h.classroom_id))
+                .map((h: any) => h.alternative_date)
+        );
+        return { scheduledDaysOfWeek, tempDates, altDates };
+    }, [rawSchedules, classrooms, tempClassrooms, classroomHolidays, statusFilter, formatFilter, searchQuery]);
 
     const hasClassesOnDate = React.useCallback((dateStr: string) => {
         const dateObj = parseClassDate(dateStr);
         if (!dateObj) return false;
         const dayOfWeek = dateObj.getDay();
-        return scheduledDatesSet.scheduledDaysOfWeek.has(dayOfWeek) || scheduledDatesSet.tempDates.has(dateStr);
+        return scheduledDatesSet.scheduledDaysOfWeek.has(dayOfWeek) || 
+               scheduledDatesSet.tempDates.has(dateStr) ||
+               scheduledDatesSet.altDates.has(dateStr);
     }, [scheduledDatesSet]);
 
     const getClassesForDate = React.useCallback((dateStr: string) => {
@@ -1157,17 +1173,58 @@ export default function ClassroomsPage() {
         if (!dateObj) return [];
         const dayOfWeek = dateObj.getDay();
 
-        // Filter permanent classes with matching day_of_week
+        // Filter permanent classes with matching day_of_week (check holiday status)
         const matchingSchedules = rawSchedules.filter(s => s.day_of_week === dayOfWeek);
         const activePermanent = matchingSchedules.map(s => {
             const room = classrooms.find(c => c.id === s.classroom_id);
             if (!room) return null;
+
+            const holiday = (classroomHolidays || []).find((h: any) => 
+                h.status === 'active' && 
+                h.classroom_id === room.id && 
+                h.holiday_date === dateStr
+            );
+
+            if (holiday) {
+                return {
+                    ...room,
+                    type: 'permanent' as const,
+                    isHoliday: true,
+                    holidayInfo: holiday,
+                    displayTime: `${formatTime12hr(s.start_time.slice(0, 5))} - ${formatTime12hr(s.end_time.slice(0, 5))}`,
+                    start_time: s.start_time,
+                    end_time: s.end_time
+                };
+            }
+
             return {
                 ...room,
                 type: 'permanent' as const,
                 displayTime: `${formatTime12hr(s.start_time.slice(0, 5))} - ${formatTime12hr(s.end_time.slice(0, 5))}`,
                 start_time: s.start_time,
                 end_time: s.end_time
+            };
+        }).filter(Boolean);
+
+        // Filter alternative classes scheduled on this date
+        const matchingAltHolidays = (classroomHolidays || []).filter((h: any) => 
+            h.status === 'active' && 
+            h.alternative_date === dateStr &&
+            ['with_alternative', 'alternative_scheduled'].includes(h.holiday_type)
+        );
+        const activeAlternative = matchingAltHolidays.map((h: any) => {
+            const room = classrooms.find(c => c.id === h.classroom_id);
+            if (!room) return null;
+            const startTime = (h.alternative_start_time || '18:00:00').slice(0, 5);
+            const endTime = (h.alternative_end_time || '19:00:00').slice(0, 5);
+            return {
+                ...room,
+                type: 'permanent' as const,
+                isAlternative: true,
+                holidayInfo: h,
+                displayTime: `${formatTime12hr(startTime)} - ${formatTime12hr(endTime)}`,
+                start_time: startTime,
+                end_time: endTime
             };
         }).filter(Boolean);
 
@@ -1180,7 +1237,7 @@ export default function ClassroomsPage() {
             end_time: (tc as any).end_time
         }));
 
-        const combined = [...activePermanent, ...activeTemporary] as any[];
+        const combined = [...activePermanent, ...activeTemporary, ...activeAlternative] as any[];
         combined.sort((a, b) => {
             const timeA = parseTimeFromName(a.name) || (a.start_time || '00:00:00').slice(0, 5);
             const timeB = parseTimeFromName(b.name) || (b.start_time || '00:00:00').slice(0, 5);
@@ -1191,7 +1248,7 @@ export default function ClassroomsPage() {
             return (a.name || '').localeCompare(b.name || '');
         });
         return combined;
-    }, [rawSchedules, classrooms, tempClassrooms]);
+    }, [rawSchedules, classrooms, tempClassrooms, classroomHolidays]);
 
     const getFilteredClassesForDate = React.useCallback((dateStr: string) => {
         const baseClasses = getClassesForDate(dateStr);
@@ -1687,6 +1744,16 @@ export default function ClassroomsPage() {
                                                             >
                                                                 {room.name}
                                                             </Link>
+                                                            {(room as any).isAlternative && (
+                                                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-300">
+                                                                    Alternative Session
+                                                                </span>
+                                                            )}
+                                                            {(room as any).isHoliday && (
+                                                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400 border border-rose-300">
+                                                                    Holiday
+                                                                </span>
+                                                            )}
                                                             {room.type === 'temporary' ? (
                                                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
                                                                     Temp
@@ -1747,6 +1814,13 @@ export default function ClassroomsPage() {
                                                                 </>
                                                             )}
                                                         </button>
+                                                    ) : (room as any).isHoliday ? (
+                                                        <span 
+                                                            className="px-3.5 sm:px-4 h-9 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-not-allowed"
+                                                            title={`Holiday declared. Rescheduled to ${(room as any).holidayInfo?.alternative_date || 'later'}.`}
+                                                        >
+                                                            Holiday
+                                                        </span>
                                                     ) : (
                                                         <button
                                                             type="button"

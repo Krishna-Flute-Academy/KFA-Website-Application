@@ -27,6 +27,7 @@ import {
     isDateMatchingSchedules,
     getDayOfWeekFromDateStr,
     getDayName,
+    formatTime12hr,
     PermanentClassroomOption
 } from '../../lib/makeup-sessions';
 
@@ -72,7 +73,7 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
 
     // Pathway 1: Join Existing Class State
     const [permanentClassrooms, setPermanentClassrooms] = useState<PermanentClassroomOption[]>([]);
-    const [classroomSearch, setClassroomSearch] = useState<string>('');
+    const [activeAlternativeHolidays, setActiveAlternativeHolidays] = useState<any[]>([]);
     const [selectedClassroomId, setSelectedClassroomId] = useState<string>('');
     const [makeupDate, setMakeupDate] = useState<string>('');
     const [existingNotes, setExistingNotes] = useState<string>('');
@@ -94,6 +95,14 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
         return dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
     }, [missedSession.date]);
 
+    // Format Selected Makeup Date for Display
+    const formattedSelectedDate = useMemo(() => {
+        if (!makeupDate) return '';
+        const [y, m, d] = makeupDate.split('-').map(Number);
+        const dateObj = new Date(y, m - 1, d);
+        return dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    }, [makeupDate]);
+
     // Load available permanent classrooms on open
     useEffect(() => {
         if (!isOpen) return;
@@ -101,24 +110,11 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
         setErrorMessage(null);
         setIsLoadingClassrooms(true);
 
+        const todayStr = new Date().toISOString().split('T')[0];
+
         fetchAvailablePermanentClassrooms(supabaseAuth, currentTeacherId, isAdmin)
             .then(rooms => {
                 setPermanentClassrooms(rooms);
-                if (rooms.length > 0) {
-                    const defaultRoom = rooms.find(r => r.id !== missedSession.classroomId) || rooms[0];
-                    setSelectedClassroomId(defaultRoom.id);
-
-                    // Pre-fill next occurrence or session date
-                    if (defaultRoom.isSpecialSession && defaultRoom.classDate) {
-                        setMakeupDate(defaultRoom.classDate);
-                    } else {
-                        const todayStr = new Date().toISOString().split('T')[0];
-                        const nextDates = getNextScheduleOccurrences(defaultRoom.daysOfWeek, todayStr, 1);
-                        if (nextDates.length > 0) {
-                            setMakeupDate(nextDates[0].date);
-                        }
-                    }
-                }
             })
             .catch(err => {
                 console.error('Failed to load classrooms:', err);
@@ -126,6 +122,31 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
             })
             .finally(() => {
                 setIsLoadingClassrooms(false);
+            });
+
+        // Load active alternative classes for permanent classrooms
+        Promise.resolve(
+            supabaseAuth
+                .from('classroom_holidays')
+                .select('classroom_id, holiday_date, alternative_date, alternative_start_time, alternative_end_time, holiday_type, status')
+                .eq('status', 'active')
+                .not('alternative_date', 'is', null)
+        )
+            .then(({ data }: any) => {
+                const holidays = data || [];
+                setActiveAlternativeHolidays(holidays);
+
+                // Default date: prefer active alternative date if present, else today
+                const activeAlt = holidays.find((h: any) => h.alternative_date && h.status === 'active');
+                if (activeAlt) {
+                    setMakeupDate(activeAlt.alternative_date);
+                } else {
+                    setMakeupDate(todayStr);
+                }
+            })
+            .catch((err: any) => {
+                console.error('Failed to load alternative holidays in makeup modal:', err);
+                setMakeupDate(todayStr);
             });
 
         // Pre-fill special session defaults
@@ -136,61 +157,131 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
         setSessionTitle(`Makeup Session - ${student?.name || 'Student'}`);
         if (currentTeacherId) setAssignedTeacherId(currentTeacherId);
 
-    }, [isOpen, currentTeacherId, isAdmin, missedSession.classroomId, student?.name]);
+    }, [isOpen, currentTeacherId, isAdmin, student?.name]);
 
-    // Filtered classrooms based on search
-    const filteredClassrooms = useMemo(() => {
-        if (!classroomSearch.trim()) return permanentClassrooms;
-        const q = classroomSearch.toLowerCase();
-        return permanentClassrooms.filter(r =>
-            r.name.toLowerCase().includes(q) ||
-            r.teacherName.toLowerCase().includes(q) ||
-            r.scheduleSummary.toLowerCase().includes(q)
+    // Quick Date Suggestions: Alternative dates first, then upcoming active class days
+    const quickDateSuggestions = useMemo(() => {
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+        const pills: Array<{ date: string; dayName: string; formatted: string; isAlternative: boolean }> = [];
+        const seenDates = new Set<string>();
+
+        // 1. Any active alternative holiday dates
+        for (const h of activeAlternativeHolidays || []) {
+            if (h.alternative_date && h.status === 'active' && !seenDates.has(h.alternative_date)) {
+                seenDates.add(h.alternative_date);
+                const [y, m, d] = h.alternative_date.split('-').map(Number);
+                const dt = new Date(y, m - 1, d);
+                const dayName = dt.toLocaleDateString('en-US', { weekday: 'short' });
+                pills.push({
+                    date: h.alternative_date,
+                    dayName: `${dayName} • Alternative`,
+                    formatted: dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    isAlternative: true
+                });
+            }
+        }
+
+        // 2. Collect scheduled days of week from permanent classrooms
+        const scheduledDows = new Set<number>();
+        for (const r of permanentClassrooms) {
+            for (const dow of r.daysOfWeek || []) {
+                scheduledDows.add(dow);
+            }
+        }
+
+        // 3. Next 14 days that have scheduled classes
+        const cur = new Date(today);
+        for (let i = 0; i < 14 && pills.length < 5; i++) {
+            const y = cur.getFullYear();
+            const m = String(cur.getMonth() + 1).padStart(2, '0');
+            const d = String(cur.getDate()).padStart(2, '0');
+            const dStr = `${y}-${m}-${d}`;
+            const dow = cur.getDay();
+
+            if (!seenDates.has(dStr) && scheduledDows.has(dow)) {
+                seenDates.add(dStr);
+                const dayName = dStr === todayStr ? 'Today' : cur.toLocaleDateString('en-US', { weekday: 'short' });
+                pills.push({
+                    date: dStr,
+                    dayName,
+                    formatted: cur.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    isAlternative: false
+                });
+            }
+            cur.setDate(cur.getDate() + 1);
+        }
+
+        return pills.sort((a, b) => a.date.localeCompare(b.date));
+    }, [activeAlternativeHolidays, permanentClassrooms]);
+
+    // Available Classes for the selected date
+    const availableClassesOnDate = useMemo(() => {
+        if (!makeupDate) return [];
+        const dayOfWeek = getDayOfWeekFromDateStr(makeupDate); // 0 (Sun) - 6 (Sat)
+
+        // Find active alternative classes rescheduled to this date
+        const altHolidays = (activeAlternativeHolidays || []).filter(
+            (h: any) => h.alternative_date === makeupDate && h.status === 'active'
         );
-    }, [permanentClassrooms, classroomSearch]);
+        const altMap = new Map(altHolidays.map((h: any) => [h.classroom_id, h]));
+
+        const results: Array<PermanentClassroomOption & { isAlternative: boolean; altTiming?: string }> = [];
+
+        for (const room of permanentClassrooms) {
+            if (room.isSpecialSession) {
+                if (room.classDate === makeupDate) {
+                    results.push({
+                        ...room,
+                        isAlternative: false
+                    });
+                }
+            } else {
+                const alt = altMap.get(room.id);
+                if (alt) {
+                    const altTiming = alt.alternative_start_time
+                        ? `${formatTime12hr(alt.alternative_start_time)}${alt.alternative_end_time ? ' - ' + formatTime12hr(alt.alternative_end_time) : ''}`
+                        : room.scheduleSummary;
+                    results.push({
+                        ...room,
+                        isAlternative: true,
+                        altTiming
+                    });
+                } else if (room.daysOfWeek && room.daysOfWeek.includes(dayOfWeek)) {
+                    results.push({
+                        ...room,
+                        isAlternative: false
+                    });
+                }
+            }
+        }
+
+        // Sort: Alternative classes first, then by name
+        return results.sort((a, b) => {
+            if (a.isAlternative && !b.isAlternative) return -1;
+            if (!a.isAlternative && b.isAlternative) return 1;
+            return a.name.localeCompare(b.name);
+        });
+    }, [makeupDate, permanentClassrooms, activeAlternativeHolidays]);
+
+    // Auto-select classroom when available classes update
+    useEffect(() => {
+        if (availableClassesOnDate.length > 0) {
+            const currentStillValid = availableClassesOnDate.some(r => r.id === selectedClassroomId);
+            if (!currentStillValid) {
+                // Prefer alternative class if available, else first class
+                const defaultPick = availableClassesOnDate.find(r => r.isAlternative) || availableClassesOnDate[0];
+                setSelectedClassroomId(defaultPick.id);
+            }
+        } else {
+            setSelectedClassroomId('');
+        }
+    }, [availableClassesOnDate, selectedClassroomId]);
 
     // Selected classroom metadata
     const selectedClassroom = useMemo(() => {
-        return permanentClassrooms.find(r => r.id === selectedClassroomId);
-    }, [permanentClassrooms, selectedClassroomId]);
-
-    // Suggestions for selected classroom
-    const upcomingDateSuggestions = useMemo(() => {
-        if (!selectedClassroom || selectedClassroom.isSpecialSession || selectedClassroom.daysOfWeek.length === 0) return [];
-        const todayStr = new Date().toISOString().split('T')[0];
-        return getNextScheduleOccurrences(selectedClassroom.daysOfWeek, todayStr, 4);
-    }, [selectedClassroom]);
-
-    // When selected classroom changes, pick its earliest next date or its scheduled date
-    const handleClassroomChange = (newRoomId: string) => {
-        setSelectedClassroomId(newRoomId);
-        const room = permanentClassrooms.find(r => r.id === newRoomId);
-        if (!room) return;
-        if (room.isSpecialSession && room.classDate) {
-            setMakeupDate(room.classDate);
-        } else if (room.daysOfWeek && room.daysOfWeek.length > 0) {
-            const todayStr = new Date().toISOString().split('T')[0];
-            const nextDates = getNextScheduleOccurrences(room.daysOfWeek, todayStr, 1);
-            if (nextDates.length > 0) {
-                setMakeupDate(nextDates[0].date);
-            }
-        }
-    };
-
-    // Validation for date match (only applies to recurring permanent classrooms)
-    const dateScheduleMismatch = useMemo(() => {
-        if (!selectedClassroom || !makeupDate) return null;
-        if (selectedClassroom.isSpecialSession) return null;
-        if (selectedClassroom.daysOfWeek.length === 0) return null;
-        const matches = isDateMatchingSchedules(makeupDate, selectedClassroom.daysOfWeek);
-        if (!matches) {
-            const dayOfPick = getDayOfWeekFromDateStr(makeupDate);
-            const actualDayName = getDayName(dayOfPick);
-            const validDayNames = selectedClassroom.daysOfWeek.map(d => getDayName(d)).join(' or ');
-            return `Date Warning: ${selectedClassroom.name} runs on ${validDayNames}. The selected date is a ${actualDayName}.`;
-        }
-        return null;
-    }, [selectedClassroom, makeupDate]);
+        return availableClassesOnDate.find(r => r.id === selectedClassroomId);
+    }, [availableClassesOnDate, selectedClassroomId]);
 
     // Submit handler
     const handleSubmit = async (e: React.FormEvent) => {
@@ -200,14 +291,11 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
 
         try {
             if (makeupMode === 'existing_class') {
-                if (!selectedClassroomId) {
-                    throw new Error('Please select a target classroom.');
-                }
                 if (!makeupDate) {
                     throw new Error('Please select a makeup class date.');
                 }
-                if (dateScheduleMismatch) {
-                    throw new Error(dateScheduleMismatch);
+                if (!selectedClassroomId) {
+                    throw new Error(`Please select an available class on ${formattedSelectedDate || 'this date'}.`);
                 }
 
                 const res = await scheduleMakeupInExistingClass(supabaseAuth, {
@@ -317,88 +405,32 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                         </div>
                     )}
 
-                    {/* Mode Selection Segmented Cards */}
-                    <div className="space-y-1.5">
-                        <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                            Choose Makeup Pathway
-                        </label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {/* Option 1: Join Existing Class */}
-                            <label
-                                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between text-left ${
-                                    makeupMode === 'existing_class'
-                                        ? 'border-[#ecb613] bg-[#ecb613]/10 dark:bg-[#ecb613]/10 ring-2 ring-[#ecb613]/30'
-                                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-850/40'
-                                }`}
-                            >
-                                <input
-                                    type="radio"
-                                    name={radioGroupName}
-                                    value="existing_class"
-                                    checked={makeupMode === 'existing_class'}
-                                    onChange={() => setMakeupMode('existing_class')}
-                                    className="sr-only"
-                                />
-                                <div>
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
-                                            <Users className="size-3.5 text-[#b45309] dark:text-[#ecb613]" />
-                                            <span>Join Existing Class</span>
-                                        </div>
-                                        {makeupMode === 'existing_class' && (
-                                            <div className="size-4 rounded-full bg-[#ecb613] text-slate-900 flex items-center justify-center">
-                                                <Check className="size-2.5 stroke-[3]" />
-                                            </div>
-                                        )}
-                                    </div>
-                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                                        Student attends another regular batch for <strong>1 session</strong> as a guest. No permanent enrollment.
-                                    </p>
-                                </div>
-                                <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                    <Check className="size-3" />
-                                    <span>Single joint class • No double booking</span>
-                                </div>
-                            </label>
-
-                            {/* Option 2: Create Special Session */}
-                            <label
-                                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between text-left ${
-                                    makeupMode === 'special_session'
-                                        ? 'border-purple-500 bg-purple-50/60 dark:bg-purple-950/20 ring-2 ring-purple-500/30'
-                                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-850/40'
-                                }`}
-                            >
-                                <input
-                                    type="radio"
-                                    name={radioGroupName}
-                                    value="special_session"
-                                    checked={makeupMode === 'special_session'}
-                                    onChange={() => setMakeupMode('special_session')}
-                                    className="sr-only"
-                                />
-                                <div>
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
-                                            <Sparkles className="size-3.5 text-purple-600 dark:text-purple-400" />
-                                            <span>Create Special Session</span>
-                                        </div>
-                                        {makeupMode === 'special_session' && (
-                                            <div className="size-4 rounded-full bg-purple-600 text-white flex items-center justify-center">
-                                                <Check className="size-2.5 stroke-[3]" />
-                                            </div>
-                                        )}
-                                    </div>
-                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                                        Schedule a separate one-off Special Session exclusively for makeup/catch-up.
-                                    </p>
-                                </div>
-                                <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[10px] font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1">
-                                    <Sparkles className="size-3" />
-                                    <span>Dedicated session • Custom time</span>
-                                </div>
-                            </label>
-                        </div>
+                    {/* Mode Selection Segmented Bar */}
+                    <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl gap-1">
+                        <button
+                            type="button"
+                            onClick={() => setMakeupMode('existing_class')}
+                            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                makeupMode === 'existing_class'
+                                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                        >
+                            <Users className="size-3.5 text-amber-500" />
+                            <span>Join Class on Date</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setMakeupMode('special_session')}
+                            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                makeupMode === 'special_session'
+                                    ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-300 shadow-xs'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                        >
+                            <Sparkles className="size-3.5 text-purple-500" />
+                            <span>Create Special 1-on-1 Session</span>
+                        </button>
                     </div>
 
                     {/* ──────────────────────────────────────────────────────────── */}
@@ -406,172 +438,143 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                     {/* ──────────────────────────────────────────────────────────── */}
                     {makeupMode === 'existing_class' && (
                         <div className="space-y-4 pt-1 animate-in fade-in-50 duration-150">
-                            {/* Classroom Dropdown & Search */}
+                            {/* Step 1: Makeup Attendance Date First */}
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                                        Target Classroom / Special Session <span className="text-rose-500">*</span>
+                                        1. Makeup Attendance Date <span className="text-rose-500">*</span>
                                     </label>
-                                    <span className="text-[10px] text-slate-400">Batches & Special Classes</span>
+                                    <span className="text-[10px] text-slate-400 font-medium">Select class date</span>
                                 </div>
 
-                                {/* Search filter input */}
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        value={classroomSearch}
-                                        onChange={(e) => setClassroomSearch(e.target.value)}
-                                        placeholder="Search classroom by name, batch, or date..."
-                                        className="w-full pl-8.5 pr-8 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#ecb613]/50 transition-all placeholder:text-slate-400"
-                                    />
-                                    {classroomSearch && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setClassroomSearch('')}
-                                            className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs px-1"
-                                            title="Clear search"
-                                        >
-                                            ✕
-                                        </button>
-                                    )}
-                                </div>
-
-                                {isLoadingClassrooms ? (
-                                    <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-400">
-                                        <Loader2 className="size-3.5 animate-spin" />
-                                        <span>Loading available classrooms and special sessions...</span>
-                                    </div>
-                                ) : filteredClassrooms.length === 0 ? (
-                                    <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300">
-                                        {classroomSearch
-                                            ? `No classrooms found matching "${classroomSearch}".`
-                                            : 'No active classrooms found. Please switch to "Create Special Session".'}
-                                    </div>
-                                ) : (
-                                    <select
-                                        value={selectedClassroomId}
-                                        onChange={(e) => handleClassroomChange(e.target.value)}
-                                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#ecb613]/50 transition-all cursor-pointer"
-                                    >
-                                        {/* Regular Batches */}
-                                        {filteredClassrooms.filter(r => !r.isSpecialSession).length > 0 && (
-                                            <optgroup label="── Regular Batches ──">
-                                                {filteredClassrooms.filter(r => !r.isSpecialSession).map((room) => (
-                                                    <option key={room.id} value={room.id}>
-                                                        {room.name} — {room.scheduleSummary} ({room.enrolledCount} enrolled)
-                                                    </option>
-                                                ))}
-                                            </optgroup>
-                                        )}
-                                        {/* Special Sessions / Alternative Classes */}
-                                        {filteredClassrooms.filter(r => r.isSpecialSession).length > 0 && (
-                                            <optgroup label="── Special Classes / Alternative Sessions ──">
-                                                {filteredClassrooms.filter(r => r.isSpecialSession).map((room) => (
-                                                    <option key={room.id} value={room.id}>
-                                                        ⭐ {room.name} — {room.scheduleSummary}
-                                                    </option>
-                                                ))}
-                                            </optgroup>
-                                        )}
-                                    </select>
-                                )}
-                            </div>
-
-                            {/* Selected Classroom Schedule Banner */}
-                            {selectedClassroom && (
-                                selectedClassroom.isSpecialSession ? (
-                                    <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/20 border border-purple-200/80 dark:border-purple-800 text-xs space-y-1">
-                                        <div className="flex items-center justify-between text-[11px] text-purple-700 dark:text-purple-300">
-                                            <span className="font-bold flex items-center gap-1">
-                                                <Sparkles className="size-3 text-purple-500" />
-                                                Special Session / Alternative Class
-                                            </span>
-                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                                                {selectedClassroom.classDate}
-                                            </span>
-                                        </div>
-                                        <div className="text-[11px] text-purple-900 dark:text-purple-200 font-semibold">
-                                            {selectedClassroom.name}
-                                        </div>
-                                        <div className="text-[11px] text-purple-700 dark:text-purple-300 flex items-center gap-1">
-                                            <Clock className="size-3 text-purple-400 shrink-0" />
-                                            <span>Instructor: {selectedClassroom.teacherName} • Timing: {selectedClassroom.scheduleSummary}</span>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-850/60 border border-slate-200/80 dark:border-slate-800 text-xs space-y-1">
-                                        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                                            <span className="font-bold text-slate-700 dark:text-slate-300">Instructor: {selectedClassroom.teacherName}</span>
-                                            <span>{selectedClassroom.enrolledCount} regular students</span>
-                                        </div>
-                                        <div className="text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                                            <Clock className="size-3 text-slate-400 shrink-0" />
-                                            <span>Regular Schedule: {selectedClassroom.scheduleSummary}</span>
-                                        </div>
-                                    </div>
-                                )
-                            )}
-
-                            {/* Quick Next Occurrences Picker (Only for regular recurring batches) */}
-                            {!selectedClassroom?.isSpecialSession && upcomingDateSuggestions.length > 0 && (
-                                <div className="space-y-1.5">
-                                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                                        Quick Select Upcoming Class Dates
-                                    </label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {upcomingDateSuggestions.map((sug) => {
+                                {/* Quick Select Date Pills */}
+                                {quickDateSuggestions.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {quickDateSuggestions.map((sug) => {
                                             const isSelected = makeupDate === sug.date;
                                             return (
                                                 <button
                                                     key={sug.date}
                                                     type="button"
                                                     onClick={() => setMakeupDate(sug.date)}
-                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
                                                         isSelected
-                                                            ? 'bg-[#ecb613] text-slate-900 shadow-xs'
-                                                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                                                            ? 'bg-[#ecb613] text-slate-900 shadow-xs ring-2 ring-[#ecb613]/50'
+                                                            : sug.isAlternative
+                                                                ? 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                                                                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                                                     }`}
                                                 >
-                                                    {sug.formatted} ({sug.dayName.slice(0, 3)})
+                                                    {sug.isAlternative && <Sparkles className="size-3 text-amber-600" />}
+                                                    <span>{sug.formatted} ({sug.dayName})</span>
                                                 </button>
                                             );
                                         })}
                                     </div>
-                                </div>
-                            )}
-
-                            {/* Date Input */}
-                            <div className="space-y-1.5">
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                                    Makeup Attendance Date <span className="text-rose-500">*</span>
-                                </label>
-                                <input
-                                    type="date"
-                                    value={makeupDate}
-                                    onChange={(e) => setMakeupDate(e.target.value)}
-                                    disabled={selectedClassroom?.isSpecialSession}
-                                    className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
-                                        selectedClassroom?.isSpecialSession
-                                            ? 'bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-500 cursor-not-allowed'
-                                            : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#ecb613]/50'
-                                    }`}
-                                />
-                                {selectedClassroom?.isSpecialSession && (
-                                    <p className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold flex items-center gap-1 mt-1">
-                                        <Sparkles className="size-3.5 shrink-0" />
-                                        <span>Date automatically linked to this special session ({selectedClassroom.classDate}).</span>
-                                    </p>
                                 )}
-                                {dateScheduleMismatch && (
-                                    <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 mt-1">
-                                        <AlertCircle className="size-3.5 shrink-0" />
-                                        <span>{dateScheduleMismatch}</span>
-                                    </p>
+
+                                {/* Date Input */}
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-2.5 size-4 text-slate-400 pointer-events-none" />
+                                    <input
+                                        type="date"
+                                        value={makeupDate}
+                                        onChange={(e) => setMakeupDate(e.target.value)}
+                                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#ecb613]/50 transition-all cursor-pointer"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Step 2: Available Classes on Selected Date */}
+                            <div className="space-y-2 pt-1">
+                                <div className="flex items-center justify-between">
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                                        2. Available Classes on {formattedSelectedDate || 'Selected Date'} <span className="text-rose-500">*</span>
+                                    </label>
+                                    <span className="text-[10px] text-slate-400 font-medium">
+                                        {availableClassesOnDate.length} {availableClassesOnDate.length === 1 ? 'class' : 'classes'} found
+                                    </span>
+                                </div>
+
+                                {isLoadingClassrooms ? (
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-400">
+                                        <Loader2 className="size-3.5 animate-spin" />
+                                        <span>Loading available classes...</span>
+                                    </div>
+                                ) : availableClassesOnDate.length === 0 ? (
+                                    <div className="p-3.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                                        <p className="font-bold flex items-center gap-1.5">
+                                            <AlertCircle className="size-3.5 shrink-0" />
+                                            <span>No classes scheduled on {formattedSelectedDate || 'this date'}.</span>
+                                        </p>
+                                        <p className="text-[11px] text-amber-700 dark:text-amber-400 pl-5">
+                                            Please pick another date above, or switch to <strong>"Create Special Session"</strong> to schedule a custom 1-on-1 class.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                        {availableClassesOnDate.map((room) => {
+                                            const isSelected = selectedClassroomId === room.id;
+                                            return (
+                                                <div
+                                                    key={room.id}
+                                                    onClick={() => setSelectedClassroomId(room.id)}
+                                                    className={`p-3 rounded-xl border transition-all cursor-pointer text-left ${
+                                                        isSelected
+                                                            ? room.isAlternative
+                                                                ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/30 ring-2 ring-amber-500/40'
+                                                                : 'border-[#ecb613] bg-[#ecb613]/10 dark:bg-[#ecb613]/10 ring-2 ring-[#ecb613]/30'
+                                                            : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-850/40'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2 font-bold text-xs text-slate-900 dark:text-white">
+                                                            {room.isAlternative ? (
+                                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-900 flex items-center gap-1">
+                                                                    <Sparkles className="size-2.5" />
+                                                                    Alternative Session
+                                                                </span>
+                                                            ) : room.isSpecialSession ? (
+                                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500 text-white">
+                                                                    Special
+                                                                </span>
+                                                            ) : (
+                                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                                                    Regular Batch
+                                                                </span>
+                                                            )}
+                                                            <span>{room.name}</span>
+                                                        </div>
+                                                        <div className={`size-4 rounded-full flex items-center justify-center shrink-0 ${
+                                                            isSelected
+                                                                ? 'bg-[#ecb613] text-slate-900'
+                                                                : 'border border-slate-300 dark:border-slate-600'
+                                                        }`}>
+                                                            {isSelected && <Check className="size-2.5 stroke-[3]" />}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 flex flex-wrap items-center gap-2">
+                                                        <span>Instructor: <strong className="text-slate-700 dark:text-slate-300">{room.teacherName}</strong></span>
+                                                        <span>•</span>
+                                                        <span className="flex items-center gap-1">
+                                                            <Clock className="size-3 text-slate-400" />
+                                                            <span>{room.isAlternative && room.altTiming ? room.altTiming : room.scheduleSummary}</span>
+                                                        </span>
+                                                        {!room.isSpecialSession && (
+                                                            <>
+                                                                <span>•</span>
+                                                                <span>{room.enrolledCount} enrolled</span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 )}
                             </div>
 
-                            {/* Notes Input */}
+                            {/* Step 3: Notes / Reason */}
                             <div className="space-y-1.5">
                                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                                     Reason / Notes <span className="text-slate-400 font-normal">(Optional)</span>
@@ -580,7 +583,7 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                                     value={existingNotes}
                                     onChange={(e) => setExistingNotes(e.target.value)}
                                     rows={2}
-                                    placeholder="e.g. Attending Saturday slot to cover missed Tuesday flute practice"
+                                    placeholder="e.g. Attending alternative slot to cover missed class"
                                     className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-normal text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#ecb613]/50 transition-all resize-none"
                                 />
                             </div>
@@ -745,7 +748,7 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                         </button>
                         <button
                             type="submit"
-                            disabled={isSubmitting || (makeupMode === 'existing_class' && (!selectedClassroomId || !makeupDate || !!dateScheduleMismatch))}
+                            disabled={isSubmitting || (makeupMode === 'existing_class' && (!selectedClassroomId || !makeupDate))}
                             className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
                                 makeupMode === 'existing_class'
                                     ? 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 shadow-[#ecb613]/20'

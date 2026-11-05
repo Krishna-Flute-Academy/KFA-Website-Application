@@ -277,7 +277,7 @@ export async function createSpecialSession(
             teacherId,
             ...selectedStudents,
             ...adminIds
-        ]));
+        ])).filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
 
         if (recipientIds.length > 0) {
             const { data: teacherProfile } = await supabaseClient

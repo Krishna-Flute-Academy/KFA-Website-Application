@@ -51,96 +51,11 @@ const toHHMM = (t?: string | null) => (t ? String(t).slice(0, 5) : '');
 
 /**
  * Idempotently creates (or re-dates) the Special Session representing a holiday's scheduled
- * alternative class. No-op if the holiday is not active/scheduled.
+ * alternative class.
+ * (Option 1: Alternative classes map directly to the permanent classroom entity and do not create shadow special classes).
  */
 export async function ensureAlternativeSpecialSession(supabaseClient: any, holidayId: string) {
-    if (!holidayId) return null;
-
-    const { data: holiday, error: holErr } = await supabaseClient
-        .from('classroom_holidays')
-        .select('*')
-        .eq('id', holidayId)
-        .maybeSingle();
-    if (holErr) throw holErr;
-    if (!holiday || holiday.status !== 'active') return null;
-    if (!['alternative_scheduled', 'with_alternative'].includes(holiday.holiday_type) || !holiday.alternative_date) return null;
-
-    const altDate = String(holiday.alternative_date).split('T')[0];
-
-    const { data: room, error: roomErr } = await supabaseClient
-        .from('classrooms')
-        .select('id, name, teacher_id, description')
-        .eq('id', holiday.classroom_id)
-        .maybeSingle();
-    if (roomErr) throw roomErr;
-    if (!room) return null;
-
-    // Resolve timing: explicit alternative time → regular schedule of the holiday weekday → any schedule
-    let startTime = toHHMM(holiday.alternative_start_time);
-    let endTime = toHHMM(holiday.alternative_end_time);
-    if (!startTime || !endTime) {
-        const [y, m, d] = String(holiday.holiday_date).split('T')[0].split('-').map(Number);
-        const dow = new Date(y, m - 1, d).getDay();
-        const { data: scheds } = await supabaseClient
-            .from('batch_schedules')
-            .select('day_of_week, start_time, end_time')
-            .eq('classroom_id', room.id);
-        const sched = (scheds || []).find((s: any) => s.day_of_week === dow) || (scheds || [])[0];
-        startTime = startTime || toHHMM(sched?.start_time) || '10:00';
-        endTime = endTime || toHHMM(sched?.end_time) || '';
-        if (!endTime || endTime <= startTime) {
-            const [h, min] = startTime.split(':').map(Number);
-            endTime = `${String(Math.min(h + 1, 23)).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-        }
-    }
-
-    // Already linked → keep date/time in sync (reschedule case)
-    const existing = await findLinkedSessions(supabaseClient, holiday.id);
-    if (existing.length > 0) {
-        const tc = existing[0];
-        if (tc.class_date !== altDate || toHHMM(tc.start_time) !== startTime || toHHMM(tc.end_time) !== endTime) {
-            const { error: upErr } = await supabaseClient
-                .from('temporary_classes')
-                .update({ class_date: altDate, start_time: startTime, end_time: endTime })
-                .eq('id', tc.id);
-            if (upErr) throw upErr;
-            if (tc.class_date !== altDate) {
-                await supabaseClient
-                    .from('session_student_overrides')
-                    .update({ override_date: altDate })
-                    .eq('target_classroom_id', tc.classroom_id)
-                    .eq('override_date', tc.class_date);
-            }
-        }
-        return tc;
-    }
-
-    // Roster: operationally active permanent students of the holiday classroom
-    const { data: roster } = await supabaseClient
-        .from('classroom_students')
-        .select('student_id, users!student_id(status)')
-        .eq('classroom_id', room.id);
-    const studentIds: string[] = (roster || [])
-        .filter((r: any) => isStudentOperationallyActive(r.users?.status))
-        .map((r: any) => r.student_id);
-
-    const meta = extractClassroomMetadata(room.description || '');
-    const holDate = String(holiday.holiday_date).split('T')[0];
-
-    const result = await createSpecialSession(supabaseClient, {
-        name: buildAlternativeClassName(room.name),
-        description: `Alternative class on behalf of holiday ${holDate}. ${buildHolidayLinkTags(holiday)}`,
-        teacherId: room.teacher_id,
-        classDate: altDate,
-        startTime,
-        endTime,
-        deliveryFormat: meta.deliveryFormat,
-        meetingLink: meta.reusableMeetingLink || undefined,
-        purpose: 'other',
-        creditTreatment: 'consume_credit',
-        selectedStudents: studentIds
-    });
-    return result?.tempClass || null;
+    return null;
 }
 
 /** Cancels (soft) any Special Session linked to the holiday's alternative class. */
@@ -158,16 +73,5 @@ export async function ensureAlternativeSessionsForHolidayDate(
     holidayDate: string,
     classroomIds?: string[]
 ) {
-    let q = supabaseClient
-        .from('classroom_holidays')
-        .select('id')
-        .eq('holiday_date', holidayDate)
-        .eq('status', 'active')
-        .in('holiday_type', ['alternative_scheduled', 'with_alternative']);
-    if (classroomIds && classroomIds.length > 0) q = q.in('classroom_id', classroomIds);
-    const { data, error } = await q;
-    if (error) throw error;
-    for (const h of data || []) {
-        await ensureAlternativeSpecialSession(supabaseClient, h.id);
-    }
+    return;
 }

@@ -95,10 +95,7 @@ export function HistoricalAttendanceCorrectionModal({
     if (!isOpen || !record) return null;
 
     const handleExecute = async () => {
-        if (!reason.trim() || reason.trim().length < 3) {
-            setError('A valid correction reason (minimum 3 characters) is required.');
-            return;
-        }
+        const finalReason = reason.trim() || 'Attendance updated by teacher';
 
         if (previewData && !previewData.can_execute) {
             setError(previewData.blocking_reason || 'Correction is blocked by financial/makeup rules.');
@@ -112,7 +109,7 @@ export function HistoricalAttendanceCorrectionModal({
             const { data, error: execError } = await supabaseAuth.rpc('correct_historical_attendance', {
                 p_attendance_id: record.attendanceId,
                 p_new_status: targetStatus,
-                p_reason: reason.trim(),
+                p_reason: finalReason,
                 p_authorized_credit_delta: previewData ? previewData.projected_credit_delta : null
             });
 
@@ -235,24 +232,18 @@ export function HistoricalAttendanceCorrectionModal({
                         </div>
                     </div>
 
-                    {/* Mandatory Reason */}
+                    {/* Reason (Optional) */}
                     <div className="space-y-1.5">
                         <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                            Correction Reason <span className="text-rose-500">*</span>:
+                            Correction Reason (Optional):
                         </label>
                         <textarea
                             rows={3}
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
-                            placeholder="State the pedagogical or administrative justification for correcting this historical record..."
+                            placeholder="Optional notes or reason for updating attendance..."
                             className="w-full text-xs p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/30 dark:focus:ring-amber-400/30 text-slate-900 dark:text-white"
                         />
-                        <div className="flex justify-between text-[10px] text-slate-400">
-                            <span>Mandatory audit trail requirement (BR-12)</span>
-                            <span className={reason.trim().length >= 3 ? 'text-emerald-500' : 'text-slate-400'}>
-                                {reason.trim().length}/3 min chars
-                            </span>
-                        </div>
                     </div>
 
                     {/* Financial Recalculation Impact Preview */}
@@ -321,7 +312,7 @@ export function HistoricalAttendanceCorrectionModal({
                     <button
                         type="button"
                         onClick={handleExecute}
-                        disabled={executeLoading || !canExecute || reason.trim().length < 3 || targetStatus === record.currentStatus}
+                        disabled={executeLoading || !canExecute || targetStatus === record.currentStatus}
                         className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
                     >
                         {executeLoading ? (

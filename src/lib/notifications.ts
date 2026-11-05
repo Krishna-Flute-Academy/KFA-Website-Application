@@ -145,6 +145,10 @@ export async function sendClassroomNotification({
             studentIds = await resolveRecipientsToStudentIds(recipients);
         }
 
+        // Validate UUIDs to prevent database type or constraint rejections
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        studentIds = studentIds.filter(id => typeof id === 'string' && uuidRegex.test(id.trim()));
+
         if (studentIds.length === 0) {
             console.log('[notifications] No target student IDs resolved.');
             return { success: true, count: 0 };
@@ -165,14 +169,18 @@ export async function sendClassroomNotification({
             is_read: false
         }));
 
-        const { error: dbError } = await supabaseAuth
-            .from('notifications')
-            .insert(notificationInserts);
+        try {
+            const { error: dbError } = await supabaseAuth
+                .from('notifications')
+                .insert(notificationInserts);
 
-        if (dbError) {
-            console.error('[notifications] DB insert error:', dbError);
-        } else {
-            console.log('[notifications] Saved in-app notifications successfully.');
+            if (dbError) {
+                console.warn('[notifications] DB insert notice:', dbError.message || dbError.details || JSON.stringify(dbError));
+            } else {
+                console.log('[notifications] Saved in-app notifications successfully.');
+            }
+        } catch (dbEx: any) {
+            console.warn('[notifications] DB insert exception:', dbEx?.message || dbEx);
         }
 
         // 2. Trigger OneSignal push notification serverless route
