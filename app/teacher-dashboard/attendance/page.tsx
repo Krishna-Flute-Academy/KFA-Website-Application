@@ -1303,7 +1303,146 @@ export default function AttendancePage() {
 
             const allLeaves = [...(pendingLeaves || []), ...(historicalLeaves || [])];
             const filteredLeaves = allLeaves.filter((l: any) => isAdmin || l.users?.teacher_id === teacherProfile.id);
-            setLeaveRequests(filteredLeaves);
+
+            // 3. Enrich leave requests with scheduled/completed makeup details
+            const studentIds = Array.from(new Set(filteredLeaves.map((l: any) => l.student_id).filter(Boolean)));
+            let enrichedLeaves = filteredLeaves;
+
+            if (studentIds.length > 0) {
+                const [{ data: overridesDataRaw }, { data: attendanceData }] = await Promise.all([
+                    supabaseAuth
+                        .from('session_student_overrides')
+                        .select('id, student_id, target_classroom_id, override_date, missed_session_date, reason, booking_status, credit_treatment')
+                        .in('student_id', studentIds)
+                        .order('override_date', { ascending: true }),
+                    supabaseAuth
+                        .from('attendance')
+                        .select('id, student_id, classroom_id, date, status, on_behalf_of_date')
+                        .in('student_id', studentIds)
+                ]);
+
+                const overridesData = (overridesDataRaw || []).filter((o: any) => o.booking_status !== 'cancelled');
+
+                const attendanceMap: Record<string, string> = {};
+                (attendanceData || []).forEach((r: any) => {
+                    const cleanDate = (r.date || '').split('T')[0].split(' ')[0];
+                    const key = `${r.student_id}_${r.classroom_id}_${cleanDate}`;
+                    attendanceMap[key] = r.status;
+                });
+
+                const onBehalfAttendance: Record<string, any> = {};
+                (attendanceData || []).forEach((r: any) => {
+                    if (r.on_behalf_of_date) {
+                        const cleanObDate = r.on_behalf_of_date.split('T')[0].split(' ')[0];
+                        const key = `${r.student_id}_${cleanObDate}`;
+                        onBehalfAttendance[key] = r;
+                    }
+                });
+
+                enrichedLeaves = filteredLeaves.map((lr: any) => {
+                    const reqDateClean = (lr.class_date || '').split('T')[0].split(' ')[0];
+                    const studentOverrides = overridesData.filter((o: any) => o.student_id === lr.student_id);
+
+                    // 1. Match initial makeup override
+                    let initialMakeup = studentOverrides.find((o: any) => {
+                        if (!o.override_date) return false;
+                        const oMissedDate = o.missed_session_date ? o.missed_session_date.split('T')[0].split(' ')[0] : null;
+                        if (oMissedDate && oMissedDate === reqDateClean) return true;
+                        if (o.reason && o.reason.includes(`[MissedDate:${reqDateClean}]`)) return true;
+                        return false;
+                    });
+
+                    // Fallback to chronological order if not tagged with specific missed date
+                    if (!initialMakeup) {
+                        initialMakeup = studentOverrides.find((o: any) => {
+                            if (!o.override_date) return false;
+                            const oMissedDate = o.missed_session_date ? o.missed_session_date.split('T')[0].split(' ')[0] : null;
+                            if (!oMissedDate && (!o.reason || !o.reason.includes('[MissedDate:'))) {
+                                const oDateClean = o.override_date.split('T')[0].split(' ')[0];
+                                return oDateClean >= reqDateClean;
+                            }
+                            return false;
+                        });
+                    }
+
+                    // Follow chain if rescheduled
+                    let currentMakeup = initialMakeup;
+                    let visited = new Set();
+                    while (currentMakeup) {
+                        if (visited.has(currentMakeup.id)) break;
+                        visited.add(currentMakeup.id);
+
+                        const mDateClean = (currentMakeup.override_date || '').split('T')[0].split(' ')[0];
+                        const attKey = `${lr.student_id}_${currentMakeup.target_classroom_id}_${mDateClean}`;
+                        const attStatus = attendanceMap[attKey];
+
+                        if (attStatus === 'absent' || attStatus === 'excused') {
+                            const nextMakeup = studentOverrides.find((o: any) => {
+                                if (!o.override_date || o.id === currentMakeup.id) return false;
+                                const oMissedDate = o.missed_session_date ? o.missed_session_date.split('T')[0].split(' ')[0] : null;
+                                if (oMissedDate && oMissedDate === mDateClean) return true;
+                                if (o.reason && o.reason.includes(`[MissedDate:${mDateClean}]`)) return true;
+                                return false;
+                            });
+                            if (nextMakeup) {
+                                currentMakeup = nextMakeup;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let isMakeupCompleted = false;
+                    let isMakeupMissed = false;
+                    let makeupAttendanceStatus = '';
+
+                    if (currentMakeup) {
+                        const mDateClean = (currentMakeup.override_date || '').split('T')[0].split(' ')[0];
+                        const attKey = `${lr.student_id}_${currentMakeup.target_classroom_id}_${mDateClean}`;
+                        const attStatus = attendanceMap[attKey];
+                        if (attStatus === 'present' || attStatus === 'late') {
+                            isMakeupCompleted = true;
+                            makeupAttendanceStatus = attStatus;
+                        } else if (attStatus === 'absent' || attStatus === 'excused') {
+                            isMakeupMissed = true;
+                            makeupAttendanceStatus = attStatus;
+                        }
+                    }
+
+                    // Also check onBehalfAttendance if not completed via override attendance
+                    if (!isMakeupCompleted) {
+                        const obAtt = onBehalfAttendance[`${lr.student_id}_${reqDateClean}`];
+                        if (obAtt && (obAtt.status === 'present' || obAtt.status === 'late')) {
+                            isMakeupCompleted = true;
+                            makeupAttendanceStatus = obAtt.status;
+                            if (!currentMakeup) {
+                                currentMakeup = {
+                                    id: 'ob_' + obAtt.id,
+                                    student_id: lr.student_id,
+                                    target_classroom_id: obAtt.classroom_id,
+                                    override_date: obAtt.date,
+                                    missed_session_date: reqDateClean,
+                                    reason: 'Alternative class attended',
+                                    booking_status: 'completed',
+                                    credit_treatment: 'makeup'
+                                };
+                            }
+                        }
+                    }
+
+                    return {
+                        ...lr,
+                        scheduledMakeup: currentMakeup,
+                        isMakeupCompleted,
+                        isMakeupMissed,
+                        makeupAttendanceStatus
+                    };
+                });
+            }
+
+            setLeaveRequests(enrichedLeaves);
         } catch (err) {
             console.error('Error fetching leave requests:', err);
         } finally {
@@ -5068,7 +5207,7 @@ export default function AttendancePage() {
                                             </div>
                                         ) : leaveRequests.filter(r => leavesFilter === 'all' || r.status === leavesFilter).length > 0 ? (
                                             <div className="overflow-x-auto">
-                                                <table className="w-full text-left border-collapse min-w-[700px]">
+                                                <table className="w-full text-left border-collapse min-w-[850px]">
                                                     <thead>
                                                         <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
                                                             <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Student</th>
@@ -5076,6 +5215,7 @@ export default function AttendancePage() {
                                                             <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Requested Date</th>
                                                             <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Reason</th>
                                                             <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Alternative Class (Makeup)</th>
                                                             <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
                                                         </tr>
                                                     </thead>
@@ -5121,6 +5261,34 @@ export default function AttendancePage() {
                                                                             {request.status === 'cancelled' ? 'Cancelled (Holiday)' : request.status}
                                                                         </span>
                                                                     </td>
+                                                                    <td className="px-5 py-4 text-xs">
+                                                                        {request.status === 'approved' ? (
+                                                                            request.scheduledMakeup ? (
+                                                                                <div className="flex flex-col text-slate-600 dark:text-slate-400">
+                                                                                    {request.isMakeupCompleted ? (
+                                                                                        <span className="font-extrabold text-emerald-600 dark:text-emerald-450 flex items-center gap-1.5">
+                                                                                            <CheckCircle2 className="w-3.5 h-3.5" /> Attended ({request.makeupAttendanceStatus || 'present'})
+                                                                                        </span>
+                                                                                    ) : request.isMakeupMissed ? (
+                                                                                        <span className="font-extrabold text-rose-600 dark:text-rose-455 flex items-center gap-1.5">
+                                                                                            <XCircle className="w-3.5 h-3.5" /> Missed Makeup
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span className="font-extrabold text-amber-600 dark:text-amber-450 flex items-center gap-1.5">
+                                                                                            <Calendar className="w-3.5 h-3.5" /> Scheduled
+                                                                                        </span>
+                                                                                    )}
+                                                                                    <span className="text-[10px] mt-0.5 text-slate-500 font-medium">
+                                                                                        {formatLocalDateStr(request.scheduledMakeup.override_date)} in {resolveClassroomName(request.scheduledMakeup.target_classroom_id)}
+                                                                                    </span>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <span className="text-slate-400 italic">No makeup scheduled</span>
+                                                                            )
+                                                                        ) : (
+                                                                            <span className="text-slate-400 font-mono">—</span>
+                                                                        )}
+                                                                    </td>
                                                                     <td className="px-5 py-4 text-right">
                                                                         <div className="flex items-center justify-end gap-2">
                                                                             {request.status === 'pending' ? (
@@ -5141,25 +5309,60 @@ export default function AttendancePage() {
                                                                                     </button>
                                                                                 </>
                                                                             ) : request.status === 'approved' ? (
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => {
-                                                                                        setMakeupStudent({
-                                                                                            student_id: request.student_id,
-                                                                                            student_name: request.users?.name || 'Student',
-                                                                                            student_profile_pic_url: request.users?.profile_pic_url,
-                                                                                            date: request.class_date,
-                                                                                            classroom_name: request.classrooms?.name || 'Regular Batch',
-                                                                                            classroom_id: request.classroom_id
-                                                                                        });
-                                                                                        setShowMakeupModal(true);
-                                                                                    }}
-                                                                                    className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
-                                                                                    title="Schedule makeup class for this approved leave"
-                                                                                >
-                                                                                    <span>Schedule Makeup</span>
-                                                                                    <ArrowRight className="size-3" />
-                                                                                </button>
+                                                                                request.isMakeupCompleted ? (
+                                                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 rounded-lg text-[10px] font-black uppercase tracking-wider border border-emerald-200 dark:border-emerald-800/40" title="Makeup class completed">
+                                                                                        <Check className="size-3" /> Attended
+                                                                                    </span>
+                                                                                ) : request.scheduledMakeup && !request.isMakeupMissed ? (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            setMakeupStudent({
+                                                                                                student_id: request.student_id,
+                                                                                                student_name: request.users?.name || 'Student',
+                                                                                                student_profile_pic_url: request.users?.profile_pic_url,
+                                                                                                date: request.class_date,
+                                                                                                classroom_name: request.classrooms?.name || 'Regular Batch',
+                                                                                                classroom_id: request.classroom_id
+                                                                                            });
+                                                                                            setMakeupDate(request.scheduledMakeup.override_date);
+                                                                                            setMakeupClassroomId(request.scheduledMakeup.target_classroom_id);
+                                                                                            setMakeupReason(stripMissedDateTag(request.scheduledMakeup.reason || ''));
+                                                                                            setEditingMakeupId(request.scheduledMakeup.id?.startsWith('ob_') ? null : request.scheduledMakeup.id);
+                                                                                            setShowMakeupModal(true);
+                                                                                        }}
+                                                                                        className="px-2.5 py-1 bg-[#ecb613]/10 hover:bg-[#ecb613]/25 text-[#92400e] dark:text-[#ecb613] rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors border border-[#ecb613]/30"
+                                                                                        title="Reschedule makeup class"
+                                                                                    >
+                                                                                        <span>Reschedule</span>
+                                                                                        <ArrowRight className="size-3" />
+                                                                                    </button>
+                                                                                ) : (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            const targetClassroomName = request.classrooms?.name || resolveClassroomName(request.classroom_id);
+                                                                                            setMakeupStudent({
+                                                                                                student_id: request.student_id,
+                                                                                                student_name: request.users?.name || 'Student',
+                                                                                                student_profile_pic_url: request.users?.profile_pic_url,
+                                                                                                date: request.class_date,
+                                                                                                classroom_name: targetClassroomName,
+                                                                                                classroom_id: request.classroom_id
+                                                                                            });
+                                                                                            setMakeupDate(request.class_date);
+                                                                                            setMakeupClassroomId(classrooms[0]?.id || '');
+                                                                                            setMakeupReason(`Makeup for approved leave on ${formatLocalDateStr(request.class_date)}`);
+                                                                                            setEditingMakeupId(null);
+                                                                                            setShowMakeupModal(true);
+                                                                                        }}
+                                                                                        className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                                                                                        title="Schedule makeup class for this approved leave"
+                                                                                    >
+                                                                                        <span>Schedule Makeup</span>
+                                                                                        <ArrowRight className="size-3" />
+                                                                                    </button>
+                                                                                )
                                                                             ) : (
                                                                                 <span className="text-[10px] font-bold text-slate-400">Processed</span>
                                                                             )}
@@ -5213,6 +5416,7 @@ export default function AttendancePage() {
                     onSuccess={() => {
                         handleCloseModal();
                         fetchMissedReport();
+                        fetchLeaveRequests();
                         if (expandedBatchId) {
                             handleExpandBatch(expandedBatchId, false, true);
                         }

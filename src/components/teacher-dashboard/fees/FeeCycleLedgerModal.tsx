@@ -24,6 +24,7 @@ import {
     Sparkles
 } from 'lucide-react';
 import { ArrangeMakeupModal } from '../../makeup/ArrangeMakeupModal';
+import AdjustClassCreditsModal from './AdjustClassCreditsModal';
 
 interface FeeCycleLedgerModalProps {
     isOpen: boolean;
@@ -52,6 +53,7 @@ export default function FeeCycleLedgerModal({
 }: FeeCycleLedgerModalProps) {
     const modalRef = useRef<HTMLDivElement>(null);
     const [showArrangeMakeup, setShowArrangeMakeup] = useState(false);
+    const [showAdjustModal, setShowAdjustModal] = useState(false);
     const [makeupMissedSession, setMakeupMissedSession] = useState<{ date: string; classroomId?: string; classroomName?: string }>({ date: '' });
 
     // Close on Escape
@@ -136,14 +138,23 @@ export default function FeeCycleLedgerModal({
                     </div>
 
                     <div className="flex items-center gap-2 ml-auto shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => setShowAdjustModal(true)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 transition-colors cursor-pointer"
+                            title="Manually credit or debit class balance"
+                        >
+                            <span className="font-black text-sm">±</span>
+                            <span className="hidden sm:inline">Adjust Classes</span>
+                        </button>
                         {onViewAttendanceHistory && (
                             <button
                                 type="button"
                                 onClick={onViewAttendanceHistory}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
                                 title="View complete attendance timeline across all classrooms"
                             >
-                                <CalendarCheck className="size-3.5 text-amber-600 dark:text-amber-400" />
+                                <CalendarCheck className="size-3.5 text-slate-500 dark:text-slate-400" />
                                 <span className="hidden sm:inline">Attendance History</span>
                                 <span className="sm:hidden">History</span>
                             </button>
@@ -282,7 +293,7 @@ export default function FeeCycleLedgerModal({
                                                         {diag.detail}
                                                     </p>
                                                 </div>
-                                                {diag.actionUrl && (
+                                                {diag.actionUrl ? (
                                                     <Link
                                                         href={diag.actionUrl}
                                                         onClick={onClose}
@@ -290,7 +301,15 @@ export default function FeeCycleLedgerModal({
                                                     >
                                                         {diag.actionLabel || 'Review Record →'}
                                                     </Link>
-                                                )}
+                                                ) : diag.type === 'calculation_mismatch' ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAdjustModal(true)}
+                                                        className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-950 transition-colors shrink-0 cursor-pointer self-start sm:self-center shadow-xs"
+                                                    >
+                                                        ± Adjust Balance (Credit / Debit) →
+                                                    </button>
+                                                ) : null}
                                             </div>
                                         ))}
                                     </div>
@@ -484,6 +503,21 @@ export default function FeeCycleLedgerModal({
                         Close
                     </button>
                 </div>
+
+                {/* Manual Class Adjustment Modal */}
+                {showAdjustModal && (
+                    <AdjustClassCreditsModal
+                        isOpen={showAdjustModal}
+                        onClose={() => setShowAdjustModal(false)}
+                        studentId={studentId}
+                        studentName={studentName}
+                        currentBalance={report?.metrics.classesAvailable ?? 0}
+                        onSuccess={() => {
+                            setShowAdjustModal(false);
+                            onRefresh?.();
+                        }}
+                    />
+                )}
 
                 {/* Arrange Makeup Modal nested trigger */}
                 {showArrangeMakeup && (

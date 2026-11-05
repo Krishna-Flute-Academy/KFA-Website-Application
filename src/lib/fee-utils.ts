@@ -886,7 +886,7 @@ export function calculateAuthoritativeFeeStatus(input: {
     let lastPaymentAmount: number | undefined;
 
     for (const p of approvedPayments) {
-        const credits = (typeof p.classes_added === 'number' && p.classes_added > 0)
+        const credits = (typeof p.classes_added === 'number' && p.classes_added !== 0)
             ? p.classes_added
             : (p.amount && p.amount > 0 && student?.fees_amount
                 ? calculateClassesAdded(p.amount, student.fees_amount, student.fees_basis || 'monthly')
