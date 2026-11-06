@@ -177,6 +177,14 @@ export default function ClassroomTab({
             return;
         }
 
+        // Pre-open tab synchronously on user click to prevent browser popup blockers
+        let newTab: Window | null = null;
+        try {
+            newTab = window.open('about:blank', '_blank');
+        } catch (e) {
+            console.error('Could not pre-open window:', e);
+        }
+
         setIsJoiningCall(true);
         try {
             const { data: { session } } = await supabaseAuth.auth.getSession();
@@ -192,6 +200,7 @@ export default function ClassroomTab({
                 });
 
                 if (res.status === 403) {
+                    if (newTab && !newTab.closed) newTab.close();
                     onRestrictedLiveAccessClick?.();
                     return;
                 }
@@ -199,7 +208,11 @@ export default function ClassroomTab({
                 if (res.ok) {
                     const data = await res.json();
                     if (data.canJoinLiveClass && data.liveMeetingLink) {
-                        window.open(data.liveMeetingLink, '_blank', 'noopener,noreferrer');
+                        if (newTab && !newTab.closed) {
+                            newTab.location.href = data.liveMeetingLink;
+                        } else {
+                            window.open(data.liveMeetingLink, '_blank', 'noopener,noreferrer');
+                        }
                         return;
                     }
                 }
@@ -212,8 +225,13 @@ export default function ClassroomTab({
 
         // Fallback if API returned but valid link exists on client
         if (canJoinLiveClass && meetingInfo.effectiveMeetingLink) {
-            window.open(meetingInfo.effectiveMeetingLink, '_blank', 'noopener,noreferrer');
+            if (newTab && !newTab.closed) {
+                newTab.location.href = meetingInfo.effectiveMeetingLink;
+            } else {
+                window.open(meetingInfo.effectiveMeetingLink, '_blank', 'noopener,noreferrer');
+            }
         } else {
+            if (newTab && !newTab.closed) newTab.close();
             onRestrictedLiveAccessClick?.();
         }
     }, [classroom?.id, canJoinLiveClass, onRestrictedLiveAccessClick, meetingInfo.effectiveMeetingLink]);

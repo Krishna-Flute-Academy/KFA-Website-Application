@@ -471,17 +471,32 @@ export default function StudentDashboardContainer() {
     const [isSubmittingExcuse, setIsSubmittingExcuse] = useState(false);
     const [excuseError, setExcuseError] = useState<string | null>(null);
 
+    const handleClosePaymentPendingModal = useCallback(() => {
+        setShowPaymentPendingModal(false);
+        handleDismissLivePopup();
+    }, [handleDismissLivePopup]);
+
     const handleOpenPaymentFromModal = useCallback(() => {
         setShowPaymentPendingModal(false);
+        handleDismissLivePopup();
         setActiveTab('fees');
-    }, []);
+    }, [handleDismissLivePopup]);
 
     const handleJoinLiveClass = useCallback(async () => {
         if (!liveClassroom) return;
         // Check authoritative financial standing
         if (authoritativeFeeStatus && !authoritativeFeeStatus.canJoinLiveClass) {
+            handleDismissLivePopup();
             setShowPaymentPendingModal(true);
             return;
+        }
+
+        // Pre-open tab synchronously on user click to prevent browser popup blockers
+        let newTab: Window | null = null;
+        try {
+            newTab = window.open('about:blank', '_blank');
+        } catch (e) {
+            console.error('Could not pre-open window:', e);
         }
 
         try {
@@ -498,6 +513,8 @@ export default function StudentDashboardContainer() {
                 });
 
                 if (res.status === 403) {
+                    if (newTab && !newTab.closed) newTab.close();
+                    handleDismissLivePopup();
                     setShowPaymentPendingModal(true);
                     return;
                 }
@@ -505,7 +522,11 @@ export default function StudentDashboardContainer() {
                 if (res.ok) {
                     const data = await res.json();
                     if (data.canJoinLiveClass && data.liveMeetingLink) {
-                        window.open(data.liveMeetingLink, '_blank', 'noopener,noreferrer');
+                        if (newTab && !newTab.closed) {
+                            newTab.location.href = data.liveMeetingLink;
+                        } else {
+                            window.open(data.liveMeetingLink, '_blank', 'noopener,noreferrer');
+                        }
                         handleDismissLivePopup();
                         return;
                     }
@@ -518,9 +539,15 @@ export default function StudentDashboardContainer() {
         // Fallback to client-side permission
         const effectiveLink = liveClassroom ? resolveClassroomMeetingInfo(liveClassroom).effectiveMeetingLink : null;
         if (authoritativeFeeStatus?.canJoinLiveClass !== false && effectiveLink) {
-            window.open(effectiveLink, '_blank', 'noopener,noreferrer');
+            if (newTab && !newTab.closed) {
+                newTab.location.href = effectiveLink;
+            } else {
+                window.open(effectiveLink, '_blank', 'noopener,noreferrer');
+            }
             handleDismissLivePopup();
         } else {
+            if (newTab && !newTab.closed) newTab.close();
+            handleDismissLivePopup();
             setShowPaymentPendingModal(true);
         }
     }, [liveClassroom, authoritativeFeeStatus, handleDismissLivePopup]);
@@ -4098,15 +4125,30 @@ export default function StudentDashboardContainer() {
 
                             {/* Actions */}
                             <div className="pt-2 flex flex-col gap-2.5">
-                                <button
-                                    type="button"
-                                    onClick={handleJoinLiveClass}
-                                    className="w-full py-3.5 px-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:brightness-105 text-white font-black rounded-xl text-sm shadow-lg shadow-red-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider min-h-[44px]"
-                                >
-                                    <PlayCircle className="size-4" />
-                                    <span>Join Class</span>
-                                    <ArrowRight className="size-4" />
-                                </button>
+                                {authoritativeFeeStatus && !authoritativeFeeStatus.canJoinLiveClass ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            handleDismissLivePopup();
+                                            setShowPaymentPendingModal(true);
+                                        }}
+                                        className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-600 via-rose-600 to-amber-700 hover:brightness-105 text-white font-black rounded-xl text-sm shadow-lg shadow-amber-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider min-h-[44px]"
+                                    >
+                                        <AlertCircle className="size-4" />
+                                        <span>Payment Overdue — View Details</span>
+                                        <ArrowRight className="size-4" />
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={handleJoinLiveClass}
+                                        className="w-full py-3.5 px-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:brightness-105 text-white font-black rounded-xl text-sm shadow-lg shadow-red-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider min-h-[44px]"
+                                    >
+                                        <PlayCircle className="size-4" />
+                                        <span>Join Class</span>
+                                        <ArrowRight className="size-4" />
+                                    </button>
+                                )}
 
                                 <button
                                     type="button"
@@ -4147,7 +4189,7 @@ export default function StudentDashboardContainer() {
                 <div 
                     className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-200"
                     onClick={(e) => {
-                        if (e.target === e.currentTarget) setShowPaymentPendingModal(false);
+                        if (e.target === e.currentTarget) handleClosePaymentPendingModal();
                     }}
                 >
                     <div 
@@ -4157,7 +4199,7 @@ export default function StudentDashboardContainer() {
                         <div className="bg-gradient-to-r from-amber-600 to-rose-600 p-6 text-white text-center relative overflow-hidden">
                             <button
                                 type="button"
-                                onClick={() => setShowPaymentPendingModal(false)}
+                                onClick={handleClosePaymentPendingModal}
                                 className="absolute top-4 right-4 p-1.5 text-white/80 hover:text-white bg-black/20 hover:bg-black/30 rounded-full transition-colors cursor-pointer"
                                 title="Close"
                                 aria-label="Close"
@@ -4197,7 +4239,7 @@ export default function StudentDashboardContainer() {
 
                                 <button
                                     type="button"
-                                    onClick={() => setShowPaymentPendingModal(false)}
+                                    onClick={handleClosePaymentPendingModal}
                                     className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer min-h-[40px]"
                                 >
                                     Close

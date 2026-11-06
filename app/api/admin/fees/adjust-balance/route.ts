@@ -33,16 +33,26 @@ async function authenticateStaff(req: Request) {
         return { error: 'Unauthorized: Invalid token', status: 401 };
     }
 
-    const serviceClient = createClient(supabaseAuthUrl, supabaseServiceKey || supabaseAuthAnonKey);
-    const { data: dbUser, error: dbErr } = await serviceClient
+    // Always fetch profile with authClient so RLS evaluates in caller's authenticated context
+    const { data: dbUser, error: dbErr } = await authClient
         .from('users')
         .select('id, name, email, role')
         .eq('id', user.id)
         .single();
 
     if (dbErr || !dbUser || (dbUser.role !== 'admin' && dbUser.role !== 'teacher')) {
-        return { error: 'Forbidden: Insufficient privileges. Teacher or Admin access required.', status: 403 };
+        const userEmail = dbUser?.email || user.email || 'unknown';
+        const userRole = dbUser?.role || 'none';
+        return { 
+            error: `Forbidden: Insufficient privileges. Teacher or Admin access required. (Logged in as: ${userEmail}, detected role: '${userRole}')`, 
+            status: 403 
+        };
     }
+
+    // Prefer serviceClient if service key is configured; otherwise fall back to authenticated staff client
+    const serviceClient = supabaseServiceKey
+        ? createClient(supabaseAuthUrl, supabaseServiceKey)
+        : authClient;
 
     return { staffUser: dbUser, serviceClient };
 }
