@@ -42,6 +42,7 @@ import { getStudentAccess } from '../../lib/student-lifecycle';
 import { fetchEffectiveClassroomParticipants } from '../../lib/classroom-participants';
 import { trackToolEvent } from '../../lib/analytics';
 import { resolveClassroomMeetingInfo } from '../../lib/meeting-utils';
+import { parseModuleCategory } from '../../lib/curriculum-media';
 
 interface StudentProfile {
     id: string;
@@ -247,6 +248,7 @@ export default function StudentDashboardContainer() {
     }, []);
 
     // Curriculum states
+    const [courseCategories, setCourseCategories] = useState<any[]>([]);
     const [courseModules, setCourseModules] = useState<any[]>([]);
     const [courseChapters, setCourseChapters] = useState<any[]>([]);
     const [courseLessons, setCourseLessons] = useState<any[]>([]);
@@ -918,7 +920,8 @@ export default function StudentDashboardContainer() {
                 progressRes,
                 messagesRes,
                 studentAssignmentsRes,
-                adminsRes
+                adminsRes,
+                categoriesRes
             ] = await Promise.all([
                 // 1. Payments
                 supabaseAuth.from('fees_payments').select('*').eq('student_id', userId).order('payment_date', { ascending: false }),
@@ -933,7 +936,7 @@ export default function StudentDashboardContainer() {
                 supabaseAuth.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(30),
 
                 // 5. Modules
-                supabaseAuth.from('course_modules').select('id, title, description, module_number').order('module_number', { ascending: true }),
+                supabaseAuth.from('course_modules').select('id, title, description, module_number, category_id').order('module_number', { ascending: true }),
 
                 // 6. Chapters
                 supabaseAuth.from('course_chapters').select('id, module_id, title, description, chapter_number').order('chapter_number', { ascending: true }),
@@ -951,7 +954,10 @@ export default function StudentDashboardContainer() {
                 supabaseAuth.from('assignment_students').select('id, assignment_id, status, feedback_text, score, submitted_at, video_url').eq('student_id', userId),
 
                 // 11. Admins list
-                supabaseAuth.from('users').select('id, name, email').eq('role', 'admin')
+                supabaseAuth.from('users').select('id, name, email').eq('role', 'admin'),
+
+                // 12. Course Categories
+                supabaseAuth.from('course_categories').select('*').order('category_order', { ascending: true })
             ]);
 
             if (payRes.data) {
@@ -963,6 +969,7 @@ export default function StudentDashboardContainer() {
             }
             setAttendance(attRes.data || []);
             setNotifications(notifRes.data || []);
+            setCourseCategories(categoriesRes.data || []);
             setCourseModules(modulesRes.data || []);
             const normalizedChapters = (chaptersRes.data || []).map((chap: any) => {
                 if ((modulesRes.data || []).some((m: any) => m.id === chap.module_id)) {
@@ -2679,7 +2686,8 @@ export default function StudentDashboardContainer() {
         const chap = courseChapters.find(c => c.id === topic.chapter_id);
         const mod = courseModules.find(m => m.id === chap?.module_id);
         if (mod && chap) {
-            return `Module ${mod.module_number} · Chapter ${chap.chapter_number}`;
+            const parsedCat = parseModuleCategory(mod, courseCategories);
+            return `${parsedCat.categoryName} · Module ${mod.module_number} · Chapter ${chap.chapter_number}`;
         }
         if (chap) {
             return `Chapter ${chap.chapter_number}`;
@@ -3610,6 +3618,7 @@ export default function StudentDashboardContainer() {
                             <div style={{ display: activeTab === 'curriculum' ? 'block' : 'none' }}>
                                 <CurriculumTab
                                     classroom={classroom}
+                                    courseCategories={courseCategories}
                                     courseModules={allocatedModules}
                                     courseChapters={allocatedChapters}
                                     courseLessons={allocatedLessons}

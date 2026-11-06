@@ -237,3 +237,57 @@ export const formatCurriculumSubtitle = (lesson: any): string => {
     }
     return difficulty;
 };
+
+export interface ParsedModuleCategory {
+    categoryId: string;
+    categoryName: string;
+    categoryOrder: number;
+    description: string;
+}
+
+/**
+ * Resolves the curriculum category for a course module.
+ * Checks category_id relation first, then [Category] in description, then module_number convention.
+ */
+export const parseModuleCategory = (
+    mod: { category_id?: string | null; description?: string | null; module_number?: number },
+    categories: Array<{ id: string; name: string; category_order?: number }> = []
+): ParsedModuleCategory => {
+    if (mod.category_id) {
+        const matchedCat = categories.find(c => c.id === mod.category_id);
+        if (matchedCat) {
+            let cleanDesc = mod.description || '';
+            const match = cleanDesc.match(/^\[(.*?)\]\s*([\s\S]*)$/);
+            if (match) cleanDesc = match[2].trim();
+            return {
+                categoryId: matchedCat.id,
+                categoryName: matchedCat.name,
+                categoryOrder: matchedCat.category_order ?? 999,
+                description: cleanDesc
+            };
+        }
+    }
+
+    if (mod.description) {
+        const match = mod.description.match(/^\[(.*?)\]\s*([\s\S]*)$/);
+        if (match) {
+            const rawCatName = match[1].trim();
+            const matchedCat = categories.find(c => c.name.toLowerCase() === rawCatName.toLowerCase());
+            return {
+                categoryId: matchedCat?.id || rawCatName,
+                categoryName: matchedCat?.name || rawCatName,
+                categoryOrder: matchedCat?.category_order ?? 999,
+                description: match[2].trim()
+            };
+        }
+    }
+
+    const defaultName = (mod.module_number ?? 0) < 100 ? 'Proficiency Levels' : 'Specialized Modules';
+    const defaultCat = categories.find(c => c.name.toLowerCase() === defaultName.toLowerCase());
+    return {
+        categoryId: defaultCat?.id || defaultName,
+        categoryName: defaultCat?.name || defaultName,
+        categoryOrder: defaultCat?.category_order ?? ((mod.module_number ?? 0) < 100 ? 1 : 2),
+        description: mod.description || ''
+    };
+};

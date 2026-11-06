@@ -2,12 +2,12 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-    Loader2, BookOpen, Clock, Award, Users, ChevronRight, ChevronDown, Check, Music, Video, Info, FileText, Search, ExternalLink, X, Star
+    Loader2, BookOpen, Clock, Award, Users, ChevronRight, ChevronDown, Check, Music, Video, Info, FileText, Search, ExternalLink, X, Star, Layers, Sparkles
 } from 'lucide-react';
 import AutoLinkText from '../common/AutoLinkText';
 import LessonViewer from './LessonViewer';
 import { stripHtml } from '../../lib/text-utils';
-import { formatCurriculumSubtitle, getCurriculumMediaInfo } from '../../lib/curriculum-media';
+import { formatCurriculumSubtitle, getCurriculumMediaInfo, parseModuleCategory } from '../../lib/curriculum-media';
 
 interface ClassroomInfo {
     id: string;
@@ -27,6 +27,7 @@ interface Classmate {
 
 interface CurriculumTabProps {
     classroom: ClassroomInfo | null;
+    courseCategories?: any[];
     courseModules: any[];
     courseChapters: any[];
     courseLessons: any[];
@@ -68,6 +69,7 @@ const cleanModuleDescription = (desc: string) => {
  */
 export default function CurriculumTab({
     classroom,
+    courseCategories = [],
     courseModules,
     courseChapters,
     courseLessons,
@@ -180,6 +182,170 @@ export default function CurriculumTab({
             return moduleChapters.length > 0;
         });
     }, [courseModules, filteredChapters]);
+
+    interface CategoryProgressGroup {
+        id: string;
+        name: string;
+        order: number;
+        modules: any[];
+        totalLessons: number;
+        completedLessons: number;
+        progressPct: number;
+    }
+
+    const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+    const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
+
+    const groupedCategories = useMemo<CategoryProgressGroup[]>(() => {
+        const catMap = new Map<string, { id: string; name: string; order: number; modules: any[] }>();
+
+        filteredModules.forEach(mod => {
+            const parsed = parseModuleCategory(mod, courseCategories);
+            const key = parsed.categoryId || parsed.categoryName;
+            if (!catMap.has(key)) {
+                catMap.set(key, {
+                    id: key,
+                    name: parsed.categoryName,
+                    order: parsed.categoryOrder,
+                    modules: []
+                });
+            }
+            catMap.get(key)!.modules.push(mod);
+        });
+
+        const groups: CategoryProgressGroup[] = Array.from(catMap.values()).map(cat => {
+            const modIds = new Set(cat.modules.map(m => m.id));
+            const catChapters = courseChapters.filter(c => modIds.has(c.module_id));
+            const catChapIds = new Set(catChapters.map(c => c.id));
+
+            const catLessons = unlockedLessons.filter(l => catChapIds.has(l.chapter_id));
+            const total = catLessons.length;
+            const completed = catLessons.filter(l => getLessonStatus(l.id, l.chapter_id) === 'completed').length;
+            const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+            return {
+                id: cat.id,
+                name: cat.name,
+                order: cat.order,
+                modules: cat.modules,
+                totalLessons: total,
+                completedLessons: completed,
+                progressPct
+            };
+        });
+
+        const canonicalOrder: Record<string, number> = {
+            'proficiency levels': 1,
+            'specialized modules': 2,
+            'compositions': 3,
+            'songs': 4,
+            'practice': 5
+        };
+
+        groups.sort((a, b) => {
+            const orderA = canonicalOrder[a.name.toLowerCase()] ?? a.order;
+            const orderB = canonicalOrder[b.name.toLowerCase()] ?? b.order;
+            if (orderA !== orderB) return orderA - orderB;
+            return a.name.localeCompare(b.name);
+        });
+
+        return groups;
+    }, [filteredModules, courseCategories, courseChapters, unlockedLessons, getLessonStatus]);
+
+    const displayedCategories = useMemo(() => {
+        if (selectedCategoryFilter === 'all') return groupedCategories;
+        return groupedCategories.filter(c => c.id === selectedCategoryFilter || c.name === selectedCategoryFilter);
+    }, [groupedCategories, selectedCategoryFilter]);
+
+    const getLevelBadge = (levelNum: number, categoryName: string) => {
+        if (categoryName.toLowerCase() !== 'proficiency levels') {
+            return null;
+        }
+        switch (levelNum) {
+            case 1:
+                return (
+                    <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/25 rounded-full text-[9px] text-emerald-700 font-extrabold tracking-wide uppercase">
+                        Beginner
+                    </span>
+                );
+            case 2:
+                return (
+                    <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/25 rounded-full text-[9px] text-amber-700 font-extrabold tracking-wide uppercase">
+                        Elementary
+                    </span>
+                );
+            case 3:
+                return (
+                    <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/25 rounded-full text-[9px] text-blue-700 font-extrabold tracking-wide uppercase">
+                        Intermediate
+                    </span>
+                );
+            case 4:
+                return (
+                    <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/25 rounded-full text-[9px] text-purple-700 font-extrabold tracking-wide uppercase">
+                        Advanced
+                    </span>
+                );
+            default:
+                return (
+                    <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-full text-[9px] text-slate-600 font-extrabold tracking-wide uppercase">
+                        Level {levelNum}
+                    </span>
+                );
+        }
+    };
+
+    const getCategoryStyling = (catName: string) => {
+        const lower = catName.toLowerCase();
+        if (lower.includes('proficiency') || lower.includes('level')) {
+            return {
+                accent: 'bg-amber-500',
+                border: 'border-amber-200',
+                headerBg: 'bg-gradient-to-r from-amber-50 via-amber-50/40 to-white',
+                pillBorder: 'border-amber-300',
+                pillText: 'text-amber-800',
+                icon: <Award className="w-4 h-4 text-amber-600 shrink-0" />
+            };
+        }
+        if (lower.includes('composition')) {
+            return {
+                accent: 'bg-indigo-500',
+                border: 'border-indigo-200',
+                headerBg: 'bg-gradient-to-r from-indigo-50 via-indigo-50/40 to-white',
+                pillBorder: 'border-indigo-300',
+                pillText: 'text-indigo-800',
+                icon: <FileText className="w-4 h-4 text-indigo-600 shrink-0" />
+            };
+        }
+        if (lower.includes('song')) {
+            return {
+                accent: 'bg-sky-500',
+                border: 'border-sky-200',
+                headerBg: 'bg-gradient-to-r from-sky-50 via-sky-50/40 to-white',
+                pillBorder: 'border-sky-300',
+                pillText: 'text-sky-800',
+                icon: <Music className="w-4 h-4 text-sky-600 shrink-0" />
+            };
+        }
+        if (lower.includes('practice')) {
+            return {
+                accent: 'bg-rose-500',
+                border: 'border-rose-200',
+                headerBg: 'bg-gradient-to-r from-rose-50 via-rose-50/40 to-white',
+                pillBorder: 'border-rose-300',
+                pillText: 'text-rose-800',
+                icon: <Star className="w-4 h-4 text-rose-600 shrink-0" />
+            };
+        }
+        return {
+            accent: 'bg-emerald-500',
+            border: 'border-emerald-200',
+            headerBg: 'bg-gradient-to-r from-emerald-50 via-emerald-50/40 to-white',
+            pillBorder: 'border-emerald-300',
+            pillText: 'text-emerald-800',
+            icon: <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+        };
+    };
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300 select-none" onCopy={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()} onContextMenu={(event) => event.preventDefault()}>
@@ -308,26 +474,143 @@ export default function CurriculumTab({
                                 )}
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                {filteredModules.map((module) => {
-                                    const isModExpanded = searchQuery.trim() !== '' ? true : !!expandedModules[module.id];
-                                    const chapters = filteredChapters.filter(c => c.module_id === module.id);
-                                    
+                            <div className="space-y-6">
+                                {/* Category Quick Navigation / Progress Pills */}
+                                {groupedCategories.length > 1 && (
+                                    <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedCategoryFilter('all')}
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer flex items-center gap-1.5 border ${
+                                                selectedCategoryFilter === 'all'
+                                                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                                                    : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                                            }`}
+                                        >
+                                            <Layers className="w-3.5 h-3.5" />
+                                            <span>All Sections</span>
+                                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                                                selectedCategoryFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                                            }`}>
+                                                {completedLessonsCount}/{totalAllocatedLessons}
+                                            </span>
+                                        </button>
+
+                                        {groupedCategories.map(cat => {
+                                            const isSelected = selectedCategoryFilter === cat.id || selectedCategoryFilter === cat.name;
+                                            const style = getCategoryStyling(cat.name);
+                                            return (
+                                                <button
+                                                    key={cat.id}
+                                                    type="button"
+                                                    onClick={() => setSelectedCategoryFilter(isSelected ? 'all' : cat.id)}
+                                                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer flex items-center gap-1.5 border ${
+                                                        isSelected
+                                                            ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                                                            : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                                                    }`}
+                                                >
+                                                    {style.icon}
+                                                    <span>{cat.name}</span>
+                                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                                        isSelected
+                                                            ? 'bg-white/20 text-white'
+                                                            : cat.progressPct === 100
+                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                                                    }`}>
+                                                        {cat.completedLessons}/{cat.totalLessons}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+
+                                {/* Category Sections */}
+                                {displayedCategories.map((cat) => {
+                                    const isCatExpanded = searchQuery.trim() !== '' ? true : (expandedCategories[cat.id] ?? true);
+                                    const style = getCategoryStyling(cat.name);
+
                                     return (
-                                        <div key={module.id} className="border border-slate-150 rounded-2xl overflow-hidden transition-all shadow-xs">
-                                            {/* Module Row */}
-                                            <button 
-                                                onClick={() => setExpandedModules(prev => ({ ...prev, [module.id]: !prev[module.id] }))}
-                                                className="w-full flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 bg-slate-50/60 hover:bg-slate-100/70 text-left border-b border-slate-100 transition-colors cursor-pointer"
-                                                aria-expanded={isModExpanded}
-                                            >
-                                                <div className="min-w-0 flex-1 pr-4">
-                                                    <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Module {module.module_number}</span>
-                                                    <h4 className="font-extrabold text-xs md:text-sm text-slate-800 mt-0.5 truncate">{module.title}</h4>
-                                                    <p className="text-[10px] text-slate-400 mt-0.5 truncate">{cleanModuleDescription(module.description)}</p>
+                                        <div key={cat.id} className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/20 shadow-xs">
+                                            {/* Category Main Heading */}
+                                            <div className={`p-3.5 sm:p-4 ${style.headerBg} border-b border-slate-150 flex items-center justify-between gap-3`}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setExpandedCategories(prev => ({ ...prev, [cat.id]: !isCatExpanded }))}
+                                                    className="flex items-center gap-2.5 sm:gap-3 flex-1 text-left cursor-pointer group min-w-0"
+                                                    aria-expanded={isCatExpanded}
+                                                >
+                                                    <span className={`w-2 h-5 ${style.accent} rounded-full shrink-0 group-hover:scale-y-110 transition-transform`} />
+                                                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                                        {style.icon}
+                                                        <h3 className="font-black text-xs sm:text-sm text-slate-800 tracking-wide uppercase truncate">
+                                                            {cat.name}
+                                                        </h3>
+                                                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200 shrink-0">
+                                                            {cat.modules.length} {cat.name.toLowerCase() === 'proficiency levels' ? (cat.modules.length === 1 ? 'Level' : 'Levels') : (cat.modules.length === 1 ? 'Module' : 'Modules')}
+                                                        </span>
+                                                    </div>
+                                                </button>
+
+                                                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                                                    {/* Category Progress Bar & Badge */}
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="hidden sm:block w-20 bg-slate-200/80 rounded-full h-2 overflow-hidden">
+                                                            <div
+                                                                className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                                                                style={{ width: `${cat.progressPct}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className={`text-[10px] sm:text-[11px] font-black px-2.5 py-0.5 sm:py-1 rounded-full border ${
+                                                            cat.progressPct === 100
+                                                                ? 'bg-emerald-100/90 border-emerald-300 text-emerald-800'
+                                                                : 'bg-white border-slate-200 text-slate-700'
+                                                        }`}>
+                                                            {cat.completedLessons}/{cat.totalLessons} ({cat.progressPct}%)
+                                                        </span>
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setExpandedCategories(prev => ({ ...prev, [cat.id]: !isCatExpanded }))}
+                                                        className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-white/60 transition-colors cursor-pointer"
+                                                        aria-label={`Toggle ${cat.name}`}
+                                                    >
+                                                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCatExpanded ? '' : '-rotate-90'}`} />
+                                                    </button>
                                                 </div>
-                                                <ChevronRight className={`w-4.5 h-4.5 text-slate-400 transition-transform shrink-0 ${isModExpanded ? 'rotate-90' : ''}`} />
-                                            </button>
+                                            </div>
+
+                                            {/* Category Modules */}
+                                            {isCatExpanded && (
+                                                <div className="p-3 sm:p-4 space-y-3 bg-white/60">
+                                                    {cat.modules.map((module) => {
+                                                        const isModExpanded = searchQuery.trim() !== '' ? true : !!expandedModules[module.id];
+                                                        const chapters = filteredChapters.filter(c => c.module_id === module.id);
+                                                        const levelBadge = getLevelBadge(module.module_number, cat.name);
+                                                        
+                                                        return (
+                                                            <div key={module.id} className="border border-slate-150 rounded-2xl overflow-hidden transition-all shadow-xs bg-white">
+                                                                {/* Module Row */}
+                                                                <button 
+                                                                    onClick={() => setExpandedModules(prev => ({ ...prev, [module.id]: !prev[module.id] }))}
+                                                                    className="w-full flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 bg-slate-50/60 hover:bg-slate-100/70 text-left border-b border-slate-100 transition-colors cursor-pointer"
+                                                                    aria-expanded={isModExpanded}
+                                                                >
+                                                                    <div className="min-w-0 flex-1 pr-4">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">
+                                                                                {cat.name.toLowerCase() === 'proficiency levels' ? `Level ${module.module_number}` : `Module ${module.module_number}`}
+                                                                            </span>
+                                                                            {levelBadge}
+                                                                        </div>
+                                                                        <h4 className="font-extrabold text-xs md:text-sm text-slate-800 mt-0.5 truncate">{module.title}</h4>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{cleanModuleDescription(module.description)}</p>
+                                                                    </div>
+                                                                    <ChevronRight className={`w-4.5 h-4.5 text-slate-400 transition-transform shrink-0 ${isModExpanded ? 'rotate-90' : ''}`} />
+                                                                </button>
 
                                             {/* Module Chapters (Collapsed/Expanded) */}
                                             {isModExpanded && (
@@ -516,11 +799,16 @@ export default function CurriculumTab({
                                                     )}
                                                 </div>
                                             )}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        )}
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
 
                         {/* Mobile Classmates Accordion Section (Below syllabus for mobile users) */}
                         <div className="lg:hidden mt-6 pt-4 border-t border-slate-150">
