@@ -177,7 +177,14 @@ export default function ClassroomTab({
             return;
         }
 
-        // Pre-open tab synchronously on user click to prevent browser popup blockers
+        // Instant fast-path: The Google Meet URL is already known on client!
+        const effectiveLink = classroom.live_meeting_link || meetingInfo.effectiveMeetingLink;
+        if (effectiveLink) {
+            window.open(effectiveLink, '_blank', 'noopener,noreferrer');
+            return;
+        }
+
+        // Fallback: fetch authorized link if not preloaded
         let newTab: Window | null = null;
         try {
             newTab = window.open('about:blank', '_blank');
@@ -223,18 +230,9 @@ export default function ClassroomTab({
             setIsJoiningCall(false);
         }
 
-        // Fallback if API returned but valid link exists on client
-        if (canJoinLiveClass && meetingInfo.effectiveMeetingLink) {
-            if (newTab && !newTab.closed) {
-                newTab.location.href = meetingInfo.effectiveMeetingLink;
-            } else {
-                window.open(meetingInfo.effectiveMeetingLink, '_blank', 'noopener,noreferrer');
-            }
-        } else {
-            if (newTab && !newTab.closed) newTab.close();
-            onRestrictedLiveAccessClick?.();
-        }
-    }, [classroom?.id, canJoinLiveClass, onRestrictedLiveAccessClick, meetingInfo.effectiveMeetingLink]);
+        if (newTab && !newTab.closed) newTab.close();
+        onRestrictedLiveAccessClick?.();
+    }, [classroom?.id, classroom?.live_meeting_link, canJoinLiveClass, onRestrictedLiveAccessClick, meetingInfo.effectiveMeetingLink]);
 
     const hasUnreadBroadcasts = useMemo(() => {
         if (classroomBroadcasts.length === 0) return false;

@@ -128,6 +128,7 @@ interface OverviewTabProps {
     onOpenGuideModal?: (slug: string) => void;
     onOpenTuner?: () => void;
     onOpenSurToNotation?: () => void;
+    onNavigateToTopic?: (topic: any) => void;
 }
 
 const formatTime = (timeStr?: string) => {
@@ -175,7 +176,8 @@ export default function OverviewTab({
     learningFocus,
     onOpenGuideModal,
     onOpenTuner,
-    onOpenSurToNotation
+    onOpenSurToNotation,
+    onNavigateToTopic
 }: OverviewTabProps) {
     const [latestPost, setLatestPost] = useState<BlogPostItem | null>(null);
     const [latestVideo, setLatestVideo] = useState<YouTubeVideoItem | null>(null);
@@ -993,8 +995,12 @@ export default function OverviewTab({
                             {learningFocus.lesson ? (
                                 <div 
                                     onClick={() => {
-                                        setSelectedTopic(learningFocus.lesson);
-                                        setActiveTab('curriculum');
+                                        if (onNavigateToTopic) {
+                                            onNavigateToTopic(learningFocus.lesson);
+                                        } else {
+                                            setSelectedTopic(learningFocus.lesson);
+                                            setActiveTab('curriculum');
+                                        }
                                     }}
                                     className="cursor-pointer active:scale-[0.99] transition-transform space-y-2"
                                 >
@@ -1664,8 +1670,12 @@ export default function OverviewTab({
                             <div className="space-y-3">
                                 <div
                                     onClick={() => {
-                                        setSelectedTopic(learningFocus.lesson);
-                                        setActiveTab('curriculum');
+                                        if (onNavigateToTopic) {
+                                            onNavigateToTopic(learningFocus.lesson);
+                                        } else {
+                                            setSelectedTopic(learningFocus.lesson);
+                                            setActiveTab('curriculum');
+                                        }
                                     }}
                                     className="p-3.5 sm:p-4 rounded-2xl bg-[#FDFBF7] border border-[#E6E1DA] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all hover:border-[#7C5E3F]/30 cursor-pointer hover:bg-white active:scale-[0.99]"
                                 >
@@ -1744,8 +1754,12 @@ export default function OverviewTab({
                                 {learningFocus.secondarySpotlight?.lesson && (
                                     <div 
                                         onClick={() => {
-                                            setSelectedTopic(learningFocus.secondarySpotlight!.lesson);
-                                            setActiveTab('curriculum');
+                                            if (onNavigateToTopic) {
+                                                onNavigateToTopic(learningFocus.secondarySpotlight!.lesson);
+                                            } else {
+                                                setSelectedTopic(learningFocus.secondarySpotlight!.lesson);
+                                                setActiveTab('curriculum');
+                                            }
                                         }}
                                         className="p-2.5 sm:p-3 bg-amber-50/40 border border-amber-200/70 rounded-2xl flex items-center justify-between gap-3 cursor-pointer hover:bg-amber-50/80 transition-all text-left"
                                     >

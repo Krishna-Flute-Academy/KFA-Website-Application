@@ -482,6 +482,18 @@ export default function StudentDashboardContainer() {
         setActiveTab('fees');
     }, [handleDismissLivePopup]);
 
+    const [openMobileViewerOnCurriculum, setOpenMobileViewerOnCurriculum] = useState(false);
+
+    const handleNavigateToTopicFromOverview = useCallback((lesson: any) => {
+        if (!lesson) return;
+        setSelectedTopic(lesson);
+        setActiveTab('curriculum');
+        if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: 'instant' });
+        }
+        setOpenMobileViewerOnCurriculum(true);
+    }, []);
+
     const handleJoinLiveClass = useCallback(async () => {
         if (!liveClassroom) return;
         // Check authoritative financial standing
@@ -491,7 +503,15 @@ export default function StudentDashboardContainer() {
             return;
         }
 
-        // Pre-open tab synchronously on user click to prevent browser popup blockers
+        // Instant fast-path: The Google Meet URL shared by the teacher when starting class is already in memory!
+        const effectiveLink = liveClassroom.live_meeting_link || resolveClassroomMeetingInfo(liveClassroom).effectiveMeetingLink;
+        if (effectiveLink) {
+            window.open(effectiveLink, '_blank', 'noopener,noreferrer');
+            handleDismissLivePopup();
+            return;
+        }
+
+        // Fallback: If somehow link was not preloaded, fetch authorized session
         let newTab: Window | null = null;
         try {
             newTab = window.open('about:blank', '_blank');
@@ -536,20 +556,9 @@ export default function StudentDashboardContainer() {
             console.error('Error verifying live class access:', e);
         }
 
-        // Fallback to client-side permission
-        const effectiveLink = liveClassroom ? resolveClassroomMeetingInfo(liveClassroom).effectiveMeetingLink : null;
-        if (authoritativeFeeStatus?.canJoinLiveClass !== false && effectiveLink) {
-            if (newTab && !newTab.closed) {
-                newTab.location.href = effectiveLink;
-            } else {
-                window.open(effectiveLink, '_blank', 'noopener,noreferrer');
-            }
-            handleDismissLivePopup();
-        } else {
-            if (newTab && !newTab.closed) newTab.close();
-            handleDismissLivePopup();
-            setShowPaymentPendingModal(true);
-        }
+        if (newTab && !newTab.closed) newTab.close();
+        handleDismissLivePopup();
+        setShowPaymentPendingModal(true);
     }, [liveClassroom, authoritativeFeeStatus, handleDismissLivePopup]);
 
     const handleCopyLiveMeetingLink = useCallback(() => {
@@ -3560,6 +3569,7 @@ export default function StudentDashboardContainer() {
                                     onOpenGuideModal={handleOpenGuideModal}
                                     onOpenTuner={() => handleOpenFluteTuner('student_dashboard_overview')}
                                     onOpenSurToNotation={() => handleOpenSurToNotation('student_dashboard_overview')}
+                                    onNavigateToTopic={handleNavigateToTopicFromOverview}
                                 />
                             </div>
                         )}
@@ -3625,6 +3635,8 @@ export default function StudentDashboardContainer() {
                                     onRetryLessonDescription={fetchLessonDescription}
                                     isReadOnly={!lifecycleAccess.canModifyCurriculum}
                                     curriculumMode={lifecycleAccess.curriculumMode}
+                                    openMobileViewerRequested={openMobileViewerOnCurriculum}
+                                    onResetMobileViewerRequest={() => setOpenMobileViewerOnCurriculum(false)}
                                 />
                             </div>
                         )}

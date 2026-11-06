@@ -52,6 +52,8 @@ interface CurriculumTabProps {
     onRetryLessonDescription?: (lessonId: string) => void;
     isReadOnly?: boolean;
     curriculumMode?: 'full' | 'readonly_paused' | 'readonly_frozen';
+    openMobileViewerRequested?: boolean;
+    onResetMobileViewerRequest?: () => void;
 }
 
 const cleanModuleDescription = (desc: string) => {
@@ -90,7 +92,9 @@ export default function CurriculumTab({
     descriptionErrorLessonId = null,
     onRetryLessonDescription,
     isReadOnly = false,
-    curriculumMode = 'full'
+    curriculumMode = 'full',
+    openMobileViewerRequested = false,
+    onResetMobileViewerRequest
 }: CurriculumTabProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -123,18 +127,9 @@ export default function CurriculumTab({
             lastSelectedRowRef.current = rowElement;
         }
 
-        // Check viewport width
+        // Open mobile viewer drawer on mobile viewport
         if (typeof window !== 'undefined' && window.innerWidth < 1024) {
             setIsMobileViewerOpen(true);
-        } else {
-            // On desktop, ensure the sticky viewer is nicely aligned
-            if (desktopViewerRef.current) {
-                const rect = desktopViewerRef.current.getBoundingClientRect();
-                const isPartiallyVisible = rect.top < window.innerHeight && rect.bottom > 100;
-                if (!isPartiallyVisible) {
-                    desktopViewerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }
-            }
         }
     };
 
@@ -146,17 +141,15 @@ export default function CurriculumTab({
         }
     };
 
-    // Auto-scroll to selected topic and open mobile drawer if viewport is mobile
+    // Open mobile viewer if student navigated directly to a tutorial from Home page
     useEffect(() => {
-        if (!selectedTopic?.id) return;
-        const timer = setTimeout(() => {
-            const el = document.querySelector(`[data-lesson-id="${selectedTopic.id}"]`);
-            if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (openMobileViewerRequested) {
+            if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                setIsMobileViewerOpen(true);
             }
-        }, 150);
-        return () => clearTimeout(timer);
-    }, [selectedTopic?.id]);
+            onResetMobileViewerRequest?.();
+        }
+    }, [openMobileViewerRequested, onResetMobileViewerRequest]);
 
     // Filter out locked lessons (hide locked topics/chapters/modules from student view)
     const unlockedLessons = useMemo(() => {
