@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { FileText, Info, Music, BookOpen, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { detectMaterialType } from '../lib/curriculum-media';
 
@@ -19,6 +19,19 @@ export default function SecureCurriculumMaterial({ url, title, materialType, vie
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const containerRef = useRef<HTMLDivElement | null>(null);
+
+    // Bounded clamp helper so zoomed/panned images never fly off-screen
+    const clampPosition = useCallback((x: number, y: number, currentScale: number) => {
+        if (currentScale <= 1 || !containerRef.current) return { x: 0, y: 0 };
+        const rect = containerRef.current.getBoundingClientRect();
+        const maxX = (rect.width * (currentScale - 1)) / 2 + 40;
+        const maxY = (rect.height * (currentScale - 1)) / 2 + 40;
+        return {
+            x: Math.min(Math.max(x, -maxX), maxX),
+            y: Math.min(Math.max(y, -maxY), maxY)
+        };
+    }, []);
 
     // Reset zoom and pan position whenever the material URL changes
     useEffect(() => {
@@ -27,17 +40,38 @@ export default function SecureCurriculumMaterial({ url, title, materialType, vie
         setIsDragging(false);
     }, [url]);
 
-    const handleZoomIn = () => setScale(prev => Math.min(prev + 0.25, 4));
-    const handleZoomOut = () => {
+    const handleZoomIn = () => {
         setScale(prev => {
-            const next = Math.max(prev - 0.25, 0.5);
-            if (next <= 1) setPosition({ x: 0, y: 0 });
+            const next = Math.min(Number((prev + 0.25).toFixed(2)), 4);
             return next;
         });
     };
+
+    const handleZoomOut = () => {
+        setScale(prev => {
+            const next = Math.max(Number((prev - 0.25).toFixed(2)), 1);
+            if (next <= 1) {
+                setPosition({ x: 0, y: 0 });
+            } else {
+                setPosition(p => clampPosition(p.x, p.y, next));
+            }
+            return next;
+        });
+    };
+
     const handleZoomReset = () => {
         setScale(1);
         setPosition({ x: 0, y: 0 });
+        setIsDragging(false);
+    };
+
+    const handleDoubleClick = () => {
+        if (scale > 1) {
+            handleZoomReset();
+        } else {
+            setScale(2);
+            setPosition({ x: 0, y: 0 });
+        }
     };
 
     // Mouse dragging handlers
@@ -48,8 +82,10 @@ export default function SecureCurriculumMaterial({ url, title, materialType, vie
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isDragging) return;
-        setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+        if (!isDragging || scale <= 1) return;
+        const nextX = e.clientX - dragStart.x;
+        const nextY = e.clientY - dragStart.y;
+        setPosition(clampPosition(nextX, nextY, scale));
     };
 
     const handleMouseUpOrLeave = () => {
@@ -65,24 +101,54 @@ export default function SecureCurriculumMaterial({ url, title, materialType, vie
     };
 
     const handleTouchMove = (e: React.TouchEvent) => {
-        if (!isDragging || e.touches.length !== 1) return;
+        if (!isDragging || scale <= 1 || e.touches.length !== 1) return;
         const touch = e.touches[0];
-        setPosition({ x: touch.clientX - dragStart.x, y: touch.clientY - dragStart.y });
+        const nextX = touch.clientX - dragStart.x;
+        const nextY = touch.clientY - dragStart.y;
+        setPosition(clampPosition(nextX, nextY, scale));
     };
 
     const handleTouchEnd = () => {
         setIsDragging(false);
     };
 
-    // Mouse wheel zoom handler
-    const handleWheel = (e: React.WheelEvent) => {
-        const zoomFactor = e.deltaY < 0 ? 0.15 : -0.15;
-        setScale(prevScale => {
-            const newScale = Math.min(Math.max(0.5, prevScale + zoomFactor), 4);
-            if (newScale <= 1) setPosition({ x: 0, y: 0 });
-            return newScale;
-        });
-    };
+    // Stable, non-passive wheel handler: prevents uncontrolled zooming and enables smooth panning
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // 1. Pinch to zoom on Mac trackpad (or Ctrl/Cmd + Mouse wheel)
+            if (e.ctrlKey || e.metaKey) {
+                const delta = -e.deltaY * 0.005;
+                setScale(prev => {
+                    const next = Math.min(Math.max(1, prev + delta), 4);
+                    const rounded = Number(next.toFixed(2));
+                    if (rounded <= 1) {
+                        setPosition({ x: 0, y: 0 });
+                    } else {
+                        setPosition(p => clampPosition(p.x, p.y, rounded));
+                    }
+                    return rounded;
+                });
+            } else if (scale > 1) {
+                // 2. Normal two-finger scroll / mouse wheel when zoomed in: pans smoothly
+                setPosition(prev => clampPosition(
+                    prev.x - e.deltaX * 0.8,
+                    prev.y - e.deltaY * 0.8,
+                    scale
+                ));
+            }
+        };
+
+        container.addEventListener('wheel', onWheel, { passive: false });
+        return () => {
+            container.removeEventListener('wheel', onWheel);
+        };
+    }, [scale, clampPosition]);
 
     useEffect(() => {
         const blockShortcut = (event: KeyboardEvent) => {
@@ -185,6 +251,7 @@ export default function SecureCurriculumMaterial({ url, title, materialType, vie
 
                     {/* Zoomable & Pannable Image Canvas Container */}
                     <div 
+                        ref={containerRef}
                         className="relative w-full flex-1 min-h-0 bg-slate-950 flex items-center justify-center overflow-hidden cursor-default select-none"
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
@@ -193,14 +260,14 @@ export default function SecureCurriculumMaterial({ url, title, materialType, vie
                         onTouchStart={handleTouchStart}
                         onTouchMove={handleTouchMove}
                         onTouchEnd={handleTouchEnd}
-                        onWheel={handleWheel}
+                        onDoubleClick={handleDoubleClick}
                     >
                         {/* Zoomable & Pannable Image Wrapper */}
                         <div 
-                            className="select-none flex items-center justify-center w-full h-full p-2"
+                            className="select-none flex items-center justify-center w-full h-full p-4"
                             style={{
                                 transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                                transition: isDragging ? 'none' : 'transform 150ms ease-out',
+                                transition: isDragging ? 'none' : 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)',
                                 cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
                                 transformOrigin: 'center center',
                             }}
@@ -283,20 +350,25 @@ function ZoomControlBar({
             <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onZoomOut(); }}
-                disabled={scale <= 0.5}
-                className="size-8 rounded-xl flex items-center justify-center hover:bg-slate-800 hover:text-white transition-all disabled:opacity-30 disabled:pointer-events-none"
+                disabled={scale <= 1}
+                className="size-8 rounded-xl flex items-center justify-center hover:bg-slate-800 hover:text-white transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
                 title="Zoom Out (-)"
             >
                 <ZoomOut className="size-4" />
             </button>
-            <span className="text-[10px] font-black font-mono px-1.5 uppercase text-slate-300 select-none min-w-[42px] text-center">
+            <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onReset(); }}
+                className="text-[10px] font-black font-mono px-2 py-1 rounded-lg uppercase text-slate-300 hover:text-white hover:bg-slate-800 transition-colors select-none min-w-[46px] text-center cursor-pointer"
+                title="Click to reset zoom (100%)"
+            >
                 {Math.round(scale * 100)}%
-            </span>
+            </button>
             <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onZoomIn(); }}
                 disabled={scale >= 4}
-                className="size-8 rounded-xl flex items-center justify-center hover:bg-slate-800 hover:text-white transition-all disabled:opacity-30 disabled:pointer-events-none"
+                className="size-8 rounded-xl flex items-center justify-center hover:bg-slate-800 hover:text-white transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
                 title="Zoom In (+)"
             >
                 <ZoomIn className="size-4" />
@@ -306,7 +378,7 @@ function ZoomControlBar({
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onReset(); }}
                 disabled={scale === 1 && position.x === 0 && position.y === 0}
-                className="size-8 rounded-xl flex items-center justify-center hover:bg-slate-800 hover:text-white transition-all disabled:opacity-30 disabled:pointer-events-none"
+                className="size-8 rounded-xl flex items-center justify-center hover:bg-slate-800 hover:text-white transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
                 title="Reset Zoom & Pan"
             >
                 <RotateCcw className="size-3.5" />
