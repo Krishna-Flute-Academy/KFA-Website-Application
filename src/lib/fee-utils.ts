@@ -1681,16 +1681,21 @@ export function evaluateStudentFeeCycle(
     sessions.sort((a, b) => a.date.localeCompare(b.date));
 
     // 5. Authoritative Credit & Balance Integration
+    const consumedClasses = regularAttended + unexcusedMissed + makeupsCompleted;
     // Financial creditsRemaining comes strictly from the authoritative ledger balance
     const creditsRemaining = authStatus.effectiveBalance;
+    const cycleCreditsRemaining = feesBasis === 'monthly'
+        ? Math.max(0, Math.min(creditsRemaining, (entitledClasses || 4) - consumedClasses))
+        : creditsRemaining;
     const validOutstandingMakeupEntitlements = makeupsPending + makeupsScheduled;
     const operationalOpportunities = regularFuture + validOutstandingMakeupEntitlements;
-    // Operational availability is capped by operational opportunities when there are unresolved sessions,
-    // otherwise reflects positive balance (calendar boundaries do not zero out purchased credits)
-    const classesAvailable = unresolvedSessions > 0
-        ? Math.min(creditsRemaining, operationalOpportunities)
-        : Math.max(0, creditsRemaining);
-    const consumedClasses = regularAttended + unexcusedMissed + makeupsCompleted;
+    // Operational availability is capped by operational opportunities and remaining cycle credits
+    const hasSchedule = batchSchedules.length > 0;
+    const classesAvailable = (feesBasis === 'monthly' && hasSchedule)
+        ? Math.max(0, Math.min(cycleCreditsRemaining, operationalOpportunities))
+        : (unresolvedSessions > 0
+            ? Math.min(creditsRemaining, operationalOpportunities)
+            : Math.max(0, cycleCreditsRemaining));
 
     const hasDiscrepancy = (authStatus.needsReconciliation || false) || (creditsRemaining > 0 && unresolvedSessions > 0);
 
@@ -1761,9 +1766,9 @@ export function evaluateStudentFeeCycle(
         badgeVariant = 'good';
     }
 
-    const displayDueDate = creditsRemaining > 0
-        ? `After ${creditsRemaining} ${creditsRemaining === 1 ? 'class' : 'classes'}`
-        : (creditsRemaining === 0 ? 'Fee Due' : 'Payment Overdue');
+    const displayDueDate = cycleCreditsRemaining > 0
+        ? `After ${cycleCreditsRemaining} ${cycleCreditsRemaining === 1 ? 'class' : 'classes'}`
+        : (cycleCreditsRemaining === 0 ? 'Fee Due' : 'Payment Overdue');
 
     const metrics: StudentFeeCycleMetrics = {
         studentId,
@@ -1773,7 +1778,7 @@ export function evaluateStudentFeeCycle(
         nextDueDate,
         formattedDueDate: displayDueDate,
         entitledClasses: entitledClasses || authStatus.totalPurchasedCredits,
-        creditsRemaining,
+        creditsRemaining: cycleCreditsRemaining,
         effectiveBalance: authStatus.effectiveBalance,
         financialState: authStatus.financialState,
         canJoinLiveClass: authStatus.canJoinLiveClass,
@@ -1807,7 +1812,7 @@ export function evaluateStudentFeeCycle(
         cycleStart,
         nextDueDate,
         formattedDueDate: displayDueDate,
-        daysRemaining: Math.max(0, creditsRemaining),
+        daysRemaining: Math.max(0, cycleCreditsRemaining),
         isPaid: cycle.isPaid,
         isLatePayment: cycle.isLatePayment,
         paymentStatus: cycle.feeStatus,
@@ -1820,7 +1825,7 @@ export function evaluateStudentFeeCycle(
         summary: {
             entitledClasses: entitledClasses || authStatus.totalPurchasedCredits,
             consumedClasses,
-            creditsRemaining,
+            creditsRemaining: cycleCreditsRemaining,
             effectiveBalance: authStatus.effectiveBalance,
             financialState: authStatus.financialState,
             canJoinLiveClass: authStatus.canJoinLiveClass,
