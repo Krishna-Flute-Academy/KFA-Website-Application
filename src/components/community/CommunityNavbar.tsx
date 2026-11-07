@@ -113,7 +113,7 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16 gap-4">
                     {/* Brand Logo & Desktop Navigation */}
-                    <div className="flex items-center gap-8 shrink-0">
+                    <div className="flex items-center gap-4 xl:gap-8 shrink-0">
                         <Link href="/" className="flex items-center gap-2.5 group shrink-0">
                             <img
                                 src="/image.png"
@@ -130,8 +130,8 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
                             </div>
                         </Link>
 
-                        {/* Desktop Navigation Links (anchored to logo to prevent horizontal shift) */}
-                        <nav className="hidden md:flex items-center gap-6 shrink-0">
+                        {/* Desktop Navigation Links (revealed at lg to avoid horizontal overflow on tablet) */}
+                        <nav className="hidden lg:flex items-center gap-4 xl:gap-6 shrink-0">
                             <Link 
                                 href="/community" 
                                 className="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-amber-700 dark:hover:text-amber-400 transition-colors whitespace-nowrap"
@@ -213,7 +213,7 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
                                             {userName.charAt(0).toUpperCase()}
                                         </div>
                                     )}
-                                    <div className="hidden lg:flex flex-col text-left">
+                                    <div className="hidden xl:flex flex-col text-left">
                                         <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight truncate max-w-[110px]">
                                             {userName}
                                         </span>
@@ -251,7 +251,7 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
                         {/* Mobile Menu Toggle Button: stable footprint */}
                         <button
                             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                            className="md:hidden w-9 h-9 p-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center shrink-0"
+                            className="lg:hidden w-9 h-9 p-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center shrink-0"
                             aria-label="Toggle menu"
                         >
                             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -262,7 +262,7 @@ export default function CommunityNavbar({ searchQuery, onSearchChange }: Communi
 
             {/* Mobile Dropdown Menu */}
             {mobileMenuOpen && (
-                <div className="md:hidden border-t border-amber-900/10 dark:border-amber-500/10 bg-white dark:bg-[#1a140e] px-4 pt-3 pb-6 space-y-3 shadow-xl">
+                <div className="lg:hidden border-t border-amber-900/10 dark:border-amber-500/10 bg-white dark:bg-[#1a140e] px-4 pt-3 pb-6 space-y-3 shadow-xl">
                     <Link
                         href="/community/new"
                         onClick={() => setMobileMenuOpen(false)}

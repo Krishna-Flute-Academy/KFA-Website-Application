@@ -511,7 +511,7 @@ export default function FeeCycleLedgerModal({
                         onClose={() => setShowAdjustModal(false)}
                         studentId={studentId}
                         studentName={studentName}
-                        currentBalance={report?.metrics.classesAvailable ?? 0}
+                        currentBalance={report?.metrics.creditsRemaining ?? report?.metrics.effectiveBalance ?? report?.metrics.classesAvailable ?? 0}
                         onSuccess={() => {
                             setShowAdjustModal(false);
                             onRefresh?.();

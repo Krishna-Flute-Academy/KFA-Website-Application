@@ -195,21 +195,21 @@ export default function AddStudentPage() {
                 <main className="flex-1 flex flex-col min-w-0">
                     <TeacherHeader title="Add Student" />
 
-                    <div className="flex-1 overflow-y-auto p-12">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-12">
                         <div className="max-w-4xl mx-auto">
-                            <div className="mb-10 flex items-end justify-between">
+                            <div className="mb-6 sm:mb-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                                 <div>
-                                    <nav className="flex items-center gap-2 text-sm text-slate-400 mb-3">
+                                    <nav className="flex items-center gap-2 text-sm text-slate-400 mb-2 sm:mb-3">
                                         <Link href="/teacher-dashboard/students" className="hover:text-[#ecb613] transition-colors">Students</Link>
                                         <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                                         <span className="text-slate-600 font-medium tracking-tight">Add New Student</span>
                                     </nav>
-                                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight leading-none">Register New Student</h2>
-                                    <p className="text-slate-500 mt-2.5">Complete the enrollment form to create a new student profile.</p>
+                                    <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-tight">Register New Student</h2>
+                                    <p className="text-slate-500 mt-1 sm:mt-2 text-sm">Complete the enrollment form to create a new student profile.</p>
                                 </div>
                                 <Link
                                     href="/teacher-dashboard/students"
-                                    className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-[#ecb613] transition-all bg-white border border-slate-200 px-5 py-2.5 rounded-xl shadow-sm hover:shadow-md"
+                                    className="self-start sm:self-auto flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-[#ecb613] transition-all bg-white border border-slate-200 px-4 sm:px-5 py-2.5 rounded-xl shadow-sm hover:shadow-md shrink-0"
                                 >
                                     <ArrowLeft size={18} strokeWidth={2.5} />
                                     Return to List
@@ -218,13 +218,18 @@ export default function AddStudentPage() {
 
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                                 <div className="h-1.5 w-full bg-[#f5f0e1]"></div>
-                                <form className="p-10" onSubmit={handleSubmit}>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                                <form className="p-4 sm:p-6 lg:p-10" onSubmit={handleSubmit}>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6 md:gap-8 mb-8 sm:mb-10">
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Full Name</label>
+                                            <label htmlFor="student-full-name" className="text-sm font-bold text-slate-700 block cursor-pointer">
+                                                Full Name <span className="text-rose-500">*</span>
+                                            </label>
                                             <input
+                                                id="student-full-name"
                                                 required
                                                 type="text"
+                                                aria-required="true"
+                                                aria-label="Full Name"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                 placeholder="e.g. Aarav Patel"
                                                 value={formData.fullName}
@@ -232,10 +237,15 @@ export default function AddStudentPage() {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Email Address</label>
+                                            <label htmlFor="student-email" className="text-sm font-bold text-slate-700 block cursor-pointer">
+                                                Email Address <span className="text-rose-500">*</span>
+                                            </label>
                                             <input
+                                                id="student-email"
                                                 required
                                                 type="email"
+                                                aria-required="true"
+                                                aria-label="Email Address"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                 placeholder="aarav@email.com"
                                                 value={formData.email}
@@ -243,9 +253,11 @@ export default function AddStudentPage() {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Phone Number</label>
+                                            <label htmlFor="student-phone" className="text-sm font-bold text-slate-700 block cursor-pointer">Phone Number</label>
                                             <input
+                                                id="student-phone"
                                                 type="tel"
+                                                aria-label="Phone Number"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                 placeholder="+91 98XXX XXXXX"
                                                 value={formData.phone}
@@ -253,10 +265,15 @@ export default function AddStudentPage() {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Start Date</label>
+                                            <label htmlFor="student-start-date" className="text-sm font-bold text-slate-700 block cursor-pointer">
+                                                Start Date <span className="text-rose-500">*</span>
+                                            </label>
                                             <input
+                                                id="student-start-date"
                                                 required
                                                 type="date"
+                                                aria-required="true"
+                                                aria-label="Start Date"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                 value={formData.startDate}
                                                 onChange={(e) => {
@@ -271,9 +288,11 @@ export default function AddStudentPage() {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Batch Assignment</label>
+                                            <label htmlFor="student-batch" className="text-sm font-bold text-slate-700 block cursor-pointer">Batch Assignment</label>
                                             <div className="relative">
                                                 <select
+                                                    id="student-batch"
+                                                    aria-label="Batch Assignment"
                                                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
                                                     value={formData.batchId}
                                                     onChange={(e) => {
@@ -299,9 +318,11 @@ export default function AddStudentPage() {
 
                                         {teacherProfile?.role === 'admin' && (
                                             <div className="space-y-2">
-                                                <label className="text-sm font-bold text-slate-700 block">Teacher Assignment</label>
+                                                <label htmlFor="student-teacher" className="text-sm font-bold text-slate-700 block cursor-pointer">Teacher Assignment</label>
                                                 <div className="relative">
                                                     <select
+                                                        id="student-teacher"
+                                                        aria-label="Teacher Assignment"
                                                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
                                                         value={formData.teacherId}
                                                         onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
@@ -316,9 +337,11 @@ export default function AddStudentPage() {
                                             </div>
                                         )}
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Experience Level</label>
+                                            <label htmlFor="student-level" className="text-sm font-bold text-slate-700 block cursor-pointer">Experience Level</label>
                                             <div className="relative">
                                                 <select
+                                                    id="student-level"
+                                                    aria-label="Experience Level"
                                                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
                                                     value={formData.level}
                                                     onChange={(e) => setFormData({ ...formData, level: e.target.value })}
@@ -332,9 +355,11 @@ export default function AddStudentPage() {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Class Learning Mode</label>
+                                            <label htmlFor="student-learning-mode" className="text-sm font-bold text-slate-700 block cursor-pointer">Class Learning Mode</label>
                                             <div className="relative">
                                                 <select
+                                                    id="student-learning-mode"
+                                                    aria-label="Class Learning Mode"
                                                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
                                                     value={formData.learningMode}
                                                     onChange={(e) => setFormData({ ...formData, learningMode: e.target.value })}
@@ -349,9 +374,11 @@ export default function AddStudentPage() {
                                         {teacherProfile?.role === 'admin' && (
                                             <>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Fees Payment Basis</label>
+                                                    <label htmlFor="student-fees-basis" className="text-sm font-bold text-slate-700 block cursor-pointer">Fees Payment Basis</label>
                                                     <div className="relative">
                                                         <select
+                                                            id="student-fees-basis"
+                                                            aria-label="Fees Payment Basis"
                                                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
                                                             value={formData.feesBasis}
                                                             onChange={(e) => {
@@ -371,12 +398,15 @@ export default function AddStudentPage() {
                                                     </div>
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">
-                                                        {formData.feesBasis === 'class' ? 'Fee Per Class (₹)' : 'Monthly Fees Amount (₹)'}
+                                                    <label htmlFor="student-fees-amount" className="text-sm font-bold text-slate-700 block cursor-pointer">
+                                                        {formData.feesBasis === 'class' ? 'Fee Per Class (₹)' : 'Monthly Fees Amount (₹)'} <span className="text-rose-500">*</span>
                                                     </label>
                                                     <input
+                                                        id="student-fees-amount"
                                                         required
                                                         type="number"
+                                                        aria-required="true"
+                                                        aria-label={formData.feesBasis === 'class' ? 'Fee Per Class' : 'Monthly Fees Amount'}
                                                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                         placeholder={formData.feesBasis === 'class' ? "e.g. 500 per class" : "e.g. 2000 per month"}
                                                         value={formData.feesAmount}
@@ -384,7 +414,7 @@ export default function AddStudentPage() {
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Monthly Billing Due Day</label>
+                                                    <label htmlFor="student-fees-collection-date" className="text-sm font-bold text-slate-700 block cursor-pointer">Monthly Billing Due Day</label>
                                                     {formData.feesBasis === 'class' ? (
                                                         <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-400 italic">
                                                             N/A — Collection day is not applicable for Class-basis students.
@@ -392,8 +422,10 @@ export default function AddStudentPage() {
                                                     ) : (
                                                         <div className="relative">
                                                             <input
+                                                                id="student-fees-collection-date"
                                                                 type="text"
                                                                 disabled
+                                                                aria-label="Monthly Billing Due Day"
                                                                 className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none cursor-not-allowed"
                                                                 value={formData.startDate ? `${new Date(formData.startDate).getDate()}${['st','nd','rd'][((new Date(formData.startDate).getDate() + 90) % 100 - 10) % 10 - 1] || 'th'} of month (Aligned with join date)` : 'Aligned with join date'}
                                                             />
@@ -401,10 +433,15 @@ export default function AddStudentPage() {
                                                     )}
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Initial Prepaid Classes</label>
+                                                    <label htmlFor="student-fees-classes-paid" className="text-sm font-bold text-slate-700 block cursor-pointer">
+                                                        Initial Prepaid Classes <span className="text-rose-500">*</span>
+                                                    </label>
                                                     <input
+                                                        id="student-fees-classes-paid"
                                                         required
                                                         type="number"
+                                                        aria-required="true"
+                                                        aria-label="Initial Prepaid Classes"
                                                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                         placeholder={formData.feesBasis === 'class' ? "e.g. 1" : "e.g. 4"}
                                                         value={formData.feesClassesPaid}
@@ -413,7 +450,7 @@ export default function AddStudentPage() {
                                                 </div>
                                             </>
                                         )}
-                                                                                <div className="space-y-2 md:col-span-2">
+                                        <div className="space-y-2 md:col-span-2">
                                             <label className="text-sm font-bold text-slate-700 block">Profile Picture</label>
                                             <ImageUploadWithCrop
                                                 value={formData.profilePicUrl}
@@ -422,8 +459,10 @@ export default function AddStudentPage() {
                                             />
                                         </div>
                                         <div className="space-y-2 md:col-span-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Additional Notes</label>
+                                            <label htmlFor="student-notes" className="text-sm font-bold text-slate-700 block cursor-pointer">Additional Notes</label>
                                             <textarea
+                                                id="student-notes"
+                                                aria-label="Additional Notes"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none min-h-[120px] resize-none"
                                                 placeholder="Enter any previous musical background, medical conditions, or specific learning goals..."
                                                 value={formData.notes}
@@ -431,17 +470,17 @@ export default function AddStudentPage() {
                                             ></textarea>
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-between border-t border-slate-100 pt-8">
+                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-t border-slate-100 pt-6 sm:pt-8 gap-4">
                                         <div className="flex items-center gap-4">
-                                            <label className="flex items-center gap-2 cursor-pointer group">
-                                                <input defaultChecked type="checkbox" className="size-4 rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/20" />
+                                            <label htmlFor="student-welcome-kit" className="flex items-center gap-2 cursor-pointer group">
+                                                <input id="student-welcome-kit" aria-label="Send Welcome Kit via Email" defaultChecked type="checkbox" className="size-4 rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/20 cursor-pointer" />
                                                 <span className="text-sm text-slate-500 group-hover:text-slate-700 transition-colors">Send Welcome Kit via Email</span>
                                             </label>
                                         </div>
-                                        <div className="flex items-center gap-4">
+                                        <div className="flex items-center justify-end gap-3 sm:gap-4">
                                             <button
                                                 type="button"
-                                                className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
+                                                className="px-4 sm:px-6 py-2.5 sm:py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                                                 onClick={() => router.back()}
                                             >
                                                 Discard
@@ -449,7 +488,7 @@ export default function AddStudentPage() {
                                             <button
                                                 type="submit"
                                                 disabled={submitting}
-                                                className="bg-[#ecb613] hover:bg-[#ecb613]/90 text-white px-10 py-3 rounded-xl text-sm font-bold shadow-lg shadow-[#ecb613]/25 transition-all active:scale-[0.98] flex items-center gap-2 disabled:opacity-70"
+                                                className="bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 px-6 sm:px-10 py-2.5 sm:py-3 rounded-xl text-sm font-bold shadow-lg shadow-[#ecb613]/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer"
                                             >
                                                 {submitting ? (
                                                     <><Loader2 className="animate-spin size-4" /> Processing...</>

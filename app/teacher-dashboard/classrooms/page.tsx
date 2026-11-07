@@ -185,6 +185,21 @@ export default function ClassroomsPage() {
     const [formatFilter, setFormatFilter] = useState<'all' | 'online' | 'offline'>('all');
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [classroomHolidays, setClassroomHolidays] = useState<any[]>([]);
+    const [mobileActionMenuId, setMobileActionMenuId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!mobileActionMenuId) return;
+        const handleClickOutside = () => setMobileActionMenuId(null);
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setMobileActionMenuId(null);
+        };
+        document.addEventListener('click', handleClickOutside);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('click', handleClickOutside);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [mobileActionMenuId]);
 
     interface TodoItem {
         id: string;
@@ -1799,8 +1814,9 @@ export default function ClassroomsPage() {
                                                                 handleEndClassSession(room);
                                                             }}
                                                             disabled={endingSessionId === room.id || startingClassroomId === room.id}
-                                                            className="px-3.5 sm:px-4 h-9 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-colors shadow-xs flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50"
+                                                            className="px-4 min-h-[44px] bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-rose-500 outline-none"
                                                             title="Stop / End Live Class Session"
+                                                            aria-label={`End active class session for ${room.name}`}
                                                         >
                                                             {endingSessionId === room.id ? (
                                                                 <>
@@ -1816,7 +1832,7 @@ export default function ClassroomsPage() {
                                                         </button>
                                                     ) : (room as any).isHoliday ? (
                                                         <span 
-                                                            className="px-3.5 sm:px-4 h-9 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-not-allowed"
+                                                            className="px-4 min-h-[44px] text-xs font-bold rounded-xl bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-not-allowed"
                                                             title={`Holiday declared. Rescheduled to ${(room as any).holidayInfo?.alternative_date || 'later'}.`}
                                                         >
                                                             Holiday
@@ -1829,12 +1845,13 @@ export default function ClassroomsPage() {
                                                                 handleStartClassSession(room);
                                                             }}
                                                             disabled={isDisabled || startingClassroomId === room.id || endingSessionId === room.id}
-                                                            className={`px-3.5 sm:px-4 h-9 text-xs font-bold rounded-lg transition-colors shadow-xs flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer ${
+                                                            className={`px-4 min-h-[44px] text-xs font-bold rounded-xl transition-colors shadow-xs flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 outline-none ${
                                                                 isDisabled 
                                                                     ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed' 
                                                                     : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                                                             }`}
                                                             title={isDisabled ? 'Class is inactive' : 'Start Class Session'}
+                                                            aria-label={`Start class session for ${room.name}`}
                                                         >
                                                             {startingClassroomId === room.id ? (
                                                                 <>
@@ -1855,8 +1872,9 @@ export default function ClassroomsPage() {
                                                             <button
                                                                 type="button"
                                                                 disabled
-                                                                className="w-9 h-9 border border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-slate-800/40 text-slate-350 dark:text-slate-600 rounded-lg flex items-center justify-center shrink-0 cursor-not-allowed opacity-30"
+                                                                className="min-w-[44px] min-h-[44px] border border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-slate-800/40 text-slate-350 dark:text-slate-600 rounded-xl flex items-center justify-center shrink-0 cursor-not-allowed opacity-30"
                                                                 title="Cannot delete an active classroom"
+                                                                aria-label={`Cannot delete active classroom ${room.name}`}
                                                             >
                                                                 <Trash2 className="size-4" />
                                                             </button>
@@ -1868,8 +1886,9 @@ export default function ClassroomsPage() {
                                                                     handleDeleteClassroom(room);
                                                                 }}
                                                                 disabled={isDeletingId === room.id || startingClassroomId === room.id || endingSessionId === room.id}
-                                                                className="w-9 h-9 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                                                                className="min-w-[44px] min-h-[44px] border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-rose-500 outline-none"
                                                                 title="Delete class"
+                                                                aria-label={`Delete classroom ${room.name}`}
                                                             >
                                                                 <Trash2 className="size-4" />
                                                             </button>
@@ -2061,8 +2080,9 @@ export default function ClassroomsPage() {
                                                                     handleEndClassSession(room);
                                                                 }}
                                                                 disabled={endingSessionId === room.id || startingClassroomId === room.id}
-                                                                className="px-3.5 h-8.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition-colors text-xs flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50"
+                                                                className="px-4 min-h-[44px] h-11 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl transition-colors text-xs flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-rose-500 outline-none"
                                                                 title="Stop / End Live Class Session"
+                                                                aria-label={`End active class session for ${room.name}`}
                                                             >
                                                                 {endingSessionId === room.id ? (
                                                                     <>
@@ -2084,12 +2104,13 @@ export default function ClassroomsPage() {
                                                                     handleStartClassSession(room);
                                                                 }}
                                                                 disabled={isDisabled || startingClassroomId === room.id || endingSessionId === room.id}
-                                                                className={`px-3.5 h-8.5 font-bold rounded-lg transition-colors text-xs flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer ${
+                                                                className={`px-4 min-h-[44px] h-11 font-bold rounded-xl transition-colors text-xs flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 outline-none ${
                                                                     isDisabled
                                                                         ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
                                                                         : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                                                                 }`}
                                                                 title={isDisabled ? 'Class is inactive' : 'Start Class Session'}
+                                                                aria-label={`Start class session for ${room.name}`}
                                                             >
                                                                 {startingClassroomId === room.id ? (
                                                                     <>
@@ -2106,29 +2127,49 @@ export default function ClassroomsPage() {
                                                         )}
 
                                                         {teacherProfile?.role === 'admin' && (
-                                                            isOngoing ? (
+                                                            <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
                                                                 <button
                                                                     type="button"
-                                                                    disabled
-                                                                    className="w-8.5 h-8.5 border border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-slate-800/40 text-slate-350 dark:text-slate-600 rounded-lg flex items-center justify-center shrink-0 cursor-not-allowed opacity-30"
-                                                                    title="Cannot delete an active classroom"
+                                                                    onClick={() => setMobileActionMenuId(mobileActionMenuId === room.id ? null : room.id)}
+                                                                    className="min-w-[44px] min-h-[44px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl flex items-center justify-center shrink-0 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 outline-none"
+                                                                    title="Classroom options"
+                                                                    aria-label={`Classroom options for ${room.name}`}
                                                                 >
-                                                                    <Trash2 className="size-3.5" />
+                                                                    <span className="material-symbols-outlined text-lg">more_vert</span>
                                                                 </button>
-                                                            ) : (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleDeleteClassroom(room);
-                                                                    }}
-                                                                    disabled={isDeletingId === room.id || startingClassroomId === room.id || endingSessionId === room.id}
-                                                                    className="w-8.5 h-8.5 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg flex items-center justify-center shrink-0 disabled:opacity-50 cursor-pointer"
-                                                                    title="Delete class"
-                                                                >
-                                                                    <Trash2 className="size-3.5" />
-                                                                </button>
-                                                            )
+                                                                {mobileActionMenuId === room.id && (
+                                                                    <div 
+                                                                        className="absolute right-0 bottom-full mb-1.5 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 py-1 z-50 animate-in fade-in zoom-in-95 duration-150 text-left"
+                                                                    >
+                                                                        {isOngoing ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                disabled
+                                                                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-slate-400 cursor-not-allowed opacity-50"
+                                                                                title="Cannot delete an active classroom"
+                                                                                aria-label={`Cannot delete active classroom ${room.name}`}
+                                                                            >
+                                                                                <Trash2 className="size-3.5" />
+                                                                                <span>Delete Classroom (Active)</span>
+                                                                            </button>
+                                                                        ) : (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    setMobileActionMenuId(null);
+                                                                                    handleDeleteClassroom(room);
+                                                                                }}
+                                                                                disabled={isDeletingId === room.id || startingClassroomId === room.id || endingSessionId === room.id}
+                                                                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                                                                                aria-label={`Delete classroom ${room.name}`}
+                                                                            >
+                                                                                <Trash2 className="size-3.5" />
+                                                                                <span>Delete Classroom</span>
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>

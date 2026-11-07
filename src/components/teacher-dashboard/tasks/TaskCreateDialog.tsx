@@ -442,17 +442,96 @@ export default function TaskCreateDialog({
         });
     };
 
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLElement | null>(null);
+
+    // Dialog accessibility: Focus entry, focus trapping, Escape key dismissal, and return focus
+    useEffect(() => {
+        if (!isOpen) return;
+
+        // Remember active trigger element to restore focus when dialog closes
+        if (typeof document !== 'undefined') {
+            triggerRef.current = document.activeElement as HTMLElement | null;
+        }
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                onClose();
+                return;
+            }
+
+            if (e.key === 'Tab' && dialogRef.current) {
+                const focusableElements = dialogRef.current.querySelectorAll<HTMLElement>(
+                    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                );
+                if (focusableElements.length === 0) return;
+
+                const firstEl = focusableElements[0];
+                const lastEl = focusableElements[focusableElements.length - 1];
+
+                if (e.shiftKey) {
+                    if (document.activeElement === firstEl) {
+                        e.preventDefault();
+                        lastEl.focus();
+                    }
+                } else {
+                    if (document.activeElement === lastEl) {
+                        e.preventDefault();
+                        firstEl.focus();
+                    }
+                }
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+
+        // Auto-focus title input upon dialog appearance
+        const timer = setTimeout(() => {
+            const titleInput = document.getElementById('task-title-input');
+            if (titleInput) {
+                titleInput.focus();
+            } else if (dialogRef.current) {
+                dialogRef.current.focus();
+            }
+        }, 50);
+
+        return () => {
+            clearTimeout(timer);
+            document.removeEventListener('keydown', handleKeyDown);
+            if (triggerRef.current && typeof triggerRef.current.focus === 'function') {
+                triggerRef.current.focus();
+            }
+        };
+    }, [isOpen, onClose]);
+
     if (!isOpen) return null;
 
     return (
-        <div className={`fixed inset-0 z-50 flex animate-in fade-in duration-200 ${isPopup ? 'bg-transparent' : 'bg-black/60 backdrop-blur-sm items-center justify-center p-2 sm:p-4'}`}>
-            <div className={`bg-white dark:bg-slate-900 flex flex-col text-left ${isPopup ? 'w-full h-full overflow-y-auto' : 'rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-4xl w-full max-h-[94vh] overflow-hidden animate-in zoom-in-95 duration-200'}`}>
+        <div 
+            className={`fixed inset-0 z-50 flex animate-in fade-in duration-200 ${isPopup ? 'bg-transparent' : 'bg-black/60 backdrop-blur-sm items-center justify-center p-2 sm:p-4'}`}
+            role="presentation"
+            onClick={(e) => {
+                if (e.target === e.currentTarget && !isPopup) {
+                    onClose();
+                }
+            }}
+        >
+            <div 
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="task-dialog-title"
+                aria-describedby="task-dialog-description"
+                tabIndex={-1}
+                className={`bg-white dark:bg-slate-900 flex flex-col text-left outline-none ${isPopup ? 'w-full h-full overflow-y-auto' : 'rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-4xl w-full max-h-[94vh] overflow-hidden animate-in zoom-in-95 duration-200'}`}
+            >
                 {/* ═══════════════════════════════════════════════════════════════ */}
                 {/* Header                                                          */}
                 {/* ═══════════════════════════════════════════════════════════════ */}
                 <div className="p-4 sm:px-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40 rounded-t-3xl shrink-0">
                     <div>
-                        <h2 className="text-base sm:text-xl font-black text-slate-900 dark:text-white leading-tight flex items-center gap-2">
+                        <h2 id="task-dialog-title" className="text-base sm:text-xl font-black text-slate-900 dark:text-white leading-tight flex items-center gap-2">
                             <span>{editingTaskId ? 'Edit Task Assignment' : 'Create & Assign Task'}</span>
                             {resolvedRecipients.length > 0 && (
                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30">
@@ -460,14 +539,16 @@ export default function TaskCreateDialog({
                                 </span>
                             )}
                         </h2>
-                        <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 font-medium">
+                        <p id="task-dialog-description" className="text-[11px] sm:text-xs text-slate-500 mt-0.5 font-medium">
                             Set up instructions, multiple learning materials, and distribute to classrooms or selected students
                         </p>
                     </div>
                     <button 
                         onClick={onClose}
-                        className="p-2 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors cursor-pointer"
+                        className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-500 outline-none"
                         type="button"
+                        aria-label="Close task dialog"
+                        title="Close task dialog"
                     >
                         <X className="w-5 h-5" />
                     </button>
@@ -482,7 +563,7 @@ export default function TaskCreateDialog({
                         {/* Task Title with Suggestions */}
                         <div className="relative">
                             <div className="flex justify-between items-center mb-1.5">
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
+                                <label htmlFor="task-title-input" className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide cursor-pointer">
                                     Task Title <span className="text-rose-500">*</span>
                                 </label>
                                 {selectedPreviousTaskId && (
@@ -492,6 +573,9 @@ export default function TaskCreateDialog({
                                 )}
                             </div>
                             <input 
+                                id="task-title-input"
+                                aria-label="Task Title"
+                                aria-required="true"
                                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] outline-none transition-all text-sm font-semibold placeholder:text-slate-400" 
                                 placeholder="e.g., Raag Bhoopali – Aaroh & Avaroh Drill" 
                                 type="text"
@@ -533,10 +617,13 @@ export default function TaskCreateDialog({
 
                         {/* Detailed Instructions */}
                         <div>
-                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
+                            <label htmlFor="task-description-input" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide cursor-pointer">
                                 Detailed Instructions <span className="text-rose-500">*</span>
                             </label>
                             <textarea 
+                                id="task-description-input"
+                                aria-label="Detailed Instructions"
+                                aria-required="true"
                                 className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 text-sm leading-relaxed" 
                                 placeholder="Provide specific guidance on breath control, finger placement, metronome tempo, or scale drills..." 
                                 rows={4}
@@ -1047,10 +1134,13 @@ export default function TaskCreateDialog({
 
                             {/* ── Due Date Field ─────────────────────────────────────── */}
                             <div>
-                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 font-mono">
+                                <label htmlFor="task-due-date-input" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 font-mono cursor-pointer">
                                     Due Date <span className="text-rose-500">*</span>
                                 </label>
                                 <input 
+                                    id="task-due-date-input"
+                                    aria-label="Due Date"
+                                    aria-required="true"
                                     className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#ecb613]" 
                                     type="date"
                                     value={dueDate}

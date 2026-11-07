@@ -724,7 +724,7 @@ export default function FeesManagementDashboard() {
         if (classesLeftFilter !== 'all') {
             result = result.filter(s => {
                 const count = studentMetricsMap[s.id] !== undefined
-                    ? studentMetricsMap[s.id].classesAvailable
+                    ? (studentMetricsMap[s.id].creditsRemaining ?? studentMetricsMap[s.id].classesAvailable)
                     : s.fees_classes_paid;
                 if (classesLeftFilter === 'zero' || classesLeftFilter === '0') return count <= 0;
                 if (classesLeftFilter === 'one' || classesLeftFilter === '1') return count === 1;
@@ -771,8 +771,8 @@ export default function FeesManagementDashboard() {
             } else if (sortField === 'fees_basis') {
                 comparison = a.fees_basis.localeCompare(b.fees_basis);
             } else if (sortField === 'fees_classes_paid') {
-                const cA = studentMetricsMap[a.id] !== undefined ? studentMetricsMap[a.id].classesAvailable : a.fees_classes_paid;
-                const cB = studentMetricsMap[b.id] !== undefined ? studentMetricsMap[b.id].classesAvailable : b.fees_classes_paid;
+                const cA = studentMetricsMap[a.id] !== undefined ? (studentMetricsMap[a.id].creditsRemaining ?? studentMetricsMap[a.id].classesAvailable) : a.fees_classes_paid;
+                const cB = studentMetricsMap[b.id] !== undefined ? (studentMetricsMap[b.id].creditsRemaining ?? studentMetricsMap[b.id].classesAvailable) : b.fees_classes_paid;
                 comparison = cA - cB;
             } else if (sortField === 'next_collection') {
                 const tA = nextCollectionMap.get(a.id) || 9999999999999;
@@ -1389,8 +1389,10 @@ export default function FeesManagementDashboard() {
 
                                 <div className="flex flex-wrap items-center gap-2.5">
                                     <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5">
-                                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">Select Period:</span>
+                                        <label htmlFor="fees-active-period-select" className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0 cursor-pointer">Select Period:</label>
                                         <select
+                                            id="fees-active-period-select"
+                                            aria-label="Select Active Fee Period"
                                             value={selectedMonthValue}
                                             onChange={e => {
                                                 const val = e.target.value;
@@ -1555,8 +1557,10 @@ export default function FeesManagementDashboard() {
                                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
                                         {/* Filter: Period Received Payments */}
                                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Period:</span>
+                                            <label htmlFor="fees-filter-period" className="text-[10px] font-bold text-slate-400 uppercase shrink-0 cursor-pointer">Period:</label>
                                             <select
+                                                id="fees-filter-period"
+                                                aria-label="Filter by Period Received Payments"
                                                 value={periodPaymentFilter}
                                                 onChange={e => setPeriodPaymentFilter(e.target.value as any)}
                                                 className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
@@ -1568,8 +1572,10 @@ export default function FeesManagementDashboard() {
 
                                         {/* Filter: Billing Plan */}
                                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Plan:</span>
+                                            <label htmlFor="fees-filter-plan" className="text-[10px] font-bold text-slate-400 uppercase shrink-0 cursor-pointer">Plan:</label>
                                             <select
+                                                id="fees-filter-plan"
+                                                aria-label="Filter by Billing Plan"
                                                 value={basisFilter}
                                                 onChange={e => setBasisFilter(e.target.value as any)}
                                                 className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
@@ -1582,8 +1588,10 @@ export default function FeesManagementDashboard() {
 
                                         {/* Filter: Prepaid Classes Left */}
                                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Classes:</span>
+                                            <label htmlFor="fees-filter-classes" className="text-[10px] font-bold text-slate-400 uppercase shrink-0 cursor-pointer">Classes:</label>
                                             <select
+                                                id="fees-filter-classes"
+                                                aria-label="Filter by Prepaid Classes Left"
                                                 value={classesLeftFilter}
                                                 onChange={e => setClassesLeftFilter(e.target.value)}
                                                 className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
@@ -1601,8 +1609,10 @@ export default function FeesManagementDashboard() {
 
                                         {/* Filter: Next Collection */}
                                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Due:</span>
+                                            <label htmlFor="fees-filter-due" className="text-[10px] font-bold text-slate-400 uppercase shrink-0 cursor-pointer">Due:</label>
                                             <select
+                                                id="fees-filter-due"
+                                                aria-label="Filter by Next Collection Date"
                                                 value={collectionFilter}
                                                 onChange={e => setCollectionFilter(e.target.value)}
                                                 className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
@@ -1616,8 +1626,10 @@ export default function FeesManagementDashboard() {
 
                                         {/* Filter: Standard Amount */}
                                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Amount:</span>
+                                            <label htmlFor="fees-filter-amount" className="text-[10px] font-bold text-slate-400 uppercase shrink-0 cursor-pointer">Amount:</label>
                                             <select
+                                                id="fees-filter-amount"
+                                                aria-label="Filter by Standard Fee Amount"
                                                 value={amountFilter}
                                                 onChange={e => setAmountFilter(e.target.value)}
                                                 className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
@@ -1630,8 +1642,10 @@ export default function FeesManagementDashboard() {
 
                                         {/* Filter: Joining Date */}
                                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Joined:</span>
+                                            <label htmlFor="fees-filter-joined" className="text-[10px] font-bold text-slate-400 uppercase shrink-0 cursor-pointer">Joined:</label>
                                             <select
+                                                id="fees-filter-joined"
+                                                aria-label="Filter by Student Joining Date"
                                                 value={dateFilter}
                                                 onChange={e => setDateFilter(e.target.value)}
                                                 className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
@@ -1992,9 +2006,9 @@ export default function FeesManagementDashboard() {
                                                             <td className="px-4 py-3.5 whitespace-nowrap">
                                                                 {(() => {
                                                                     const metrics = studentMetricsMap[student.id];
-                                                                    const hasDisc = metrics && metrics.basis === 'monthly' && metrics.creditsRemaining > 0 && metrics.classesAvailable === 0 && metrics.unresolvedSessions > 0;
-                                                                    const displayCount = hasDisc ? metrics.creditsRemaining : (metrics !== undefined ? metrics.classesAvailable : student.fees_classes_paid);
-                                                                    const countColor = hasDisc
+                                                                    const hasDisc = metrics && metrics.basis === 'monthly' && metrics.creditsRemaining > 0 && metrics.unresolvedSessions > 0;
+                                                                    const displayCount = metrics !== undefined ? (metrics.creditsRemaining ?? metrics.classesAvailable) : student.fees_classes_paid;
+                                                                    const countColor = (hasDisc && metrics?.classesAvailable === 0)
                                                                         ? 'text-amber-600 dark:text-amber-400'
                                                                         : displayCount <= 0
                                                                         ? 'text-rose-600 dark:text-rose-400'

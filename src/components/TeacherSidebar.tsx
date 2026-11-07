@@ -84,13 +84,47 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         return null;
     });
 
+    const [isCompact, setIsCompact] = useState(false);
+
     const isDraggingRef = React.useRef(false);
     const dragStartRef = React.useRef<{ mouseX: number; mouseY: number; initialX: number; initialY: number }>({ mouseX: 0, mouseY: 0, initialX: 0, initialY: 0 });
     const currentPosRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
     const rafIdRef = React.useRef<number | null>(null);
     const widgetRef = React.useRef<HTMLDivElement>(null);
 
+    // Viewport resize handling: clamp persisted coordinates so widget never escapes viewport
+    useEffect(() => {
+        const handleResize = () => {
+            const compact = window.innerWidth < 768;
+            setIsCompact(compact);
+            if (!compact) {
+                setWidgetPos(prev => {
+                    if (!prev) return null;
+                    const widgetWidth = widgetRef.current?.offsetWidth || 320;
+                    const widgetHeight = widgetRef.current?.offsetHeight || 180;
+                    const maxX = Math.max(16, window.innerWidth - widgetWidth - 16);
+                    const maxY = Math.max(80, window.innerHeight - widgetHeight - 16);
+                    const clampedX = Math.max(16, Math.min(prev.x, maxX));
+                    const clampedY = Math.max(80, Math.min(prev.y, maxY));
+                    if (clampedX !== prev.x || clampedY !== prev.y) {
+                        const next = { x: clampedX, y: clampedY };
+                        try {
+                            localStorage.setItem('active_class_widget_pos', JSON.stringify(next));
+                        } catch (e) {}
+                        return next;
+                    }
+                    return prev;
+                });
+            }
+        };
+
+        handleResize();
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (isCompact) return; // In compact mobile/tablet view, widget is fixed at bottom tray
         const target = e.target as HTMLElement;
         if (target.closest('button') || target.closest('a') || target.closest('input')) {
             return;
@@ -146,11 +180,12 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
             const widgetWidth = widgetRef.current?.offsetWidth || 320;
             const widgetHeight = widgetRef.current?.offsetHeight || 180;
 
-            const maxX = window.innerWidth - widgetWidth - 10;
-            const maxY = window.innerHeight - widgetHeight - 10;
+            const maxX = Math.max(16, window.innerWidth - widgetWidth - 16);
+            const maxY = Math.max(80, window.innerHeight - widgetHeight - 16);
 
-            newX = Math.max(10, Math.min(newX, maxX));
-            newY = Math.max(10, Math.min(newY, maxY));
+            // Clamp: keep at least 80px from top to prevent covering header/navigation tabs
+            newX = Math.max(16, Math.min(newX, maxX));
+            newY = Math.max(80, Math.min(newY, maxY));
 
             currentPosRef.current = { x: newX, y: newY };
 
@@ -724,17 +759,19 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         {/* Global floating ongoing active class screen widget */}
         {activeSession && !isMeetingPage && (
             isWidgetMinimized ? (
-                /* Minimized Pill View */
+                /* Minimized Pill View / Bottom Mobile Session Tray */
                 <div
                     ref={widgetRef}
                     onMouseDown={handleDragStart}
                     onTouchStart={handleDragStart}
-                    style={widgetPos ? { left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, right: 'auto', bottom: 'auto' } : undefined}
-                    className={`${widgetPos ? 'fixed z-[150]' : 'fixed bottom-6 right-6 z-[150]'} bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 dark:border-amber-500/30 shadow-2xl px-4 py-2.5 flex items-center gap-3 animate-in slide-in-from-bottom-3 duration-200 text-left cursor-grab active:cursor-grabbing select-none`}
+                    style={!isCompact && widgetPos ? { left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, right: 'auto', bottom: 'auto' } : undefined}
+                    className={`${!isCompact && widgetPos ? 'fixed z-[150]' : 'fixed bottom-3 inset-x-3 sm:inset-x-auto sm:bottom-6 sm:right-6 z-[150]'} bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 dark:border-amber-500/30 shadow-2xl px-3.5 sm:px-4 py-2.5 flex items-center justify-between sm:justify-start gap-2.5 sm:gap-3 animate-in slide-in-from-bottom-3 duration-200 text-left select-none max-w-lg sm:max-w-none mx-auto sm:mx-0 ${!isCompact ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                    role="region"
+                    aria-label="Active classroom session status"
                 >
-                    <span className="material-symbols-outlined text-slate-400 dark:text-slate-500 text-sm cursor-grab">drag_indicator</span>
-                    <div className="flex items-center gap-2">
-                        <span className="relative flex h-2.5 w-2.5">
+                    <span className="hidden sm:inline-flex material-symbols-outlined text-slate-400 dark:text-slate-500 text-sm cursor-grab" aria-hidden="true">drag_indicator</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="relative flex h-2.5 w-2.5 shrink-0">
                             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
                                 activeSession.sessionType === 'online' ? 'bg-blue-400' : 'bg-amber-400'
                             }`}></span>
@@ -742,19 +779,19 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                 activeSession.sessionType === 'online' ? 'bg-blue-500' : 'bg-amber-500'
                             }`}></span>
                         </span>
-                        <div className="flex flex-col">
-                            <span className="text-[9px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400 font-mono">
-                                Started Class
+                        <div className="flex flex-col min-w-0">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400 font-mono leading-none mb-0.5">
+                                Live Session
                             </span>
-                            <h4 className="text-xs font-black text-slate-900 dark:text-white max-w-[140px] sm:max-w-[180px] truncate leading-tight">
+                            <h4 className="text-xs font-black text-slate-900 dark:text-white max-w-[120px] sm:max-w-[180px] truncate leading-tight">
                                 {activeSession.classroomName}
                             </h4>
                         </div>
                     </div>
 
                     {/* Timer */}
-                    <div className="flex items-center gap-1 text-[11px] font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800">
-                        <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
+                    <div className="flex items-center gap-1 text-[11px] font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 shrink-0">
+                        <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" aria-hidden="true" />
                         <span>{(() => {
                             const mins = Math.floor(secondsElapsed / 60);
                             const secs = secondsElapsed % 60;
@@ -763,18 +800,21 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     </div>
 
                     {/* Controls */}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 shrink-0">
                         <button
+                            type="button"
                             onClick={() => toggleWidgetMinimized(false)}
-                            title="Expand active class widget"
-                            className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center cursor-pointer"
+                            title="Expand active class session tray"
+                            aria-label="Expand active class session tray"
+                            className="p-1.5 min-w-[36px] min-h-[36px] text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-500 outline-none"
                         >
                             <span className="material-symbols-outlined text-base">open_in_full</span>
                         </button>
                         <Link
                             href={`/teacher-dashboard/classrooms/${activeSession.classroomId}/meeting`}
-                            className="px-3 py-1.5 bg-[#ecb613] hover:bg-amber-500 text-slate-950 rounded-xl text-[10px] font-black tracking-wide uppercase transition-all shadow-sm flex items-center gap-1 hover:scale-105 active:scale-95 text-center cursor-pointer"
-                            title="Open started classroom"
+                            className="px-3 py-1.5 min-h-[36px] bg-[#ecb613] hover:bg-amber-500 text-slate-950 rounded-xl text-[10px] font-black tracking-wide uppercase transition-all shadow-sm flex items-center gap-1 hover:scale-105 active:scale-95 text-center cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-500 outline-none"
+                            title="Open started classroom meeting"
+                            aria-label="Maximize active classroom session to full screen meeting"
                         >
                             <span className="material-symbols-outlined text-sm">fullscreen</span>
                             Maximize
@@ -782,18 +822,20 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     </div>
                 </div>
             ) : (
-                /* Maximized Card View */
+                /* Maximized Card View / Docked Bottom Drawer on Mobile */
                 <div
                     ref={widgetRef}
                     onMouseDown={handleDragStart}
                     onTouchStart={handleDragStart}
-                    style={widgetPos ? { left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, right: 'auto', bottom: 'auto' } : undefined}
-                    className={`${widgetPos ? 'fixed z-[150]' : 'fixed bottom-6 right-6 z-[150]'} w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 flex flex-col gap-3 animate-in slide-in-from-bottom-5 duration-300 text-left cursor-grab active:cursor-grabbing select-none`}
+                    style={!isCompact && widgetPos ? { left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, right: 'auto', bottom: 'auto' } : undefined}
+                    className={`${!isCompact && widgetPos ? 'fixed z-[150] w-80' : 'fixed bottom-0 inset-x-0 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-80 z-[150]'} bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-t-2xl sm:rounded-2xl border-t sm:border border-amber-500/30 sm:border-slate-200 dark:sm:border-slate-800 shadow-2xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-3 animate-in slide-in-from-bottom-5 duration-300 text-left select-none ${!isCompact ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                    role="region"
+                    aria-label="Active class session details"
                 >
                     {/* Glowing active indicator, drag handle, timer, and minimize button */}
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <span className="material-symbols-outlined text-slate-400 dark:text-slate-500 text-sm cursor-grab">drag_indicator</span>
+                            <span className="hidden sm:inline-flex material-symbols-outlined text-slate-400 dark:text-slate-500 text-sm cursor-grab" aria-hidden="true">drag_indicator</span>
                             <span className="relative flex h-2.5 w-2.5">
                                 <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
                                     activeSession.sessionType === 'online' ? 'bg-blue-400' : 'bg-amber-400'
@@ -802,14 +844,14 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                     activeSession.sessionType === 'online' ? 'bg-blue-500' : 'bg-amber-500'
                                 }`}></span>
                             </span>
-                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 font-mono">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 font-mono">
                                 Ongoing {activeSession.sessionType === 'online' ? 'Online' : 'In-Person'} Class
                             </span>
                         </div>
                         <div className="flex items-center gap-1.5">
                             {/* Compact timer */}
-                            <div className="flex items-center gap-1 text-[11px] font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-150 dark:border-slate-800">
-                                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
+                            <div className="flex items-center gap-1 text-[11px] font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" aria-hidden="true" />
                                 <span>{(() => {
                                     const mins = Math.floor(secondsElapsed / 60);
                                     const secs = secondsElapsed % 60;
@@ -818,9 +860,11 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                             </div>
                             {/* Minimize Widget Button */}
                             <button
+                                type="button"
                                 onClick={() => toggleWidgetMinimized(true)}
                                 title="Minimize active class widget"
-                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center cursor-pointer"
+                                aria-label="Minimize active class session panel"
+                                className="p-1.5 min-w-[32px] min-h-[32px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-500 outline-none"
                             >
                                 <span className="material-symbols-outlined text-base">close_fullscreen</span>
                             </button>
@@ -835,7 +879,9 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     {/* Direct action triggers */}
                     <div className="flex gap-2 mt-1">
                         <button
+                            type="button"
                             disabled={isEndingSession}
+                            aria-label="End active class session"
                             onClick={async () => {
                                 if (isEndingSession) return;
                                 if (confirm('Are you sure you want to end this active class session?')) {
@@ -863,7 +909,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                     }
                                 }
                             }}
-                            className="flex-1 py-2 border border-rose-200 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-950/20 text-rose-600 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex-1 py-2.5 min-h-[44px] border border-rose-200 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-950/20 text-rose-600 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-rose-500 outline-none"
                         >
                             {isEndingSession ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
@@ -874,7 +920,8 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                         </button>
                         <Link
                             href={`/teacher-dashboard/classrooms/${activeSession.classroomId}/meeting`}
-                            className="flex-1 py-2 bg-[#ecb613] hover:bg-amber-500 text-slate-950 rounded-xl text-[11px] font-black tracking-wide uppercase transition-all shadow-md shadow-amber-500/10 flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-95 text-center cursor-pointer"
+                            aria-label="Maximize active classroom session to full screen meeting"
+                            className="flex-1 py-2.5 min-h-[44px] bg-[#ecb613] hover:bg-amber-500 text-slate-950 rounded-xl text-[11px] font-black tracking-wide uppercase transition-all shadow-md shadow-amber-500/10 flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-95 text-center cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-500 outline-none"
                         >
                             <span className="material-symbols-outlined text-sm">fullscreen</span>
                             Maximize
