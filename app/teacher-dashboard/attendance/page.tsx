@@ -738,7 +738,17 @@ export default function AttendancePage() {
                 ]);
 
                 const coveredMap = buildCoveredAttendanceMap(coveredRows || [], selectedDate);
-                setCoveredAttendanceMap(coveredMap);
+                setCoveredAttendanceMap(prev => {
+                    const prevKeys = Object.keys(prev);
+                    const nextKeys = Object.keys(coveredMap);
+                    if (prevKeys.length !== nextKeys.length) return coveredMap;
+                    const isSame = prevKeys.every(k =>
+                        prev[k]?.attendanceId === coveredMap[k]?.attendanceId &&
+                        prev[k]?.actualDate === coveredMap[k]?.actualDate &&
+                        prev[k]?.status === coveredMap[k]?.status
+                    );
+                    return isSame ? prev : coveredMap;
+                });
 
                 const physicalStudentsWithAttendance = new Set<string>();
                 (attRows || []).forEach((r: any) => {
@@ -874,6 +884,9 @@ export default function AttendancePage() {
         setExpandedBatchId(null);
         setBatchStudentsMap({});
         setBatchAttendanceMap({});
+        setDateStudentsData([]);
+        setDateAttendanceMap({});
+        setDateStudentsLoading(true);
     }, [selectedDate]);
 
     // Accordion Batch expansion fetch
@@ -1532,6 +1545,62 @@ export default function AttendancePage() {
         }
     };
 
+    // Reconcile batch summaries and header metrics dynamically without full refetch
+    const reconcileAttendanceTotals = useCallback((classroomId: string, prevStatus?: string | null, newStatus?: string | null) => {
+        if (!classroomId || prevStatus === newStatus) return;
+
+        setBatchSummaries(prev => {
+            const batchSummary = prev[classroomId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
+            let presentDiff = 0;
+            let absentDiff = 0;
+            let lateDiff = 0;
+            let excusedDiff = 0;
+
+            if (prevStatus === 'present') presentDiff--;
+            if (prevStatus === 'absent') absentDiff--;
+            if (prevStatus === 'late') lateDiff--;
+            if (prevStatus === 'excused') excusedDiff--;
+
+            if (newStatus === 'present') presentDiff++;
+            if (newStatus === 'absent') absentDiff++;
+            if (newStatus === 'late') lateDiff++;
+            if (newStatus === 'excused') excusedDiff++;
+
+            return {
+                ...prev,
+                [classroomId]: {
+                    ...batchSummary,
+                    present: Math.max(0, batchSummary.present + presentDiff),
+                    absent: Math.max(0, batchSummary.absent + absentDiff),
+                    late: Math.max(0, batchSummary.late + lateDiff),
+                    excused: Math.max(0, batchSummary.excused + excusedDiff)
+                }
+            };
+        });
+
+        setStats(prev => {
+            let presentDiff = 0;
+            let absentDiff = 0;
+
+            if (prevStatus === 'present' || prevStatus === 'late') presentDiff--;
+            if (prevStatus === 'absent') absentDiff--;
+
+            if (newStatus === 'present' || newStatus === 'late') presentDiff++;
+            if (newStatus === 'absent') absentDiff++;
+
+            const newPresent = Math.max(0, prev.present + presentDiff);
+            const newAbsent = Math.max(0, prev.absent + absentDiff);
+            const rate = prev.total > 0 ? `${Math.round((newPresent / prev.total) * 100)}%` : '0%';
+
+            return {
+                ...prev,
+                present: newPresent,
+                absent: newAbsent,
+                rate
+            };
+        });
+    }, []);
+
     // Unmark attendance inside expanded batch
     const handleUnmarkBatchAttendance = async (batchId: string, studentId: string) => {
         if (!teacherProfile) return;
@@ -1586,24 +1655,8 @@ export default function AttendancePage() {
                     return next;
                 });
 
-                // Update batch summary
-                setBatchSummaries(prev => {
-                    const batchSummary = prev[batchId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
-                    let presentDiff = prevStatus === 'present' ? -1 : 0;
-                    let absentDiff = prevStatus === 'absent' ? -1 : 0;
-                    let lateDiff = prevStatus === 'late' ? -1 : 0;
-                    let excusedDiff = prevStatus === 'excused' ? -1 : 0;
-                    return {
-                        ...prev,
-                        [batchId]: {
-                            ...batchSummary,
-                            present: Math.max(0, batchSummary.present + presentDiff),
-                            absent: Math.max(0, batchSummary.absent + absentDiff),
-                            late: Math.max(0, batchSummary.late + lateDiff),
-                            excused: Math.max(0, batchSummary.excused + excusedDiff)
-                        }
-                    };
-                });
+                // Update batch summary and header stats
+                reconcileAttendanceTotals(batchId, prevStatus, null);
 
                 try {
                     const { error: rpcErr } = await supabaseAuth.rpc('unmark_historical_attendance', {
@@ -1633,6 +1686,7 @@ export default function AttendancePage() {
                         ...prev,
                         [k]: prevStatus
                     }));
+                    reconcileAttendanceTotals(batchId, null, prevStatus);
                 }
             }
         } finally {
@@ -1767,34 +1821,7 @@ export default function AttendancePage() {
                         fetchPendingReport().catch(e => console.error('Error refreshing pending report:', e));
 
                         // Recalculate summary stats for this batch header dynamically
-                        setBatchSummaries(prev => {
-                            const batchSummary = prev[batchId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
-                            let presentDiff = 0;
-                            let absentDiff = 0;
-                            let lateDiff = 0;
-                            let excusedDiff = 0;
-
-                            if (currentBatchStatus === 'present') presentDiff--;
-                            if (currentBatchStatus === 'absent') absentDiff--;
-                            if (currentBatchStatus === 'late') lateDiff--;
-                            if (currentBatchStatus === 'excused') excusedDiff--;
-
-                            if (status === 'present') presentDiff++;
-                            if (status === 'absent') absentDiff++;
-                            if (status === 'late') lateDiff++;
-                            if (status === 'excused') excusedDiff++;
-
-                            return {
-                                ...prev,
-                                [batchId]: {
-                                    ...batchSummary,
-                                    present: Math.max(0, batchSummary.present + presentDiff),
-                                    absent: Math.max(0, batchSummary.absent + absentDiff),
-                                    late: Math.max(0, batchSummary.late + lateDiff),
-                                    excused: Math.max(0, batchSummary.excused + excusedDiff)
-                                }
-                            };
-                        });
+                        reconcileAttendanceTotals(batchId, currentBatchStatus, status);
                         return;
                     } catch (err: any) {
                         console.error('Error updating attendance:', err?.message || err?.details || err);
@@ -1811,6 +1838,7 @@ export default function AttendancePage() {
                             ...prev,
                             [k]: currentBatchStatus
                         }));
+                        reconcileAttendanceTotals(batchId, status, currentBatchStatus);
                         return;
                     }
                 }
@@ -1833,6 +1861,10 @@ export default function AttendancePage() {
                 [k]: status
             }));
 
+            const prevRecords = batchAttendanceMap[batchId] || {};
+            const prevStatus = prevRecords[studentId];
+            reconcileAttendanceTotals(batchId, prevStatus || null, status);
+
             try {
                 const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === batchId);
                 if (batchForRoom?.activeHoliday) {
@@ -1853,7 +1885,7 @@ export default function AttendancePage() {
                     }
                 }
 
-                const { error } = await supabaseAuth
+                const { data: insData, error } = await supabaseAuth
                     .from('attendance')
                     .insert({
                         student_id: studentId,
@@ -1862,9 +1894,27 @@ export default function AttendancePage() {
                         status: (status as string).toLowerCase(),
                         marked_by: teacherProfile.id,
                         on_behalf_of_date: onBehalfDate
-                    });
+                    })
+                    .select('id, status')
+                    .maybeSingle();
 
                 if (error) throw error;
+
+                const confirmedStatus = (insData?.status || status).toLowerCase() as any;
+                setBatchAttendanceMap(prev => {
+                    const currentBatch = prev[batchId] || {};
+                    return {
+                        ...prev,
+                        [batchId]: {
+                            ...currentBatch,
+                            [studentId]: confirmedStatus
+                        }
+                    };
+                });
+                setDateAttendanceMap(prev => ({
+                    ...prev,
+                    [k]: confirmedStatus
+                }));
 
                 handleFeeBalanceTransitionNotifications({
                     studentId,
@@ -1873,41 +1923,6 @@ export default function AttendancePage() {
                 }).catch(e => console.error('Error checking fee balance transition:', e));
 
                 fetchPendingReport().catch(e => console.error('Error refreshing pending report:', e));
-
-                // Recalculate summary stats for this batch header dynamically
-                const prevRecords = batchAttendanceMap[batchId] || {};
-                const prevStatus = prevRecords[studentId];
-
-                setBatchSummaries(prev => {
-                    const batchSummary = prev[batchId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
-
-                    let presentDiff = 0;
-                    let absentDiff = 0;
-                    let lateDiff = 0;
-                    let excusedDiff = 0;
-
-                    // Remove previous contribution
-                    if (prevStatus === 'present') presentDiff--;
-                    if (prevStatus === 'absent') absentDiff--;
-                    if (prevStatus === 'late') lateDiff--;
-                    if (prevStatus === 'excused') excusedDiff--;
-
-                    // Add new contribution
-                    if (status === 'present') presentDiff++;
-                    if (status === 'absent') absentDiff++;
-                    if (status === 'late') lateDiff++;
-                    if (status === 'excused') excusedDiff++;
-
-                    const nextSummary = {
-                        ...batchSummary,
-                        present: Math.max(0, batchSummary.present + presentDiff),
-                        absent: Math.max(0, batchSummary.absent + absentDiff),
-                        late: Math.max(0, batchSummary.late + lateDiff),
-                        excused: Math.max(0, batchSummary.excused + excusedDiff)
-                    };
-
-                    return { ...prev, [batchId]: nextSummary };
-                });
 
             } catch (err: any) {
                 console.error('Error marking attendance:', err?.message || err?.details || err);
@@ -1922,21 +1937,27 @@ export default function AttendancePage() {
                     .eq('date', selectedDate)
                     .single();
                 
+                const revertedStatus = data?.status || undefined;
                 setBatchAttendanceMap(prev => {
                     const currentBatch = prev[batchId] || {};
                     return {
                         ...prev,
                         [batchId]: {
                             ...currentBatch,
-                            [studentId]: data?.status || undefined
+                            [studentId]: revertedStatus
                         }
                     };
                 });
                 setDateAttendanceMap(prev => {
                     const next = { ...prev };
-                    delete next[k];
+                    if (revertedStatus) {
+                        next[k] = revertedStatus;
+                    } else {
+                        delete next[k];
+                    }
                     return next;
                 });
+                reconcileAttendanceTotals(batchId, status, revertedStatus || null);
             }
         } finally {
             setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: false }));
@@ -1978,18 +1999,34 @@ export default function AttendancePage() {
         return () => clearTimeout(timer);
     }, [quickStudentSearch, teacherProfile]);
 
+    const activeBatchesRef = useRef(activeBatchesOnSelectedDate);
+    activeBatchesRef.current = activeBatchesOnSelectedDate;
+
+    const coveredAttendanceMapRef = useRef(coveredAttendanceMap);
+    coveredAttendanceMapRef.current = coveredAttendanceMap;
+
+    const dateStudentsDataRef = useRef(dateStudentsData);
+    dateStudentsDataRef.current = dateStudentsData;
+
+    const activeBatchSignature = useMemo(() => {
+        return activeBatchesOnSelectedDate.map(b => `${b.id}_${b.type}_${b.name}`).join('|');
+    }, [activeBatchesOnSelectedDate]);
+
     // ── Fetch students allocated for the selected date (Individual Range mode) ──
-    const fetchDateStudents = useCallback(async () => {
-        if (!teacherProfile || activeBatchesOnSelectedDate.length === 0) {
+    const fetchDateStudents = useCallback(async (isSilent = false) => {
+        const currentBatches = activeBatchesRef.current;
+        if (!teacherProfile || currentBatches.length === 0) {
             setDateStudentsData([]);
             setDateAttendanceMap({});
             return;
         }
-        setDateStudentsLoading(true);
+        if (!isSilent && dateStudentsDataRef.current.length === 0) {
+            setDateStudentsLoading(true);
+        }
         try {
             const isAdmin = teacherProfile.role === 'admin';
             const entries: DateStudentEntry[] = [];
-            const allBatchIds = activeBatchesOnSelectedDate.map(b => b.id);
+            const allBatchIds = currentBatches.map(b => b.id);
             const { data: attData } = allBatchIds.length > 0
                 ? await supabaseAuth
                     .from('attendance')
@@ -2006,7 +2043,9 @@ export default function AttendancePage() {
                 newMap[key] = row.status;
             });
 
-            await Promise.all(activeBatchesOnSelectedDate.map(async (batch) => {
+            const currentCoveredMap = coveredAttendanceMapRef.current;
+
+            await Promise.all(currentBatches.map(async (batch) => {
                 const batchName = batch.name;
                 const batchId = batch.id;
                 const isTemporary = batch.type === 'temporary';
@@ -2020,7 +2059,7 @@ export default function AttendancePage() {
 
                     (permanentStudents || [])
                         .filter((row: any) => {
-                            const hasAtt = existingAttSet.has(`${row.student_id}_${batchId}`) || !!coveredAttendanceMap[row.student_id];
+                            const hasAtt = existingAttSet.has(`${row.student_id}_${batchId}`) || !!currentCoveredMap[row.student_id];
                             return isStudentOperationallyActive(row.users?.status) &&
                                 (isAdmin || row.users?.teacher_id === teacherProfile.id) &&
                                 isStudentEnrolledOnDate(row, selectedDate, hasAtt);
@@ -2077,7 +2116,7 @@ export default function AttendancePage() {
             // Populate covered students if covered on an alternative date
             entries.forEach(e => {
                 const k = `${e.student.id}_${e.classroom_id}`;
-                const cov = coveredAttendanceMap[e.student.id];
+                const cov = currentCoveredMap[e.student.id];
                 if (cov && !newMap[k]) {
                     newMap[k] = cov.status as any;
                 }
@@ -2088,13 +2127,13 @@ export default function AttendancePage() {
         } finally {
             setDateStudentsLoading(false);
         }
-    }, [teacherProfile, selectedDate, activeBatchesOnSelectedDate, coveredAttendanceMap]);
+    }, [teacherProfile?.id, teacherProfile?.role, selectedDate, activeBatchSignature]);
 
     useEffect(() => {
         if (mode === 'individual') {
             fetchDateStudents();
         }
-    }, [mode, selectedDate, fetchDateStudents]);
+    }, [mode, selectedDate, activeBatchSignature, fetchDateStudents]);
 
     // Unmark attendance from Individual Range date view
     const handleUnmarkDateAttendance = async (studentId: string, classroomId: string) => {
@@ -2137,6 +2176,7 @@ export default function AttendancePage() {
                         [classroomId]: curr
                     };
                 });
+                reconcileAttendanceTotals(classroomId, prevStatus, null);
 
                 try {
                     const { error: rpcErr } = await supabaseAuth.rpc('unmark_historical_attendance', {
@@ -2165,6 +2205,7 @@ export default function AttendancePage() {
                             [studentId]: prevStatus
                         }
                     }));
+                    reconcileAttendanceTotals(classroomId, null, prevStatus);
                 }
             }
         } finally {
@@ -2240,6 +2281,7 @@ export default function AttendancePage() {
                             [studentId]: status
                         }
                     }));
+                    reconcileAttendanceTotals(classroomId, currentDateStatus, status);
 
                     try {
                         const { error: rpcErr } = await supabaseAuth.rpc('correct_historical_attendance', {
@@ -2253,9 +2295,9 @@ export default function AttendancePage() {
                             const errMsg = (rpcErr.message || rpcErr.details || '').toLowerCase();
                             if (errMsg.includes('not found')) {
                                 console.warn('Attendance record not found in RPC, inserting fresh record:', existingRow.id);
-                                const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === classroomId);
+                                const batchForRoom = activeBatchesRef.current.find(b => b.id === classroomId);
                                 const onBehalfDate = batchOnBehalfOfMap[classroomId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
-                                const { error: insErr } = await supabaseAuth
+                                const { data: insData, error: insErr } = await supabaseAuth
                                     .from('attendance')
                                     .insert({
                                         student_id: studentId,
@@ -2264,8 +2306,20 @@ export default function AttendancePage() {
                                         status: status.toLowerCase(),
                                         marked_by: teacherProfile.id,
                                         on_behalf_of_date: onBehalfDate
-                                    });
+                                    })
+                                    .select('id, status')
+                                    .maybeSingle();
                                 if (insErr) throw insErr;
+
+                                const confirmedStatus = (insData?.status || status).toLowerCase() as any;
+                                setDateAttendanceMap(prev => ({ ...prev, [key]: confirmedStatus }));
+                                setBatchAttendanceMap(prev => ({
+                                    ...prev,
+                                    [classroomId]: {
+                                        ...(prev[classroomId] || {}),
+                                        [studentId]: confirmedStatus
+                                    }
+                                }));
                             } else {
                                 throw rpcErr;
                             }
@@ -2290,19 +2344,26 @@ export default function AttendancePage() {
                                 [studentId]: currentDateStatus
                             }
                         }));
+                        reconcileAttendanceTotals(classroomId, status, currentDateStatus);
                         return;
                     }
                 }
             }
             // Optimistic update
             setDateAttendanceMap(prev => ({ ...prev, [key]: status }));
+            setBatchAttendanceMap(prev => {
+                const currentBatch = prev[classroomId] || {};
+                return { ...prev, [classroomId]: { ...currentBatch, [studentId]: status } };
+            });
+            reconcileAttendanceTotals(classroomId, null, status);
+
             try {
-                const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === classroomId);
+                const batchForRoom = activeBatchesRef.current.find(b => b.id === classroomId);
                 if (batchForRoom?.activeHoliday) {
                     throw new Error(`Cannot record attendance: ${selectedDate} is declared as a holiday for this classroom.`);
                 }
                 const onBehalfDate = batchOnBehalfOfMap[classroomId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
-                const { error } = await supabaseAuth
+                const { data: insData, error } = await supabaseAuth
                     .from('attendance')
                     .insert({
                         student_id: studentId,
@@ -2311,8 +2372,17 @@ export default function AttendancePage() {
                         on_behalf_of_date: onBehalfDate,
                         status: status.toLowerCase(),
                         marked_by: teacherProfile.id
-                    });
+                    })
+                    .select('id, status')
+                    .maybeSingle();
                 if (error) throw error;
+
+                const confirmedStatus = (insData?.status || status).toLowerCase() as any;
+                setDateAttendanceMap(prev => ({ ...prev, [key]: confirmedStatus }));
+                setBatchAttendanceMap(prev => {
+                    const currentBatch = prev[classroomId] || {};
+                    return { ...prev, [classroomId]: { ...currentBatch, [studentId]: confirmedStatus } };
+                });
 
                 handleFeeBalanceTransitionNotifications({
                     studentId,
@@ -2321,12 +2391,6 @@ export default function AttendancePage() {
                 }).catch(e => console.error('Error checking fee balance transition:', e));
 
                 fetchPendingReport().catch(e => console.error('Error refreshing pending report:', e));
-
-                // Also sync batchAttendanceMap if batch is expanded
-                setBatchAttendanceMap(prev => {
-                    const currentBatch = prev[classroomId] || {};
-                    return { ...prev, [classroomId]: { ...currentBatch, [studentId]: status } };
-                });
             } catch (err: any) {
                 console.error('Error marking attendance:', err?.message || err?.details || err);
                 alert(`Failed to save attendance: ${err.message || err}`);
@@ -2336,6 +2400,12 @@ export default function AttendancePage() {
                     delete next[key];
                     return next;
                 });
+                setBatchAttendanceMap(prev => {
+                    const currentBatch = { ...(prev[classroomId] || {}) };
+                    delete currentBatch[studentId];
+                    return { ...prev, [classroomId]: currentBatch };
+                });
+                reconcileAttendanceTotals(classroomId, status, null);
             }
         } finally {
             setSavingAttendanceMap(prev => ({ ...prev, [lockKey]: false }));
@@ -2636,7 +2706,12 @@ export default function AttendancePage() {
             ]);
 
             if (holidaysRes.data) {
-                setClassroomHolidays(holidaysRes.data);
+                setClassroomHolidays(prev => {
+                    if (prev.length !== (holidaysRes.data?.length || 0)) return holidaysRes.data;
+                    const prevSig = prev.map((h: any) => `${h.id}_${h.status}_${h.holiday_date}_${h.alternative_date}`).join('|');
+                    const nextSig = (holidaysRes.data || []).map((h: any) => `${h.id}_${h.status}_${h.holiday_date}_${h.alternative_date}`).join('|');
+                    return prevSig === nextSig ? prev : holidaysRes.data;
+                });
             }
 
             const derived = derivePendingAttendanceSessions({
@@ -4095,10 +4170,11 @@ export default function AttendancePage() {
                                                                                                         ? `${opt.activeClass} opacity-85 cursor-not-allowed` 
                                                                                                         : 'border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 opacity-40 cursor-not-allowed')
                                                                                                     : isSaving
-                                                                                                        ? `${isActive ? opt.activeClass : opt.inactiveClass} opacity-50 cursor-wait animate-pulse`
+                                                                                                        ? `${isActive ? opt.activeClass : opt.inactiveClass} opacity-60 cursor-wait`
                                                                                                         : (isActive ? `${opt.activeClass} cursor-pointer` : `${opt.inactiveClass} bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer`)
                                                                                             }`}
                                                                                         >
+                                                                                            {isSaving && isActive && <Loader2 className="w-3 h-3 animate-spin mr-1 shrink-0 inline" />}
                                                                                             <span className="hidden sm:inline">{opt.label}</span>
                                                                                             <span className="sm:hidden">{opt.shortLabel}</span>
                                                                                         </button>
@@ -4144,7 +4220,10 @@ export default function AttendancePage() {
                                             <div>
                                                 <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
                                                     <Users className="w-4 h-4 text-[#ecb613]" />
-                                                    Students on {formatLocalDateStr(selectedDate, true)}
+                                                    <span>Students on {formatLocalDateStr(selectedDate, true)}</span>
+                                                    {dateStudentsLoading && dateStudentsData.length > 0 && (
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#ecb613]" />
+                                                    )}
                                                 </h4>
                                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
                                                     {dateStudentsData.length} student{dateStudentsData.length !== 1 ? 's' : ''} allocated · select date from calendar
@@ -4164,7 +4243,7 @@ export default function AttendancePage() {
                                         </div>
 
                                         {/* Student list body */}
-                                        {dateStudentsLoading ? (
+                                        {dateStudentsLoading && dateStudentsData.length === 0 ? (
                                             <div className="flex flex-col items-center justify-center py-14">
                                                 <Loader2 className="w-6 h-6 animate-spin text-[#ecb613] mb-2" />
                                                 <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Loading students...</p>
@@ -4316,10 +4395,11 @@ export default function AttendancePage() {
                                                                                                         ? `${opt.activeClass} opacity-85 cursor-not-allowed` 
                                                                                                         : 'border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 opacity-40 cursor-not-allowed')
                                                                                                     : isSaving
-                                                                                                        ? `${isActive ? opt.activeClass : opt.inactiveClass} opacity-50 cursor-wait animate-pulse`
+                                                                                                        ? `${isActive ? opt.activeClass : opt.inactiveClass} opacity-60 cursor-wait`
                                                                                                         : (isActive ? opt.activeClass : `${opt.inactiveClass} bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer`)
                                                                                             }`}
                                                                                         >
+                                                                                            {isSaving && isActive && <Loader2 className="w-3 h-3 animate-spin mr-1 shrink-0 inline" />}
                                                                                             <span className="hidden sm:inline">{opt.label}</span>
                                                                                             <span className="sm:hidden">{opt.shortLabel}</span>
                                                                                         </button>
