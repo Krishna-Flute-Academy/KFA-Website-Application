@@ -128,6 +128,7 @@ export default function InventoryLibrary() {
         lesson_number: 1, 
         material_type: 'file', // 'file' | 'image' | 'pdf' | 'audio' | 'video'
         material_url: '', 
+        audio_url: '',
         file_name: '', 
         file_size: '', 
         duration: '',
@@ -139,6 +140,7 @@ export default function InventoryLibrary() {
     
     // File Upload Progress State
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+    const [audioUploadProgress, setAudioUploadProgress] = useState<number | null>(null);
 
     // In-browser Audio Recorder State
     const [showAudioRecorder, setShowAudioRecorder] = useState(false);
@@ -208,7 +210,7 @@ export default function InventoryLibrary() {
             const categoriesReq = supabaseAuth.from('course_categories').select('*').order('category_order', { ascending: true });
             const modulesReq = supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
             const chaptersReq = supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-            const lessonsReq = supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, file_name, bullet_points, link_url, duration, file_size').order('lesson_number', { ascending: true });
+            const lessonsReq = supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, audio_url, file_name, bullet_points, link_url, duration, file_size').order('lesson_number', { ascending: true });
             const studentCountReq = supabaseAuth.from('users').select('*', { count: 'exact', head: true }).or('role.eq.student,role.eq.pending,role.eq.mentor');
             const progressReq = supabaseAuth.from('student_topic_progress').select('lesson_id, status').eq('status', 'completed');
 
@@ -283,7 +285,7 @@ export default function InventoryLibrary() {
             // Reload seedings
             const { data: dbModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
             const { data: dbChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-            const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, file_name, bullet_points, link_url, duration, file_size').order('lesson_number', { ascending: true });
+            const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, audio_url, file_name, bullet_points, link_url, duration, file_size').order('lesson_number', { ascending: true });
             
             if (dbModules) setModules(dbModules);
             if (dbChapters) setChapters(dbChapters || []);
@@ -1071,6 +1073,7 @@ export default function InventoryLibrary() {
                 lesson_number: lesson.lesson_number,
                 material_type: lesson.material_type || 'file',
                 material_url: lesson.material_url || '',
+                audio_url: lesson.audio_url || '',
                 file_name: lesson.file_name || '',
                 file_size: lesson.file_size || '',
                 duration: lesson.duration || '',
@@ -1087,6 +1090,7 @@ export default function InventoryLibrary() {
                 lesson_number: numLessons + 1,
                 material_type: 'file',
                 material_url: '',
+                audio_url: '',
                 file_name: '',
                 file_size: '',
                 duration: '',
@@ -1208,6 +1212,73 @@ export default function InventoryLibrary() {
         await uploadFile(file);
     };
 
+    // Dedicated Recorded Audio Upload
+    const uploadAudioFile = async (file: File) => {
+        setAudioUploadProgress(20);
+
+        if (isUsingFallback) {
+            const interval = setInterval(() => {
+                setAudioUploadProgress(prev => {
+                    if (prev === null) return null;
+                    if (prev >= 100) {
+                        clearInterval(interval);
+                        setTimeout(() => {
+                            setAudioUploadProgress(null);
+                            const objectUrl = URL.createObjectURL(file);
+                            setLessonForm(prevForm => ({
+                                ...prevForm,
+                                audio_url: objectUrl
+                            }));
+                        }, 400);
+                        return 100;
+                    }
+                    return prev + 25;
+                });
+            }, 100);
+        } else {
+            try {
+                const fileExt = file.name.split('.').pop() || 'webm';
+                const randomName = `audio_${Math.random().toString(36).substring(2, 12)}_${Date.now()}.${fileExt}`;
+                const filePath = `materials/${randomName}`;
+
+                setAudioUploadProgress(50);
+                
+                const { error: uploadError } = await supabaseAuth.storage
+                    .from('inventory_materials')
+                    .upload(filePath, file);
+
+                if (uploadError) {
+                    throw uploadError;
+                }
+
+                setAudioUploadProgress(85);
+
+                const { data: { publicUrl } } = supabaseAuth.storage
+                    .from('inventory_materials')
+                    .getPublicUrl(filePath);
+
+                setAudioUploadProgress(100);
+                setTimeout(() => {
+                    setAudioUploadProgress(null);
+                    setLessonForm(prev => ({
+                        ...prev,
+                        audio_url: publicUrl
+                    }));
+                }, 400);
+            } catch (err: any) {
+                console.error('Audio upload error:', err);
+                setTimeout(() => {
+                    setAudioUploadProgress(null);
+                    const objectUrl = URL.createObjectURL(file);
+                    setLessonForm(prev => ({
+                        ...prev,
+                        audio_url: objectUrl
+                    }));
+                }, 300);
+            }
+        }
+    };
+
     // Save Lesson card details
     const saveLesson = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1235,6 +1306,7 @@ export default function InventoryLibrary() {
             description: lessonForm.description,
             material_type: lessonForm.material_type,
             material_url: lessonForm.material_url,
+            audio_url: lessonForm.audio_url || null,
             file_name: lessonForm.file_name,
             file_size: lessonForm.file_size,
             duration: lessonForm.duration,
@@ -1303,6 +1375,7 @@ export default function InventoryLibrary() {
                                 lesson_number: i + 1,
                                 material_type: item.material_type,
                                 material_url: item.material_url,
+                                audio_url: item.audio_url || null,
                                 file_name: item.file_name,
                                 file_size: item.file_size,
                                 duration: item.duration,
@@ -1319,6 +1392,7 @@ export default function InventoryLibrary() {
                                 lesson_number: i + 1,
                                 material_type: item.material_type,
                                 material_url: item.material_url,
+                                audio_url: item.audio_url || null,
                                 file_name: item.file_name,
                                 file_size: item.file_size,
                                 duration: item.duration,
@@ -1411,6 +1485,7 @@ export default function InventoryLibrary() {
                     description: lessonToRestore.description,
                     material_type: lessonToRestore.material_type,
                     material_url: lessonToRestore.material_url,
+                    audio_url: lessonToRestore.audio_url || null,
                     file_name: lessonToRestore.file_name,
                     file_size: lessonToRestore.file_size,
                     duration: lessonToRestore.duration,
@@ -1488,6 +1563,7 @@ export default function InventoryLibrary() {
                         description: lesson.description,
                         material_type: lesson.material_type,
                         material_url: lesson.material_url,
+                        audio_url: lesson.audio_url || null,
                         file_name: lesson.file_name,
                         file_size: lesson.file_size,
                         duration: lesson.duration,
@@ -1901,6 +1977,7 @@ export default function InventoryLibrary() {
                                                         const chap = chapters.find(c => c.id === lesson.chapter_id);
                                                         const mod = chap ? modules.find(m => m.id === chap.module_id) : null;
                                                         const hasAttachment = !!lesson.material_url;
+                                                        const hasAudio = !!lesson.audio_url;
                                                         const mediaInfo = getCurriculumMediaInfo(lesson);
 
                                                         return (
@@ -1951,10 +2028,27 @@ export default function InventoryLibrary() {
                                                                         {mediaInfo.hasMedia && lesson.file_size && (
                                                                             <span className="text-slate-400 mr-1.5">💾 {lesson.file_size}</span>
                                                                         )}
-                                                                        <span>{mediaInfo.badgeLabel || (hasAttachment ? 'FILE ATTACHMENT' : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE'))}</span>
+                                                                        <span>{mediaInfo.badgeLabel || (hasAttachment ? 'FILE ATTACHMENT' : (hasAudio ? 'AUDIO DEMO' : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE')))}</span>
                                                                     </div>
 
                                                                     <div className="flex items-center gap-2">
+                                                                        {hasAudio && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setMediaPreview({
+                                                                                        type: 'audio',
+                                                                                        url: lesson.audio_url!,
+                                                                                        title: `${lesson.title} • Audio Demo`
+                                                                                    });
+                                                                                }}
+                                                                                className="px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 font-extrabold rounded-lg text-[10px] tracking-wider uppercase transition-all flex items-center gap-1"
+                                                                                title="Listen to recorded audio demo"
+                                                                            >
+                                                                                <Music className="size-3 text-amber-600 dark:text-amber-400" />
+                                                                                <span>Audio</span>
+                                                                            </button>
+                                                                        )}
                                                                         {hasAttachment && (
                                                                             <button
                                                                                 onClick={(e) => {
@@ -2457,7 +2551,7 @@ export default function InventoryLibrary() {
 
                                                 const audioCount = chapLessons.filter(l => {
                                                     const m = getCurriculumMediaInfo(l);
-                                                    return m.mediaType === 'audio' || l.material_type === 'audio';
+                                                    return m.mediaType === 'audio' || l.material_type === 'audio' || !!l.audio_url;
                                                 }).length;
                                                 const videoCount = chapLessons.filter(l => {
                                                     const m = getCurriculumMediaInfo(l);
@@ -2632,6 +2726,7 @@ export default function InventoryLibrary() {
                                                                         {filteredChapLessons.map(lesson => {
                                                                             const isLinkClickable = !!lesson.link_url;
                                                                             const hasAttachment = !!lesson.material_url;
+                                                                            const hasAudio = !!lesson.audio_url;
                                                                             const mediaInfo = getCurriculumMediaInfo(lesson);
                                                                             const isTopicMatch = hasLevelSearch && (
                                                                                 (lesson.title || '').toLowerCase().includes(levelSearchLower) ||
@@ -2709,11 +2804,28 @@ export default function InventoryLibrary() {
                                                                                             )}
                                                                                             <span className="truncate">
                                                                                                 {mediaInfo.badgeLabel 
-                                                                                                    || (hasAttachment ? 'FILE ATTACHMENT' : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE'))}
+                                                                                                    || (hasAttachment ? 'FILE ATTACHMENT' : (hasAudio ? 'AUDIO DEMO' : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE')))}
                                                                                             </span>
                                                                                         </div>
                                                                                         
                                                                                         <div className="flex items-center gap-2 relative z-20 shrink-0">
+                                                                                            {hasAudio && (
+                                                                                                <button
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        setMediaPreview({
+                                                                                                            type: 'audio',
+                                                                                                            url: lesson.audio_url!,
+                                                                                                            title: `${lesson.title} • Audio Demo`
+                                                                                                        });
+                                                                                                    }}
+                                                                                                    className="inline-flex items-center gap-1 text-[10px] font-black text-amber-700 dark:text-amber-300 hover:text-amber-800 bg-amber-500/15 hover:bg-amber-500/25 px-2.5 py-1.5 rounded-full tracking-wider uppercase transition-all"
+                                                                                                    title="Listen to recorded audio demo"
+                                                                                                >
+                                                                                                    <Music className="size-2.5" />
+                                                                                                    <span>Audio</span>
+                                                                                                </button>
+                                                                                            )}
                                                                                             {hasAttachment && (
                                                                                                 <button
                                                                                                     onClick={(e) => {
@@ -3150,11 +3262,11 @@ export default function InventoryLibrary() {
                                     />
                                 </div>
 
-                                {/* Field 3: Attachment Uploader (File, Image, PDF, Audio, or Video) + In-Browser Audio Recorder */}
+                                {/* Field 3: Attachment File Uploader (File, Image, PDF, Video) */}
                                 <div className="space-y-2.5">
                                     <div className="flex items-center justify-between">
                                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                                            3. Attachment (PDF, Audio, Video, Image, File)
+                                            3. Attachment File (PDF, Image, Video, Sheet Music)
                                         </label>
                                         {lessonForm.material_url && (
                                             <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
@@ -3163,51 +3275,17 @@ export default function InventoryLibrary() {
                                         )}
                                     </div>
                                     
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {/* Option A: Select File */}
-                                        <label className="flex flex-col items-center justify-center p-3.5 border border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/20 transition-all select-none text-center group">
-                                            <UploadCloud className="size-5 text-slate-400 group-hover:text-amber-500 mb-1 transition-colors" />
-                                            <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Upload File</span>
-                                            <span className="text-[9px] text-slate-400">PDF, Audio, Video, Image</span>
-                                            <input 
-                                                type="file" 
-                                                className="hidden"
-                                                accept=".pdf,audio/*,video/*,image/*"
-                                                onChange={handleFileUpload}
-                                            />
-                                        </label>
-
-                                        {/* Option B: Record Audio Directly */}
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowAudioRecorder(prev => !prev)}
-                                            className={`flex flex-col items-center justify-center p-3.5 border border-dashed rounded-xl cursor-pointer transition-all select-none text-center group ${
-                                                showAudioRecorder
-                                                    ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-2 ring-amber-400/20'
-                                                    : 'border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 bg-slate-50/50 dark:bg-slate-950/20 text-slate-700 dark:text-slate-300'
-                                            }`}
-                                        >
-                                            <Mic className={`size-5 mb-1 transition-transform group-hover:scale-110 ${showAudioRecorder ? 'text-amber-500' : 'text-slate-400'}`} />
-                                            <span className="text-[10px] font-extrabold uppercase tracking-wider">
-                                                {showAudioRecorder ? 'Hide Recorder' : 'Record Audio'}
-                                            </span>
-                                            <span className="text-[9px] text-slate-400">Live mic recording</span>
-                                        </button>
-                                    </div>
-
-                                    {/* Embedded In-Browser Audio Recorder */}
-                                    {showAudioRecorder && (
-                                        <div className="p-3 bg-amber-50/60 dark:bg-slate-800/80 rounded-2xl border border-amber-300/60 dark:border-amber-500/30 animate-in fade-in duration-200">
-                                            <AudioRecorderWidget
-                                                onAudioRecorded={async (recordedFile) => {
-                                                    await uploadFile(recordedFile);
-                                                    setShowAudioRecorder(false);
-                                                }}
-                                                onCancel={() => setShowAudioRecorder(false)}
-                                                label="Record Audio Lesson"
-                                            />
-                                        </div>
-                                    )}
+                                    <label className="flex flex-col items-center justify-center p-3.5 border border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/20 transition-all select-none text-center group">
+                                        <UploadCloud className="size-5 text-slate-400 group-hover:text-amber-500 mb-1 transition-colors" />
+                                        <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Upload File</span>
+                                        <span className="text-[9px] text-slate-400">PDF, Notation Image, Sheet Music, Video</span>
+                                        <input 
+                                            type="file" 
+                                            className="hidden"
+                                            accept=".pdf,audio/*,video/*,image/*"
+                                            onChange={handleFileUpload}
+                                        />
+                                    </label>
 
                                     {uploadProgress !== null && (
                                         <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
@@ -3247,10 +3325,80 @@ export default function InventoryLibrary() {
                                     )}
                                 </div>
 
-                                {/* Field 4: Clickable Link */}
+                                {/* Field 4: Recorded Audio / Voice Guide (Separated Live Mic Recording) */}
+                                <div className="space-y-2.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                            4. Recorded Audio / Voice Guide
+                                        </label>
+                                        {lessonForm.audio_url && (
+                                            <span className="text-[9px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                                                <Music className="size-2.5" /> Audio Attached
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAudioRecorder(prev => !prev)}
+                                        className={`w-full flex flex-col items-center justify-center p-3.5 border border-dashed rounded-xl cursor-pointer transition-all select-none text-center group ${
+                                            showAudioRecorder
+                                                ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-2 ring-amber-400/20'
+                                                : 'border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 bg-slate-50/50 dark:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                    >
+                                        <Mic className={`size-5 mb-1 transition-transform group-hover:scale-110 ${showAudioRecorder ? 'text-amber-500' : 'text-slate-400'}`} />
+                                        <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                                            {showAudioRecorder ? 'Hide Audio Recorder' : lessonForm.audio_url ? 'Re-record Audio Guide' : 'Record Audio Guide'}
+                                        </span>
+                                        <span className="text-[9px] text-slate-400">Live mic recording for flute demo or vocal bol</span>
+                                    </button>
+
+                                    {/* Embedded In-Browser Audio Recorder */}
+                                    {showAudioRecorder && (
+                                        <div className="p-3 bg-amber-50/60 dark:bg-slate-800/80 rounded-2xl border border-amber-300/60 dark:border-amber-500/30 animate-in fade-in duration-200">
+                                            <AudioRecorderWidget
+                                                onAudioRecorded={async (recordedFile) => {
+                                                    await uploadAudioFile(recordedFile);
+                                                    setShowAudioRecorder(false);
+                                                }}
+                                                onCancel={() => setShowAudioRecorder(false)}
+                                                label="Record Audio Guide"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {audioUploadProgress !== null && (
+                                        <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                            <div className="bg-[#ecb613] h-1.5 transition-all duration-300" style={{ width: `${audioUploadProgress}%` }} />
+                                        </div>
+                                    )}
+
+                                    {lessonForm.audio_url && (
+                                        <div className="p-3 bg-amber-50/60 dark:bg-slate-800/40 border border-amber-200/70 dark:border-amber-500/30 rounded-xl flex items-center justify-between gap-4 text-[10px] font-bold font-mono text-slate-600 dark:text-slate-300">
+                                            <div className="flex items-center gap-2 truncate pr-2 min-w-0">
+                                                <Music className="size-4 text-amber-500 shrink-0" />
+                                                <span className="truncate leading-none">Recorded Audio Demo</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <audio controls src={lessonForm.audio_url} className="h-7 w-40 sm:w-48" />
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setLessonForm(prev => ({ ...prev, audio_url: '' }))}
+                                                    className="p-1 hover:bg-red-500/10 rounded-lg text-red-500 transition-all shrink-0 cursor-pointer"
+                                                    title="Remove audio recording"
+                                                >
+                                                    <X className="size-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Field 5: Clickable Link */}
                                 <div className="space-y-1.5">
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                                        4. Clickable Link (URL)
+                                        5. Clickable Link (URL)
                                     </label>
                                     <div className="relative">
                                         <Globe className="size-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -3264,10 +3412,10 @@ export default function InventoryLibrary() {
                                     </div>
                                 </div>
 
-                                {/* Field 5: Learning Checklist */}
+                                {/* Field 6: Learning Checklist */}
                                 <div className="space-y-1.5">
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                                        5. Learning Checklist Requirements (One per line)
+                                        6. Learning Checklist Requirements (One per line)
                                     </label>
                                     <textarea 
                                         rows={4}
@@ -3399,9 +3547,9 @@ export default function InventoryLibrary() {
                             )}
 
                             {/* Attachment Details pill / row */}
-                            {selectedLessonPreview.material_url && (
+                            {(selectedLessonPreview.material_url || selectedLessonPreview.audio_url) && (
                                 <div className="flex flex-wrap items-center gap-3 select-none text-[10px] font-extrabold font-mono text-slate-400 uppercase tracking-wider">
-                                    {previewMedia.hasMedia && previewMedia.badgeLabel && (
+                                    {selectedLessonPreview.material_url && previewMedia.hasMedia && previewMedia.badgeLabel && (
                                         <span className="px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-750 text-slate-600 dark:text-slate-300">
                                             {previewMedia.badgeLabel}
                                         </span>
@@ -3416,6 +3564,24 @@ export default function InventoryLibrary() {
                                             💾 {selectedLessonPreview.file_size}
                                         </span>
                                     )}
+                                    {selectedLessonPreview.audio_url && (
+                                        <span className="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                                            <Music className="size-3 text-amber-600" /> Audio Demo Attached
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Recorded Audio Demo Player */}
+                            {selectedLessonPreview.audio_url && (
+                                <div className="p-3.5 bg-amber-50/70 dark:bg-slate-800/80 border border-amber-200/80 dark:border-amber-500/30 rounded-2xl space-y-1.5">
+                                    <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                                        <span className="flex items-center gap-1.5">
+                                            <Music className="size-3.5 text-amber-600" />
+                                            Voice / Audio Guide
+                                        </span>
+                                    </div>
+                                    <audio controls src={selectedLessonPreview.audio_url} className="w-full h-8" />
                                 </div>
                             )}
 

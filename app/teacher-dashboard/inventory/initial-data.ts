@@ -32,6 +32,7 @@ export interface CourseLesson {
     lesson_number: number;
     material_type: string; // 'pdf' | 'video' | 'youtube_url' | 'audio' | 'note' | 'checklist' | 'article'
     material_url?: string;
+    audio_url?: string;
     file_name?: string;
     file_size?: string;
     duration?: string;

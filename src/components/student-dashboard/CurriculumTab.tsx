@@ -103,7 +103,7 @@ export default function CurriculumTab({
     const [isMobileViewerOpen, setIsMobileViewerOpen] = useState(false);
     const [mobileClassmatesOpen, setMobileClassmatesOpen] = useState(false);
     const desktopViewerRef = useRef<HTMLDivElement>(null);
-    const lastSelectedRowRef = useRef<HTMLDivElement | null>(null);
+    const lastSelectedRowRef = useRef<HTMLElement | null>(null);
 
     const isOnline = classroom?.description?.includes('[delivery_format:online]');
     const isOffline = classroom?.description?.includes('[delivery_format:offline]');
@@ -122,8 +122,20 @@ export default function CurriculumTab({
         }
     }, [isMobileViewerOpen]);
 
+    // Close mobile viewer drawer on Escape key
+    useEffect(() => {
+        if (!isMobileViewerOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                handleCloseMobileViewer();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isMobileViewerOpen]);
+
     // Handle topic selection
-    const handleSelectTopic = (lesson: any, rowElement?: HTMLDivElement | null) => {
+    const handleSelectTopic = (lesson: any, rowElement?: HTMLElement | null) => {
         setSelectedTopic(lesson);
         if (rowElement) {
             lastSelectedRowRef.current = rowElement;
@@ -451,7 +463,7 @@ export default function CurriculumTab({
                         </div>
                     </div>
                     
-                    <div className="p-4 sm:p-6">
+                    <div className="p-3 sm:p-6">
                         {filteredModules.length === 0 ? (
                             <div className="py-12 text-center text-slate-400">
                                 {searchQuery.trim() !== '' ? (
@@ -545,7 +557,7 @@ export default function CurriculumTab({
                                                     <span className={`w-2 h-5 ${style.accent} rounded-full shrink-0 group-hover:scale-y-110 transition-transform`} />
                                                     <div className="flex items-center gap-2 flex-wrap min-w-0">
                                                         {style.icon}
-                                                        <h3 className="font-black text-xs sm:text-sm text-slate-800 tracking-wide uppercase truncate">
+                                                        <h3 className="font-black text-xs sm:text-sm text-slate-800 tracking-wide uppercase break-words">
                                                             {cat.name}
                                                         </h3>
                                                         <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200 shrink-0">
@@ -575,8 +587,8 @@ export default function CurriculumTab({
                                                     <button
                                                         type="button"
                                                         onClick={() => setExpandedCategories(prev => ({ ...prev, [cat.id]: !isCatExpanded }))}
-                                                        className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-white/60 transition-colors cursor-pointer"
-                                                        aria-label={`Toggle ${cat.name}`}
+                                                        className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-white/60 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+                                                        aria-label={`Toggle category ${cat.name}`}
                                                     >
                                                         <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCatExpanded ? '' : '-rotate-90'}`} />
                                                     </button>
@@ -585,7 +597,7 @@ export default function CurriculumTab({
 
                                             {/* Category Modules */}
                                             {isCatExpanded && (
-                                                <div className="p-3 sm:p-4 space-y-3 bg-white/60">
+                                                <div className="p-2 sm:p-4 space-y-2.5 sm:space-y-3 bg-white/60">
                                                     {cat.modules.map((module) => {
                                                         const isModExpanded = searchQuery.trim() !== '' ? true : !!expandedModules[module.id];
                                                         const chapters = filteredChapters.filter(c => c.module_id === module.id);
@@ -595,26 +607,29 @@ export default function CurriculumTab({
                                                             <div key={module.id} className="border border-slate-150 rounded-2xl overflow-hidden transition-all shadow-xs bg-white">
                                                                 {/* Module Row */}
                                                                 <button 
+                                                                    type="button"
                                                                     onClick={() => setExpandedModules(prev => ({ ...prev, [module.id]: !prev[module.id] }))}
-                                                                    className="w-full flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 bg-slate-50/60 hover:bg-slate-100/70 text-left border-b border-slate-100 transition-colors cursor-pointer"
+                                                                    className="w-full min-h-[44px] flex items-center justify-between gap-3 px-3 sm:px-5 py-3 sm:py-4 bg-slate-50/60 hover:bg-slate-100/70 text-left border-b border-slate-100 transition-colors cursor-pointer"
                                                                     aria-expanded={isModExpanded}
                                                                 >
-                                                                    <div className="min-w-0 flex-1 pr-4">
+                                                                    <div className="min-w-0 flex-1">
                                                                         <div className="flex items-center gap-2 flex-wrap">
                                                                             <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">
                                                                                 {cat.name.toLowerCase() === 'proficiency levels' ? `Level ${module.module_number}` : `Module ${module.module_number}`}
                                                                             </span>
                                                                             {levelBadge}
                                                                         </div>
-                                                                        <h4 className="font-extrabold text-xs md:text-sm text-slate-800 mt-0.5 truncate">{module.title}</h4>
-                                                                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{cleanModuleDescription(module.description)}</p>
+                                                                        <h4 className="font-extrabold text-xs md:text-sm text-slate-800 mt-0.5 break-words leading-snug">{module.title}</h4>
+                                                                        {module.description && (
+                                                                            <p className="text-[10px] text-slate-400 mt-0.5 break-words line-clamp-2">{cleanModuleDescription(module.description)}</p>
+                                                                        )}
                                                                     </div>
                                                                     <ChevronRight className={`w-4.5 h-4.5 text-slate-400 transition-transform shrink-0 ${isModExpanded ? 'rotate-90' : ''}`} />
                                                                 </button>
 
                                             {/* Module Chapters (Collapsed/Expanded) */}
                                             {isModExpanded && (
-                                                <div className="p-3 sm:p-4 bg-white space-y-3">
+                                                <div className="p-2 sm:p-4 bg-white space-y-2.5 sm:space-y-3">
                                                     {chapters.length === 0 ? (
                                                         <p className="text-[10px] text-slate-400 py-2">No chapters published in this module.</p>
                                                     ) : (
@@ -626,19 +641,20 @@ export default function CurriculumTab({
                                                                 <div key={chapter.id} className="border border-slate-100 rounded-xl overflow-hidden">
                                                                     {/* Chapter Row */}
                                                                     <button
+                                                                        type="button"
                                                                         onClick={() => setExpandedChapters(prev => ({ ...prev, [chapter.id]: !prev[chapter.id] }))}
-                                                                        className="w-full flex items-center justify-between px-3.5 sm:px-4 py-2.5 sm:py-3 bg-slate-50/30 hover:bg-slate-50/80 text-left border-b border-slate-100 transition-colors cursor-pointer"
+                                                                        className="w-full min-h-[44px] flex items-center justify-between gap-2.5 px-3 sm:px-4 py-2.5 sm:py-3 bg-slate-50/30 hover:bg-slate-50/80 text-left border-b border-slate-100 transition-colors cursor-pointer"
                                                                         aria-expanded={isChapExpanded}
                                                                     >
-                                                                        <div className="min-w-0 flex-1 pr-4">
-                                                                            <h5 className="font-bold text-xs text-slate-800 truncate">Chapter {chapter.chapter_number}: {chapter.title}</h5>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <h5 className="font-bold text-xs text-slate-800 break-words leading-snug">Chapter {chapter.chapter_number}: {chapter.title}</h5>
                                                                         </div>
-                                                                        <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isChapExpanded ? 'rotate-90' : ''}`} />
+                                                                        <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isChapExpanded ? 'rotate-90' : ''}`} />
                                                                     </button>
 
                                                                     {/* Chapter Lessons */}
                                                                     {isChapExpanded && (
-                                                                        <div className="p-2 bg-white space-y-1.5">
+                                                                        <div className="p-1.5 sm:p-2 bg-white space-y-2 sm:space-y-1.5">
                                                                             {lessons.length === 0 ? (
                                                                                 <p className="text-[10px] text-slate-400 p-2">No lessons published in this chapter.</p>
                                                                             ) : (
@@ -647,26 +663,14 @@ export default function CurriculumTab({
                                                                                     const isCompleted = status === 'completed';
                                                                                     const isLocked = status === 'locked';
                                                                                     const isSelected = selectedTopic?.id === lesson.id;
+                                                                                    const mediaInfo = getCurriculumMediaInfo(lesson);
+                                                                                    const isSpotlight = studentSpotlights?.studentSpotlight?.lesson_id === lesson.id;
 
                                                                                     return (
                                                                                         <div 
                                                                                             key={lesson.id}
-                                                                                            role="button"
-                                                                                            tabIndex={isLocked ? -1 : 0}
-                                                                                            aria-selected={isSelected}
-                                                                                            aria-label={`View lesson ${lesson.lesson_number}: ${lesson.title}`}
-                                                                                            onClick={(e) => {
-                                                                                                if (isLocked) return;
-                                                                                                handleSelectTopic(lesson, e.currentTarget);
-                                                                                            }}
-                                                                                            onKeyDown={(e) => {
-                                                                                                if (isLocked) return;
-                                                                                                if (e.key === 'Enter' || e.key === ' ') {
-                                                                                                    e.preventDefault();
-                                                                                                    handleSelectTopic(lesson, e.currentTarget);
-                                                                                                }
-                                                                                            }}
-                                                                                            className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border transition-all ${
+                                                                                            data-lesson-id={lesson.id}
+                                                                                            className={`p-2.5 sm:p-3 rounded-xl border transition-all flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2.5 sm:gap-3 ${
                                                                                                 isSelected
                                                                                                     ? 'border-amber-500 bg-amber-500/10 ring-2 ring-amber-500/40 shadow-sm'
                                                                                                     : isCompleted
@@ -674,110 +678,111 @@ export default function CurriculumTab({
                                                                                                         : isLocked
                                                                                                             ? 'bg-slate-50/30 border-slate-100 opacity-60'
                                                                                                             : 'bg-white border-slate-100 shadow-2xs hover:border-amber-300'
-                                                                                            } ${!isLocked ? 'cursor-pointer hover:bg-slate-50/70 active:scale-[0.995]' : ''}`}
-                                                                                            data-lesson-id={lesson.id}
+                                                                                            }`}
                                                                                         >
-                                                                                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-                                                                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
+                                                                                            {/* Topic Selection Region: Accessible, distinct button */}
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                disabled={isLocked}
+                                                                                                onClick={(e) => {
+                                                                                                    if (isLocked) return;
+                                                                                                    handleSelectTopic(lesson, e.currentTarget);
+                                                                                                }}
+                                                                                                aria-selected={isSelected}
+                                                                                                aria-label={`View lesson ${lesson.lesson_number}: ${lesson.title}`}
+                                                                                                className={`w-full xl:flex-1 min-w-0 text-left flex items-start gap-2.5 sm:gap-3 group focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-lg ${
+                                                                                                    !isLocked ? 'cursor-pointer' : 'cursor-default'
+                                                                                                }`}
+                                                                                            >
+                                                                                                {/* Status Icon */}
+                                                                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border mt-0.5 transition-transform ${
                                                                                                     isSelected
                                                                                                         ? 'bg-amber-500 text-slate-950 border-amber-600 font-bold shadow-xs'
                                                                                                         : isCompleted
                                                                                                             ? 'bg-emerald-50 border-emerald-150 text-emerald-600'
                                                                                                             : isLocked
                                                                                                                 ? 'bg-slate-100 border-slate-200 text-slate-400'
-                                                                                                                : 'bg-amber-50 border-amber-100 text-amber-500'
+                                                                                                                : 'bg-amber-50 border-amber-100 text-amber-500 group-hover:scale-105'
                                                                                                 }`}>
                                                                                                     {isCompleted ? <Check className="w-4 h-4 stroke-[3]" /> : <Music className="w-4 h-4" />}
                                                                                                 </div>
+
+                                                                                                {/* Title, Badges & Subtitle */}
                                                                                                 <div className="min-w-0 flex-1">
                                                                                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                                                                                        <h6 className={`font-extrabold text-[11px] sm:text-xs truncate ${isSelected ? 'text-amber-950 font-black' : 'text-slate-800'}`}>
+                                                                                                        <h6 className={`font-extrabold text-xs break-words leading-snug ${
+                                                                                                            isSelected ? 'text-amber-950 font-black' : 'text-slate-800'
+                                                                                                        }`}>
                                                                                                             {lesson.lesson_number}. {lesson.title}
                                                                                                         </h6>
                                                                                                         {isSelected && (
-                                                                                                            <span className="hidden sm:inline-block text-[8px] font-black uppercase px-1.5 py-0.2 rounded-md bg-amber-500 text-slate-950 shrink-0 font-mono">
+                                                                                                            <span className="inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-amber-500 text-slate-950 shrink-0 font-mono">
                                                                                                                 Viewing
                                                                                                             </span>
                                                                                                         )}
                                                                                                         {studentSpotlights?.teacherSpotlight?.lesson_id === lesson.id && (
-                                                                                                            <span className="inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-900 border border-amber-300 shrink-0 font-mono">
+                                                                                                            <span className="inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 shrink-0 font-mono">
                                                                                                                 ⭐ Teacher Spotlight
                                                                                                             </span>
                                                                                                         )}
-                                                                                                        {studentSpotlights?.studentSpotlight?.lesson_id === lesson.id && (
-                                                                                                            <span className="inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1.5 py-0.2 rounded-md bg-amber-50 text-amber-800 border border-amber-200 shrink-0 font-mono">
+                                                                                                        {isSpotlight && (
+                                                                                                            <span className="inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 shrink-0 font-mono">
                                                                                                                 ★ My Spotlight
                                                                                                             </span>
                                                                                                         )}
                                                                                                     </div>
-                                                                                                    {(() => {
-                                                                                                        const mediaInfo = getCurriculumMediaInfo(lesson);
-                                                                                                        return (
-                                                                                                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                                                                                                {formatCurriculumSubtitle(lesson)}{mediaInfo.hasMedia && lesson.file_size ? ` · 💾 ${lesson.file_size}` : ''}
-                                                                                                            </p>
-                                                                                                        );
-                                                                                                    })()}
+                                                                                                    <p className="text-[10px] text-slate-400 break-words mt-0.5 leading-normal">
+                                                                                                        {formatCurriculumSubtitle(lesson)}{mediaInfo.hasMedia && lesson.file_size ? ` · 💾 ${lesson.file_size}` : ''}
+                                                                                                    </p>
                                                                                                 </div>
-                                                                                            </div>
+                                                                                            </button>
 
-                                                                                            {/* Actions: Distinct Open vs Done vs Spotlight */}
+                                                                                            {/* Actions: Distinct Spotlight vs Open vs Done/Completed */}
                                                                                             {isLocked ? (
-                                                                                                <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md shrink-0">
+                                                                                                <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1.5 rounded-md shrink-0 self-start xl:self-center">
                                                                                                     Locked
                                                                                                 </span>
                                                                                             ) : (
-                                                                                                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                                                                                <div className="flex items-center gap-2 flex-wrap shrink-0 xl:ml-3 pt-2 border-t border-slate-150/70 xl:border-t-0 xl:pt-0">
                                                                                                     {onToggleStudentSpotlight && (
                                                                                                         <button
                                                                                                             type="button"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                onToggleStudentSpotlight(lesson.id);
-                                                                                                            }}
-                                                                                                            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
-                                                                                                                studentSpotlights?.studentSpotlight?.lesson_id === lesson.id
+                                                                                                            onClick={() => onToggleStudentSpotlight(lesson.id)}
+                                                                                                            className={`min-h-[42px] min-w-[42px] sm:min-h-[38px] sm:min-w-[38px] p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                                                                                                                isSpotlight
                                                                                                                     ? 'bg-amber-100 border-amber-300 text-amber-800 shadow-2xs'
                                                                                                                     : 'bg-white hover:bg-slate-50 text-slate-300 hover:text-amber-500 border-slate-200/80'
                                                                                                             }`}
-                                                                                                            title={studentSpotlights?.studentSpotlight?.lesson_id === lesson.id ? 'My Spotlight (Click to remove)' : 'Set as My Spotlight'}
+                                                                                                            title={isSpotlight ? 'My Spotlight (Click to remove)' : 'Set as My Spotlight'}
+                                                                                                            aria-label={isSpotlight ? `Remove lesson ${lesson.lesson_number} from My Spotlight` : `Add lesson ${lesson.lesson_number} to My Spotlight`}
                                                                                                         >
-                                                                                                            <Star className={`w-3.5 h-3.5 ${studentSpotlights?.studentSpotlight?.lesson_id === lesson.id ? 'fill-amber-500 text-amber-500' : ''}`} />
+                                                                                                            <Star className={`w-4 h-4 ${isSpotlight ? 'fill-amber-500 text-amber-500' : ''}`} />
                                                                                                         </button>
                                                                                                     )}
-                                                                                                    {(lesson.material_url || lesson.link_url) && (
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                setSelectedTopic(lesson);
-                                                                                                                setShowMaterialPopup(true);
-                                                                                                            }}
-                                                                                                            className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-950 rounded-lg text-[10px] font-black transition-all shadow-xs active:scale-95 flex items-center gap-0.5 cursor-pointer"
-                                                                                                            title="Quick Open Study Material"
-                                                                                                        >
-                                                                                                            <span>Open</span>
-                                                                                                            <ChevronRight className="w-3 h-3 text-slate-900" />
-                                                                                                        </button>
-                                                                                                    )}
+
                                                                                                     {!isReadOnly ? (
                                                                                                         <button
                                                                                                             type="button"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                handleToggleLessonComplete(lesson.id, status);
-                                                                                                            }}
-                                                                                                            className={`px-2.5 sm:px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                                                                                            onClick={() => handleToggleLessonComplete(lesson.id, status)}
+                                                                                                            className={`min-h-[42px] sm:min-h-[38px] px-3.5 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
                                                                                                                 isCompleted
                                                                                                                     ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-200'
                                                                                                                     : 'bg-slate-100 hover:bg-amber-500/10 hover:text-amber-700 text-slate-600 border border-slate-200/60'
                                                                                                             }`}
                                                                                                             title={isCompleted ? "Mark Incomplete" : "Mark Complete"}
+                                                                                                            aria-label={isCompleted ? `Mark lesson ${lesson.lesson_number} incomplete` : `Mark lesson ${lesson.lesson_number} complete`}
                                                                                                         >
-                                                                                                            {isCompleted ? '✓' : 'Done'}
+                                                                                                            {isCompleted ? (
+                                                                                                                <>
+                                                                                                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                                                                                    <span>Done</span>
+                                                                                                                </>
+                                                                                                            ) : (
+                                                                                                                <span>Mark Complete</span>
+                                                                                                            )}
                                                                                                         </button>
                                                                                                     ) : (
-                                                                                                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                                                                                                        <span className={`min-h-[42px] sm:min-h-[38px] px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold flex items-center justify-center ${
                                                                                                             isCompleted
                                                                                                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                                                                                                 : 'bg-slate-100 text-slate-500 border border-slate-200'
@@ -946,13 +951,15 @@ export default function CurriculumTab({
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Native Mobile Swipe Handle */}
-                        <div 
+                        <button 
+                            type="button"
                             onClick={handleCloseMobileViewer}
-                            className="w-full pt-3 pb-1 flex justify-center cursor-pointer shrink-0"
+                            className="w-full pt-3 pb-2 flex justify-center cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                             title="Close drawer"
+                            aria-label="Close lesson details drawer"
                         >
                             <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
-                        </div>
+                        </button>
 
                         {/* Scrollable Content inside Drawer */}
                         <div className="flex-1 overflow-y-auto px-5 pt-2 pb-8">

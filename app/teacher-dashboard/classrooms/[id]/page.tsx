@@ -1746,7 +1746,7 @@ export default function ClassroomDashboardPage({
                     supabaseAuth.from('course_categories').select('*').order('category_order', { ascending: true }),
                     supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
                     supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
-                    supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, bullet_points').order('lesson_number', { ascending: true }),
+                    supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, audio_url, bullet_points').order('lesson_number', { ascending: true }),
                     supabaseAuth.from('assignments').select('*').eq('classroom_id', classroomId).order('created_at', { ascending: false })
                 ]);
 
@@ -1850,7 +1850,7 @@ export default function ClassroomDashboardPage({
                         const [seedModules, seedChapters, seedLessons] = await Promise.all([
                             supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
                             supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
-                            supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, bullet_points').order('lesson_number', { ascending: true })
+                            supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, audio_url, bullet_points').order('lesson_number', { ascending: true })
                         ]);
 
                         dbModulesData = seedModules.data || [];
@@ -6429,6 +6429,18 @@ export default function ClassroomDashboardPage({
                                                 <p className="text-xs text-slate-505 dark:text-slate-400 max-w-md leading-relaxed">
                                                     This is a theoretical study and conceptual topic block. Read the instructions and checklist objectives above to complete the learning phase.
                                                 </p>
+                                            </div>
+                                        )}
+
+                                        {selectedTopic.audio_url && (
+                                            <div className="p-3.5 bg-amber-50/70 dark:bg-slate-800/80 border border-amber-200/80 dark:border-amber-500/30 rounded-2xl space-y-1.5">
+                                                <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <Music className="size-3.5 text-amber-600" />
+                                                        Teacher Recorded Voice / Audio Guide
+                                                    </span>
+                                                </div>
+                                                <audio controls src={selectedTopic.audio_url} className="w-full h-8" />
                                             </div>
                                         )}
                                     </div>

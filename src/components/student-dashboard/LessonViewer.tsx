@@ -58,7 +58,7 @@ export default function LessonViewer({
     }
 
     const isCompleted = status === 'completed';
-    const hasResource = !!(topic.material_url || topic.link_url);
+    const hasResource = !!(topic.material_url || topic.link_url || topic.audio_url);
     const activeDescription = description !== undefined ? description : topic?.description;
 
     return (
@@ -82,11 +82,11 @@ export default function LessonViewer({
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
                 <div className="min-w-0 flex-1">
                     {breadcrumb && (
-                        <span className="text-[9px] font-extrabold text-amber-600 uppercase tracking-wider block mb-1 truncate">
+                        <span className="text-[9px] font-extrabold text-amber-600 uppercase tracking-wider block mb-1 break-words">
                             {breadcrumb}
                         </span>
                     )}
-                    <h4 className="font-black text-slate-900 text-sm sm:text-base leading-snug">
+                    <h4 className="font-black text-slate-900 text-sm sm:text-base leading-snug break-words">
                         {topic.lesson_number ? `Topic ${topic.lesson_number}: ` : ''}{topic.title}
                     </h4>
                 </div>
@@ -96,12 +96,13 @@ export default function LessonViewer({
                         <button
                             type="button"
                             onClick={() => onToggleSpotlight(topic.id)}
-                            className={`p-1.5 rounded-xl border transition-all flex items-center gap-1 cursor-pointer text-xs font-bold ${
+                            className={`min-h-[40px] p-2 sm:px-2.5 sm:py-1.5 rounded-xl border transition-all flex items-center gap-1 cursor-pointer text-xs font-bold ${
                                 isStudentSpotlight
                                     ? 'bg-amber-100 border-amber-300 text-amber-800 shadow-2xs'
                                     : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-amber-600 hover:bg-amber-50/50'
                             }`}
                             title={isStudentSpotlight ? 'My Spotlight (Click to remove)' : 'Set as My Spotlight'}
+                            aria-label={isStudentSpotlight ? 'Remove from My Spotlight' : 'Add to My Spotlight'}
                         >
                             <Star className={`w-4 h-4 ${isStudentSpotlight ? 'fill-amber-500 text-amber-500' : ''}`} />
                             <span className="hidden sm:inline text-[10px]">
@@ -121,10 +122,10 @@ export default function LessonViewer({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
-                            aria-label="Close topic viewer"
+                            className="min-h-[40px] min-w-[40px] p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors cursor-pointer flex items-center justify-center"
+                            aria-label="Close lesson details"
                         >
-                            <X className="w-4.5 h-4.5" />
+                            <X className="w-5 h-5" />
                         </button>
                     )}
                 </div>
@@ -214,13 +215,25 @@ export default function LessonViewer({
                 </div>
             )}
 
+            {/* Audio Guide Demo Player */}
+            {topic.audio_url && (
+                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl space-y-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5 font-mono">
+                        <Music className="w-3.5 h-3.5 text-amber-600" />
+                        Teacher Audio Guide
+                    </span>
+                    <audio controls src={topic.audio_url} className="w-full h-8" />
+                </div>
+            )}
+
             {/* Actions Bar */}
             <div className="flex flex-col sm:flex-row gap-2.5 pt-3 border-t border-slate-100">
                 {hasResource ? (
                     <button
                         type="button"
                         onClick={onOpenMaterial}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-950 text-xs font-black rounded-xl shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+                        className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-950 text-xs font-black rounded-xl shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+                        aria-label="Open study material"
                     >
                         <BookOpen className="w-4 h-4 text-slate-900" /> 
                         <span>Open Learning Material</span>
@@ -229,7 +242,7 @@ export default function LessonViewer({
                     <button
                         type="button"
                         disabled
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-xl cursor-not-allowed"
+                        className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-xl cursor-not-allowed"
                     >
                         <Info className="w-4 h-4" /> 
                         <span>No Attached File</span>
@@ -240,7 +253,8 @@ export default function LessonViewer({
                     <button
                         type="button"
                         onClick={() => onToggleComplete(topic.id, status)}
-                        className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer ${
+                        aria-label={isCompleted ? `Mark lesson ${topic.lesson_number} incomplete` : `Mark lesson ${topic.lesson_number} complete`}
+                        className={`min-h-[44px] px-4 py-2.5 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer ${
                             isCompleted
                                 ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
                                 : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
@@ -256,7 +270,7 @@ export default function LessonViewer({
                         )}
                     </button>
                 ) : (
-                    <div className={`px-4 py-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 select-none ${
+                    <div className={`min-h-[44px] px-4 py-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 select-none ${
                         isCompleted
                             ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800'
                             : 'bg-slate-100 border-slate-200 text-slate-500'

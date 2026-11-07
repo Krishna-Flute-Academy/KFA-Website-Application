@@ -942,7 +942,7 @@ export default function StudentDashboardContainer() {
                 supabaseAuth.from('course_chapters').select('id, module_id, title, description, chapter_number').order('chapter_number', { ascending: true }),
 
                 // 7. Lessons
-                supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, material_type, material_url, link_url, file_size, duration, bullet_points').order('lesson_number', { ascending: true }),
+                supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, material_type, material_url, audio_url, link_url, file_size, duration, bullet_points').order('lesson_number', { ascending: true }),
 
                 // 8. Curriculum Progress
                 supabaseAuth.from('student_topic_progress').select('*').eq('student_id', userId),
@@ -3897,6 +3897,17 @@ export default function StudentDashboardContainer() {
                                 );
                             })()}
                         </div>
+
+                        {/* Bottom Audio Demo bar if audio_url is attached */}
+                        {selectedTopic.audio_url && (
+                            <div className="px-5 py-3 bg-amber-500/10 dark:bg-slate-900 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                                <div className="flex items-center gap-2 text-xs font-bold text-amber-900 dark:text-amber-200">
+                                    <Music className="w-4 h-4 text-amber-600 shrink-0" />
+                                    <span>Recorded Voice / Audio Demo:</span>
+                                </div>
+                                <audio controls src={selectedTopic.audio_url} className="h-8 max-w-md w-full" />
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
