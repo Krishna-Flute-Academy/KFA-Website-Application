@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { 
@@ -141,6 +141,8 @@ export default function InventoryLibrary() {
     // File Upload Progress State
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
     const [audioUploadProgress, setAudioUploadProgress] = useState<number | null>(null);
+    const uploadSeqRef = useRef(0);
+    const audioUploadSeqRef = useRef(0);
 
     // In-browser Audio Recorder State
     const [showAudioRecorder, setShowAudioRecorder] = useState(false);
@@ -1067,20 +1069,46 @@ export default function InventoryLibrary() {
 
         if (lesson) {
             setEditingItem(lesson);
-            setLessonForm({
-                title: lesson.title,
-                description: lesson.description || '',
-                lesson_number: lesson.lesson_number,
-                material_type: lesson.material_type || 'file',
-                material_url: lesson.material_url || '',
-                audio_url: lesson.audio_url || '',
-                file_name: lesson.file_name || '',
-                file_size: lesson.file_size || '',
-                duration: lesson.duration || '',
-                link_url: lesson.link_url || '',
-                chapter_id: lesson.chapter_id,
-                bullet_points_text: (lesson.bullet_points || []).join('\n')
-            });
+
+            // Backward compatibility: detect legacy audio topics where voice guide was saved into material_url
+            const isLegacyAudio = !lesson.audio_url && (
+                lesson.material_type === 'audio' ||
+                /(voice[-_]?note|audio[-_]|audio[-_]?guide|\.webm|\.mp3|\.wav|\.m4a|\.ogg)/i.test(lesson.material_url || '') ||
+                /(voice[-_]?note|audio[-_]|audio[-_]?guide|\.webm|\.mp3|\.wav|\.m4a|\.ogg)/i.test(lesson.file_name || '')
+            );
+
+            if (isLegacyAudio) {
+                // Populate audio_url as the voice guide and leave material_url clean for primary learning file
+                setLessonForm({
+                    title: lesson.title,
+                    description: lesson.description || '',
+                    lesson_number: lesson.lesson_number,
+                    material_type: 'file',
+                    material_url: '',
+                    audio_url: lesson.material_url || '',
+                    file_name: '',
+                    file_size: '',
+                    duration: '',
+                    link_url: lesson.link_url || '',
+                    chapter_id: lesson.chapter_id,
+                    bullet_points_text: (lesson.bullet_points || []).join('\n')
+                });
+            } else {
+                setLessonForm({
+                    title: lesson.title,
+                    description: lesson.description || '',
+                    lesson_number: lesson.lesson_number,
+                    material_type: lesson.material_type || 'file',
+                    material_url: lesson.material_url || '',
+                    audio_url: lesson.audio_url || '',
+                    file_name: lesson.file_name || '',
+                    file_size: lesson.file_size || '',
+                    duration: lesson.duration || '',
+                    link_url: lesson.link_url || '',
+                    chapter_id: lesson.chapter_id,
+                    bullet_points_text: (lesson.bullet_points || []).join('\n')
+                });
+            }
         } else {
             setEditingItem(null);
             const numLessons = getChapterLessons(chapterId).length;
@@ -1102,8 +1130,19 @@ export default function InventoryLibrary() {
         setActiveModal('lesson');
     };
 
-    // Generic Attachment File / Recorded Audio Upload
+    // Primary Attachment File Upload (PDF, Image, Video, Sheet Music)
     const uploadFile = async (file: File) => {
+        // Audio selection rule: Audio selection and microphone recording both target the voice guide only
+        const isAudioFile = file.type.startsWith('audio/') || 
+            /\.(mp3|wav|m4a|ogg|aac|flac)$/i.test(file.name) ||
+            (/\.webm$/i.test(file.name) && /(voice|audio|mic)/i.test(file.name));
+
+        if (isAudioFile) {
+            await uploadAudioFile(file);
+            return;
+        }
+
+        const seq = ++uploadSeqRef.current;
         let friendlySize = '';
         if (file.size >= 1024 * 1024) {
             friendlySize = `${(file.size / (1024 * 1024)).toFixed(1)}MB`;
@@ -1115,13 +1154,11 @@ export default function InventoryLibrary() {
 
         // MIME Mapping rule
         let mappedType = 'file';
-        if (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|webm)$/i.test(file.name)) {
-            mappedType = 'audio';
-        } else if (file.type.startsWith('video/') || /\.(mp4|webm|ogv|mov|m4v|mkv)$/i.test(file.name)) {
+        if (file.type.startsWith('video/') || /\.(mp4|webm|ogv|mov|m4v|mkv)$/i.test(file.name)) {
             mappedType = 'video';
         } else if (file.type.includes('pdf') || file.name.toLowerCase().endsWith('.pdf')) {
             mappedType = 'pdf';
-        } else if (file.type.startsWith('image/')) {
+        } else if (file.type.startsWith('image/') || /\.(png|jpe?g|gif|svg|webp|bmp|ico)$/i.test(file.name)) {
             mappedType = 'image';
         }
 
@@ -1135,6 +1172,7 @@ export default function InventoryLibrary() {
                     if (prev >= 100) {
                         clearInterval(interval);
                         setTimeout(() => {
+                            if (seq !== uploadSeqRef.current) return;
                             setUploadProgress(null);
                             const objectUrl = URL.createObjectURL(file);
                             setLessonForm(prevForm => ({
@@ -1168,14 +1206,17 @@ export default function InventoryLibrary() {
                     throw uploadError;
                 }
 
+                if (seq !== uploadSeqRef.current) return;
                 setUploadProgress(85);
 
                 const { data: { publicUrl } } = supabaseAuth.storage
                     .from('inventory_materials')
                     .getPublicUrl(filePath);
 
+                if (seq !== uploadSeqRef.current) return;
                 setUploadProgress(100);
                 setTimeout(() => {
+                    if (seq !== uploadSeqRef.current) return;
                     setUploadProgress(null);
                     setLessonForm(prev => ({
                         ...prev,
@@ -1185,35 +1226,28 @@ export default function InventoryLibrary() {
                         file_size: friendlySize,
                         duration: mappedType.toUpperCase() + ' • ' + friendlySize
                     }));
-                }, 400);
-            } catch (err: any) {
-                console.error(err);
-                // Graceful fallback to Object URL if bucket or credentials fails
-                setTimeout(() => {
-                    setUploadProgress(null);
-                    const objectUrl = URL.createObjectURL(file);
-                    setLessonForm(prev => ({
-                        ...prev,
-                        material_type: mappedType,
-                        material_url: objectUrl,
-                        file_name: file.name,
-                        file_size: friendlySize,
-                        duration: mappedType.toUpperCase() + ' • ' + friendlySize
-                    }));
                 }, 300);
+            } catch (err: any) {
+                console.error('File upload error:', err);
+                if (seq === uploadSeqRef.current) {
+                    setUploadProgress(null);
+                    alert(`Failed to upload learning material: ${err.message || 'Storage upload error'}. Existing content was retained.`);
+                }
             }
         }
     };
 
-    // Simplified Attachment File Upload
+    // Primary Attachment File Selection Handler
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         await uploadFile(file);
+        if (e.target) e.target.value = '';
     };
 
-    // Dedicated Recorded Audio Upload
+    // Dedicated Recorded / Uploaded Audio Voice Guide
     const uploadAudioFile = async (file: File) => {
+        const seq = ++audioUploadSeqRef.current;
         setAudioUploadProgress(20);
 
         if (isUsingFallback) {
@@ -1223,6 +1257,7 @@ export default function InventoryLibrary() {
                     if (prev >= 100) {
                         clearInterval(interval);
                         setTimeout(() => {
+                            if (seq !== audioUploadSeqRef.current) return;
                             setAudioUploadProgress(null);
                             const objectUrl = URL.createObjectURL(file);
                             setLessonForm(prevForm => ({
@@ -1237,7 +1272,7 @@ export default function InventoryLibrary() {
             }, 100);
         } else {
             try {
-                const fileExt = file.name.split('.').pop() || 'webm';
+                const fileExt = file.name.split('.').pop() || (file.type.includes('ogg') ? 'ogg' : file.type.includes('mp4') ? 'm4a' : 'webm');
                 const randomName = `audio_${Math.random().toString(36).substring(2, 12)}_${Date.now()}.${fileExt}`;
                 const filePath = `materials/${randomName}`;
 
@@ -1251,32 +1286,39 @@ export default function InventoryLibrary() {
                     throw uploadError;
                 }
 
+                if (seq !== audioUploadSeqRef.current) return;
                 setAudioUploadProgress(85);
 
                 const { data: { publicUrl } } = supabaseAuth.storage
                     .from('inventory_materials')
                     .getPublicUrl(filePath);
 
+                if (seq !== audioUploadSeqRef.current) return;
                 setAudioUploadProgress(100);
                 setTimeout(() => {
+                    if (seq !== audioUploadSeqRef.current) return;
                     setAudioUploadProgress(null);
                     setLessonForm(prev => ({
                         ...prev,
                         audio_url: publicUrl
                     }));
-                }, 400);
+                }, 300);
             } catch (err: any) {
                 console.error('Audio upload error:', err);
-                setTimeout(() => {
+                if (seq === audioUploadSeqRef.current) {
                     setAudioUploadProgress(null);
-                    const objectUrl = URL.createObjectURL(file);
-                    setLessonForm(prev => ({
-                        ...prev,
-                        audio_url: objectUrl
-                    }));
-                }, 300);
+                    alert(`Failed to upload voice guide: ${err.message || 'Storage upload error'}. Existing audio was retained.`);
+                }
             }
         }
+    };
+
+    // Voice Guide Audio File Selection Handler
+    const handleAudioFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        await uploadAudioFile(file);
+        if (e.target) e.target.value = '';
     };
 
     // Save Lesson card details
@@ -1303,14 +1345,14 @@ export default function InventoryLibrary() {
 
         const editedPayload = {
             title: lessonForm.title,
-            description: lessonForm.description,
-            material_type: lessonForm.material_type,
-            material_url: lessonForm.material_url,
+            description: lessonForm.description || '',
+            material_type: lessonForm.material_type || 'file',
+            material_url: lessonForm.material_url || null,
             audio_url: lessonForm.audio_url || null,
-            file_name: lessonForm.file_name,
-            file_size: lessonForm.file_size,
-            duration: lessonForm.duration,
-            link_url: lessonForm.link_url,
+            file_name: lessonForm.file_name || null,
+            file_size: lessonForm.file_size || null,
+            duration: lessonForm.duration || null,
+            link_url: lessonForm.link_url || null,
             chapter_id: lessonForm.chapter_id,
             bullet_points: parsedBulletPoints
         };
@@ -3277,12 +3319,14 @@ export default function InventoryLibrary() {
                                     
                                     <label className="flex flex-col items-center justify-center p-3.5 border border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/20 transition-all select-none text-center group">
                                         <UploadCloud className="size-5 text-slate-400 group-hover:text-amber-500 mb-1 transition-colors" />
-                                        <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Upload File</span>
+                                        <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                                            {lessonForm.material_url ? 'Replace Learning File' : 'Upload File'}
+                                        </span>
                                         <span className="text-[9px] text-slate-400">PDF, Notation Image, Sheet Music, Video</span>
                                         <input 
                                             type="file" 
                                             className="hidden"
-                                            accept=".pdf,audio/*,video/*,image/*"
+                                            accept=".pdf,video/*,image/*,.mp4,.mov,.m4v,.mkv,.png,.jpg,.jpeg,.webp,.svg"
                                             onChange={handleFileUpload}
                                         />
                                     </label>
@@ -3325,7 +3369,7 @@ export default function InventoryLibrary() {
                                     )}
                                 </div>
 
-                                {/* Field 4: Recorded Audio / Voice Guide (Separated Live Mic Recording) */}
+                                {/* Field 4: Recorded Audio / Voice Guide (Separated Live Mic Recording & Upload) */}
                                 <div className="space-y-2.5">
                                     <div className="flex items-center justify-between">
                                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
@@ -3338,21 +3382,37 @@ export default function InventoryLibrary() {
                                         )}
                                     </div>
 
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowAudioRecorder(prev => !prev)}
-                                        className={`w-full flex flex-col items-center justify-center p-3.5 border border-dashed rounded-xl cursor-pointer transition-all select-none text-center group ${
-                                            showAudioRecorder
-                                                ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-2 ring-amber-400/20'
-                                                : 'border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 bg-slate-50/50 dark:bg-slate-950/20 text-slate-700 dark:text-slate-300'
-                                        }`}
-                                    >
-                                        <Mic className={`size-5 mb-1 transition-transform group-hover:scale-110 ${showAudioRecorder ? 'text-amber-500' : 'text-slate-400'}`} />
-                                        <span className="text-[10px] font-extrabold uppercase tracking-wider">
-                                            {showAudioRecorder ? 'Hide Audio Recorder' : lessonForm.audio_url ? 'Re-record Audio Guide' : 'Record Audio Guide'}
-                                        </span>
-                                        <span className="text-[9px] text-slate-400">Live mic recording for flute demo or vocal bol</span>
-                                    </button>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowAudioRecorder(prev => !prev)}
+                                            className={`flex flex-col items-center justify-center p-3.5 border border-dashed rounded-xl cursor-pointer transition-all select-none text-center group ${
+                                                showAudioRecorder
+                                                    ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-2 ring-amber-400/20'
+                                                    : 'border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 bg-slate-50/50 dark:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                                            }`}
+                                        >
+                                            <Mic className={`size-5 mb-1 transition-transform group-hover:scale-110 ${showAudioRecorder ? 'text-amber-500' : 'text-slate-400'}`} />
+                                            <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                                                {showAudioRecorder ? 'Hide Audio Recorder' : lessonForm.audio_url ? 'Re-record Audio Guide' : 'Record Audio Guide'}
+                                            </span>
+                                            <span className="text-[9px] text-slate-400">Live mic recording</span>
+                                        </button>
+
+                                        <label className="flex flex-col items-center justify-center p-3.5 border border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/20 transition-all select-none text-center group">
+                                            <UploadCloud className="size-5 text-slate-400 group-hover:text-amber-500 mb-1 transition-colors" />
+                                            <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                                                {lessonForm.audio_url ? 'Replace Audio File' : 'Upload Audio File'}
+                                            </span>
+                                            <span className="text-[9px] text-slate-400">MP3, WAV, M4A, WebM</span>
+                                            <input 
+                                                type="file" 
+                                                className="hidden"
+                                                accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm,.aac,.flac"
+                                                onChange={handleAudioFileUpload}
+                                            />
+                                        </label>
+                                    </div>
 
                                     {/* Embedded In-Browser Audio Recorder */}
                                     {showAudioRecorder && (
@@ -3381,12 +3441,13 @@ export default function InventoryLibrary() {
                                                 <span className="truncate leading-none">Recorded Audio Demo</span>
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
-                                                <audio controls src={lessonForm.audio_url} className="h-7 w-40 sm:w-48" />
+                                                <audio controls src={lessonForm.audio_url} preload="metadata" aria-label="Recorded Audio Demo" className="h-7 w-40 sm:w-48" />
                                                 <button 
                                                     type="button" 
                                                     onClick={() => setLessonForm(prev => ({ ...prev, audio_url: '' }))}
                                                     className="p-1 hover:bg-red-500/10 rounded-lg text-red-500 transition-all shrink-0 cursor-pointer"
                                                     title="Remove audio recording"
+                                                    aria-label="Remove audio guide"
                                                 >
                                                     <X className="size-3.5" />
                                                 </button>
@@ -3547,7 +3608,7 @@ export default function InventoryLibrary() {
                             )}
 
                             {/* Attachment Details pill / row */}
-                            {(selectedLessonPreview.material_url || selectedLessonPreview.audio_url) && (
+                            {(selectedLessonPreview.material_url || previewMedia.audioUrl) && (
                                 <div className="flex flex-wrap items-center gap-3 select-none text-[10px] font-extrabold font-mono text-slate-400 uppercase tracking-wider">
                                     {selectedLessonPreview.material_url && previewMedia.hasMedia && previewMedia.badgeLabel && (
                                         <span className="px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-750 text-slate-600 dark:text-slate-300">
@@ -3564,7 +3625,7 @@ export default function InventoryLibrary() {
                                             💾 {selectedLessonPreview.file_size}
                                         </span>
                                     )}
-                                    {selectedLessonPreview.audio_url && (
+                                    {previewMedia.audioUrl && (
                                         <span className="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center gap-1">
                                             <Music className="size-3 text-amber-600" /> Audio Demo Attached
                                         </span>
@@ -3573,7 +3634,7 @@ export default function InventoryLibrary() {
                             )}
 
                             {/* Recorded Audio Demo Player */}
-                            {selectedLessonPreview.audio_url && (
+                            {previewMedia.audioUrl && (
                                 <div className="p-3.5 bg-amber-50/70 dark:bg-slate-800/80 border border-amber-200/80 dark:border-amber-500/30 rounded-2xl space-y-1.5">
                                     <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
                                         <span className="flex items-center gap-1.5">
@@ -3581,13 +3642,13 @@ export default function InventoryLibrary() {
                                             Voice / Audio Guide
                                         </span>
                                     </div>
-                                    <audio controls src={selectedLessonPreview.audio_url} className="w-full h-8" />
+                                    <audio controls src={previewMedia.audioUrl} preload="metadata" aria-label="Topic Voice Guide" className="w-full h-8" />
                                 </div>
                             )}
 
                             {/* Action Buttons */}
                             <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                                {selectedLessonPreview.material_url && (
+                                {selectedLessonPreview.material_url && (!previewMedia.isAudio || selectedLessonPreview.audio_url) && (
                                     <button 
                                         onClick={(e) => {
                                             setSelectedLessonPreview(null);

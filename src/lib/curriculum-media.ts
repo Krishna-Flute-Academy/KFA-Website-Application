@@ -15,6 +15,8 @@ export interface CurriculumMediaInfo {
     isPdf: boolean;
     isAudio: boolean;
     isImage: boolean;
+    hasAudioGuide: boolean;
+    audioUrl: string | null;
     videoDuration: string | null; // e.g. "08:45"
     badgeLabel: string | null;    // e.g. "VIDEO • 08:45", "VIDEO", "PDF", "AUDIO", or null
 }
@@ -71,8 +73,20 @@ export const detectMaterialType = (
     }
 
     const path = getUrlPath(rawUrl);
+    const declared = cleanString(declaredMaterialType).toLowerCase();
+    const isAudioHint = declared === 'audio' ||
+        /(voice[-_]?note|audio[-_]|audio[-_]?guide|mic[-_]?rec|\baudio\b)/i.test(path) ||
+        /(voice[-_]?note|audio[-_]|audio[-_]?guide|mic[-_]?rec|\baudio\b)/i.test(rawUrl);
 
-    if (/\.(mp4|webm|ogv|mov|m4v|mkv)$/i.test(path)) {
+    // .webm is a container that may contain audio-only (e.g. microphone voice notes) or video
+    if (/\.webm$/i.test(path)) {
+        if (isAudioHint) {
+            return 'audio';
+        }
+        return 'video';
+    }
+
+    if (/\.(mp4|ogv|mov|m4v|mkv)$/i.test(path)) {
         return 'video';
     }
     if (/\.pdf$/i.test(path)) {
@@ -84,8 +98,6 @@ export const detectMaterialType = (
     if (/\.(png|jpe?g|gif|svg|webp|bmp|ico)$/i.test(path)) {
         return 'image';
     }
-
-    const declared = cleanString(declaredMaterialType).toLowerCase();
 
     // If it's a web/reference URL (starts with http:// or https://)
     if (/^https?:\/\//i.test(rawUrl)) {
@@ -142,12 +154,15 @@ export const getCurriculumMediaInfo = (lesson: any): CurriculumMediaInfo => {
             isPdf: false,
             isAudio: false,
             isImage: false,
+            hasAudioGuide: false,
+            audioUrl: null,
             videoDuration: null,
             badgeLabel: null
         };
     }
 
     const materialUrl = cleanString(lesson.material_url);
+    const audioUrl = cleanString(lesson.audio_url);
     const linkUrl = cleanString(lesson.link_url);
     const rawType = cleanString(lesson.material_type).toLowerCase();
     const rawFileName = cleanString(lesson.file_name).toLowerCase();
@@ -159,10 +174,18 @@ export const getCurriculumMediaInfo = (lesson: any): CurriculumMediaInfo => {
     // Also check rawFileName if file_name has extension
     let detectedFromFileName: DetectedMaterialType = 'none';
     if (rawFileName) {
-        if (/\.(mp4|webm|mov|m4v|ogv|mkv)$/i.test(rawFileName)) detectedFromFileName = 'video';
-        else if (/\.pdf$/i.test(rawFileName)) detectedFromFileName = 'pdf';
-        else if (/\.(mp3|wav|m4a|ogg|aac|flac)$/i.test(rawFileName)) detectedFromFileName = 'audio';
-        else if (/\.(png|jpe?g|gif|svg|webp)$/i.test(rawFileName)) detectedFromFileName = 'image';
+        if (/\.(mp4|mov|m4v|ogv|mkv)$/i.test(rawFileName)) {
+            detectedFromFileName = 'video';
+        } else if (/\.webm$/i.test(rawFileName)) {
+            const isAudioHint = rawType === 'audio' || /(voice[-_]?note|audio[-_]?guide|mic[-_]?rec|\baudio\b)/i.test(rawFileName);
+            detectedFromFileName = isAudioHint ? 'audio' : 'video';
+        } else if (/\.pdf$/i.test(rawFileName)) {
+            detectedFromFileName = 'pdf';
+        } else if (/\.(mp3|wav|m4a|ogg|aac|flac)$/i.test(rawFileName)) {
+            detectedFromFileName = 'audio';
+        } else if (/\.(png|jpe?g|gif|svg|webp)$/i.test(rawFileName)) {
+            detectedFromFileName = 'image';
+        }
     }
 
     let isVideo = false;
@@ -183,15 +206,24 @@ export const getCurriculumMediaInfo = (lesson: any): CurriculumMediaInfo => {
         isImage = true;
     }
 
+    // Determine voice guide presence: dedicated audio_url OR legacy audio stored in material_url
+    const hasAudioGuide = !!audioUrl || (isAudio && !isVideo && !isPdf && !isImage);
+    const resolvedAudioUrl = audioUrl || (isAudio ? materialUrl : null);
+
+    // If no primary file media exists but audio_url is attached, classify topic media as audio
+    if (!isVideo && !isPdf && !isAudio && !isImage && audioUrl) {
+        isAudio = true;
+    }
+
     const hasMedia = isVideo || isPdf || isAudio || isImage;
     const mediaType: 'video' | 'pdf' | 'audio' | 'image' | null = isVideo 
         ? 'video' 
         : isPdf 
         ? 'pdf' 
-        : isAudio 
-        ? 'audio' 
         : isImage 
         ? 'image' 
+        : isAudio 
+        ? 'audio' 
         : null;
 
     // Only extract video duration if a real video exists
@@ -202,10 +234,10 @@ export const getCurriculumMediaInfo = (lesson: any): CurriculumMediaInfo => {
         badgeLabel = videoDuration ? `VIDEO • ${videoDuration}` : 'VIDEO';
     } else if (isPdf) {
         badgeLabel = 'PDF';
-    } else if (isAudio) {
-        badgeLabel = 'AUDIO';
     } else if (isImage) {
         badgeLabel = 'IMAGE';
+    } else if (isAudio) {
+        badgeLabel = 'AUDIO';
     }
 
     return {
@@ -215,6 +247,8 @@ export const getCurriculumMediaInfo = (lesson: any): CurriculumMediaInfo => {
         isPdf,
         isAudio,
         isImage,
+        hasAudioGuide,
+        audioUrl: resolvedAudioUrl,
         videoDuration,
         badgeLabel
     };
@@ -225,6 +259,7 @@ export const getCurriculumMediaInfo = (lesson: any): CurriculumMediaInfo => {
  * E.g.
  * - No media: "Easy"
  * - PDF: "PDF • Easy"
+ * - PDF with Voice Guide: "PDF + Audio • Easy"
  * - Real Video with duration: "VIDEO • 08:45 • Easy"
  * - Real Video without duration: "VIDEO • Easy"
  */
@@ -233,6 +268,9 @@ export const formatCurriculumSubtitle = (lesson: any): string => {
     const difficulty = cleanString(lesson?.difficulty) || 'Easy';
 
     if (info.badgeLabel) {
+        if (info.hasAudioGuide && info.badgeLabel !== 'AUDIO') {
+            return `${info.badgeLabel} + Audio • ${difficulty}`;
+        }
         return `${info.badgeLabel} • ${difficulty}`;
     }
     return difficulty;

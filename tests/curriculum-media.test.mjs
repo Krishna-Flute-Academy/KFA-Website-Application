@@ -233,4 +233,83 @@ describe('Curriculum Media Validation & Badges', () => {
         const subtitle = formatCurriculumSubtitle(lesson);
         assert.equal(subtitle, 'Easy');
     });
+
+    test('WebM audio voice note is classified as AUDIO, not VIDEO', () => {
+        // Recorded voice note URL
+        assert.equal(detectMaterialType('https://storage.example.com/materials/Voice_Note_1794058897174.webm'), 'audio');
+        assert.equal(detectMaterialType('https://storage.example.com/materials/audio_abc123_1794058897174.webm'), 'audio');
+        assert.equal(detectMaterialType('https://storage.example.com/materials/speech.webm', 'audio'), 'audio');
+
+        // Genuine WebM video remains video
+        assert.equal(detectMaterialType('https://storage.example.com/materials/flute_performance.webm'), 'video');
+        assert.equal(detectMaterialType('https://storage.example.com/materials/lesson_video.webm', 'video'), 'video');
+    });
+
+    test('Legacy audio lesson with Voice_Note webm in material_url displays AUDIO (never VIDEO)', () => {
+        const legacyLesson = {
+            id: 'legacy_01',
+            title: 'We shall overcome',
+            lesson_number: 3,
+            material_type: 'audio',
+            material_url: 'https://sevtycwrmhzyfxvxkkgc.supabase.co/storage/v1/object/public/inventory_materials/materials/rdxnb731s4_1793103837337.webm',
+            file_name: 'Voice_Note_1794058897174.webm',
+            audio_url: null,
+            difficulty: 'Easy'
+        };
+
+        const info = getCurriculumMediaInfo(legacyLesson);
+        assert.equal(info.hasMedia, true);
+        assert.equal(info.isAudio, true);
+        assert.equal(info.isVideo, false, 'Audio WebM must NOT be categorized as video');
+        assert.equal(info.badgeLabel, 'AUDIO');
+        assert.equal(info.hasAudioGuide, true);
+
+        const subtitle = formatCurriculumSubtitle(legacyLesson);
+        assert.equal(subtitle, 'AUDIO • Easy');
+    });
+
+    test('Lesson with both primary PDF and audio voice guide retains primary PDF badge and notes audio', () => {
+        const dualLesson = {
+            id: 'dual_01',
+            title: '4/4 Rhythm Patterns',
+            lesson_number: 2,
+            material_type: 'pdf',
+            material_url: 'https://storage.example.com/materials/notation.pdf',
+            file_name: 'notation.pdf',
+            audio_url: 'https://storage.example.com/materials/audio_guide_123.webm',
+            difficulty: 'Medium'
+        };
+
+        const info = getCurriculumMediaInfo(dualLesson);
+        assert.equal(info.hasMedia, true);
+        assert.equal(info.isPdf, true);
+        assert.equal(info.isVideo, false);
+        assert.equal(info.badgeLabel, 'PDF');
+        assert.equal(info.hasAudioGuide, true);
+        assert.equal(info.audioUrl, 'https://storage.example.com/materials/audio_guide_123.webm');
+
+        const subtitle = formatCurriculumSubtitle(dualLesson);
+        assert.equal(subtitle, 'PDF + Audio • Medium');
+    });
+
+    test('Lesson with audio_url only (no material_url) displays AUDIO badge', () => {
+        const audioOnlyLesson = {
+            id: 'audio_01',
+            title: 'Vocal Bol Demo',
+            lesson_number: 5,
+            material_type: 'file',
+            material_url: null,
+            audio_url: 'https://storage.example.com/materials/vocal_bol.mp3',
+            difficulty: 'Easy'
+        };
+
+        const info = getCurriculumMediaInfo(audioOnlyLesson);
+        assert.equal(info.hasMedia, true);
+        assert.equal(info.isAudio, true);
+        assert.equal(info.badgeLabel, 'AUDIO');
+        assert.equal(info.hasAudioGuide, true);
+
+        const subtitle = formatCurriculumSubtitle(audioOnlyLesson);
+        assert.equal(subtitle, 'AUDIO • Easy');
+    });
 });

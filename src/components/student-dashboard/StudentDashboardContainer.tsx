@@ -3899,13 +3899,19 @@ export default function StudentDashboardContainer() {
                         </div>
 
                         {/* Bottom Audio Demo bar if audio_url is attached */}
-                        {selectedTopic.audio_url && (
+                        {(selectedTopic.audio_url || (selectedTopic.material_type === 'audio' && selectedTopic.material_url)) && (
                             <div className="px-5 py-3 bg-amber-500/10 dark:bg-slate-900 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-3 shrink-0">
                                 <div className="flex items-center gap-2 text-xs font-bold text-amber-900 dark:text-amber-200">
                                     <Music className="w-4 h-4 text-amber-600 shrink-0" />
-                                    <span>Recorded Voice / Audio Demo:</span>
+                                    <span>Teacher Voice / Audio Guide:</span>
                                 </div>
-                                <audio controls src={selectedTopic.audio_url} className="h-8 max-w-md w-full" />
+                                <audio 
+                                    controls 
+                                    src={selectedTopic.audio_url || selectedTopic.material_url} 
+                                    preload="metadata"
+                                    aria-label="Teacher Voice / Audio Guide"
+                                    className="h-8 max-w-md w-full" 
+                                />
                             </div>
                         )}
                     </div>

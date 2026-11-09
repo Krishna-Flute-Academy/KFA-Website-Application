@@ -58,7 +58,9 @@ export default function LessonViewer({
     }
 
     const isCompleted = status === 'completed';
-    const hasResource = !!(topic.material_url || topic.link_url || topic.audio_url);
+    const mediaInfo = getCurriculumMediaInfo(topic);
+    const effectiveAudioUrl = mediaInfo.audioUrl;
+    const hasPrimaryFile = !!(topic.material_url && (!mediaInfo.isAudio || topic.audio_url)) || !!topic.link_url;
     const activeDescription = description !== undefined ? description : topic?.description;
 
     return (
@@ -194,6 +196,12 @@ export default function LessonViewer({
                                  'Attachment'}
                             </span>
                         )}
+                        {mediaInfo.hasAudioGuide && mediaInfo.badgeLabel !== 'AUDIO' && (
+                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                                <Music className="w-3 h-3 text-amber-600" />
+                                Voice Guide Attached
+                            </span>
+                        )}
                     </div>
                 );
             })()}
@@ -215,20 +223,26 @@ export default function LessonViewer({
                 </div>
             )}
 
-            {/* Audio Guide Demo Player */}
-            {topic.audio_url && (
-                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl space-y-1.5">
+            {/* Audio Guide Demo Player (Independent Voice Audio) */}
+            {effectiveAudioUrl && (
+                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl space-y-1.5 overflow-hidden">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5 font-mono">
-                        <Music className="w-3.5 h-3.5 text-amber-600" />
+                        <Music className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                         Teacher Audio Guide
                     </span>
-                    <audio controls src={topic.audio_url} className="w-full h-8" />
+                    <audio 
+                        controls 
+                        src={effectiveAudioUrl} 
+                        preload="metadata"
+                        aria-label="Teacher Audio Guide" 
+                        className="w-full max-w-full h-9 rounded-lg" 
+                    />
                 </div>
             )}
 
             {/* Actions Bar */}
             <div className="flex flex-col sm:flex-row gap-2.5 pt-3 border-t border-slate-100">
-                {hasResource ? (
+                {hasPrimaryFile ? (
                     <button
                         type="button"
                         onClick={onOpenMaterial}
@@ -242,10 +256,11 @@ export default function LessonViewer({
                     <button
                         type="button"
                         disabled
-                        className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-xl cursor-not-allowed"
+                        className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-xl cursor-not-allowed select-none"
+                        aria-label="No primary learning file attached"
                     >
                         <Info className="w-4 h-4" /> 
-                        <span>No Attached File</span>
+                        <span>{effectiveAudioUrl ? 'Audio Guide Only (No File)' : 'No Attached File'}</span>
                     </button>
                 )}
 

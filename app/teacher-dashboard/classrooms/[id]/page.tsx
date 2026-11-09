@@ -6432,15 +6432,21 @@ export default function ClassroomDashboardPage({
                                             </div>
                                         )}
 
-                                        {selectedTopic.audio_url && (
-                                            <div className="p-3.5 bg-amber-50/70 dark:bg-slate-800/80 border border-amber-200/80 dark:border-amber-500/30 rounded-2xl space-y-1.5">
+                                        {(selectedTopic.audio_url || (selectedTopic.material_type === 'audio' && selectedTopic.material_url)) && (
+                                            <div className="p-3.5 bg-amber-50/70 dark:bg-slate-800/80 border border-amber-200/80 dark:border-amber-500/30 rounded-2xl space-y-1.5 overflow-hidden">
                                                 <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
                                                     <span className="flex items-center gap-1.5">
                                                         <Music className="size-3.5 text-amber-600" />
                                                         Teacher Recorded Voice / Audio Guide
                                                     </span>
                                                 </div>
-                                                <audio controls src={selectedTopic.audio_url} className="w-full h-8" />
+                                                <audio 
+                                                    controls 
+                                                    src={selectedTopic.audio_url || selectedTopic.material_url} 
+                                                    preload="metadata"
+                                                    aria-label="Teacher Recorded Voice / Audio Guide"
+                                                    className="w-full max-w-full h-8" 
+                                                />
                                             </div>
                                         )}
                                     </div>
