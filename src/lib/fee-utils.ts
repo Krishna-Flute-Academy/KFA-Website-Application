@@ -824,6 +824,15 @@ export interface StudentCycleCalculationInput {
     overrides?: { id?: string; student_id?: string; target_classroom_id: string; override_date: string; missed_session_date?: string | null; credit_treatment?: string | null; reason?: string | null }[];
     leaveRequests?: { id?: string; student_id?: string; classroom_id?: string; class_date: string; status: string }[];
     cancelledSessions?: { id?: string; classroom_id?: string; date: string; session_date?: string; reason?: string }[];
+    classroomHolidays?: {
+        id?: string;
+        classroom_id: string;
+        holiday_date: string;
+        holiday_type?: string | null;
+        alternative_date?: string | null;
+        reason?: string | null;
+        status?: string | null;
+    }[];
     payments?: { payment_date: string; amount?: number; status?: string; classes_added?: number }[];
     today?: Date;
     attendanceScopeStartDate?: string;
@@ -1030,6 +1039,7 @@ export function evaluateStudentFeeCycle(
         leaveRequests = [],
         payments = [],
         cancelledSessions = [],
+        classroomHolidays = [],
         today = new Date()
     } = input;
 
@@ -1185,7 +1195,27 @@ export function evaluateStudentFeeCycle(
         }
     });
 
-    const classroomIds = new Set(classrooms.map(c => c.id));
+    const classroomIds = new Set(classrooms.map(c => c.id).filter(Boolean));
+    if (classroomIds.size === 0) {
+        batchSchedules.forEach(bs => {
+            if (bs.classroom_id) classroomIds.add(bs.classroom_id);
+        });
+    }
+
+    // Active classroom holidays (Class Off declarations) for this student's classrooms
+    const activeHolidays = (classroomHolidays || [])
+        .filter(h => h && (!h.status || h.status === 'active') && (!h.classroom_id || classroomIds.size === 0 || classroomIds.has(h.classroom_id)))
+        .map(h => ({
+            ...h,
+            holiday_date: String(h.holiday_date || '').split('T')[0],
+            alternative_date: h.alternative_date ? String(h.alternative_date).split('T')[0] : null
+        }));
+    const activeHolidayByDate = new Map<string, typeof activeHolidays[0]>();
+    activeHolidays.forEach(h => {
+        if (h.holiday_date) {
+            activeHolidayByDate.set(h.holiday_date, h);
+        }
+    });
 
     // Batch schedules mapping
     const scheduledDows = new Set<number>();
@@ -1204,7 +1234,15 @@ export function evaluateStudentFeeCycle(
         .filter(a => !a.student_id || a.student_id === studentId)
         .map(a => {
             const physicalDate = (a.date || a.session_date || '').split('T')[0];
-            const onBehalfOf = a.on_behalf_of_date ? a.on_behalf_of_date.split('T')[0] : null;
+            let onBehalfOf = a.on_behalf_of_date ? a.on_behalf_of_date.split('T')[0] : null;
+            if (!onBehalfOf && a.classroom_id) {
+                const linkedHol = activeHolidays.find(
+                    h => h.classroom_id === a.classroom_id && h.alternative_date === physicalDate && h.holiday_type !== 'no_alternative'
+                );
+                if (linkedHol) {
+                    onBehalfOf = linkedHol.holiday_date;
+                }
+            }
             const effectiveDate = onBehalfOf || physicalDate;
             return {
                 ...a,
@@ -1288,7 +1326,8 @@ export function evaluateStudentFeeCycle(
 
         const satisfyingAtt = attendanceByEffectiveDate.get(iterDateStr);
         const physicalAtt = attendanceByPhysicalDate.get(iterDateStr);
-        const isCancelled = cancelledDates.has(iterDateStr);
+        const activeHoliday = activeHolidayByDate.get(iterDateStr);
+        const isCancelled = cancelledDates.has(iterDateStr) || Boolean(activeHoliday && !satisfyingAtt);
         const hasApprovedLeave = approvedLeaveDates.has(iterDateStr);
 
         const shouldProcessSession =
@@ -1299,7 +1338,7 @@ export function evaluateStudentFeeCycle(
             isCancelled;
 
         if (shouldProcessSession) {
-            const classId = satisfyingAtt?.classroom_id || physicalAtt?.classroom_id || sched?.classroom_id || (classrooms[0]?.id ?? '');
+            const classId = satisfyingAtt?.classroom_id || physicalAtt?.classroom_id || activeHoliday?.classroom_id || sched?.classroom_id || (classrooms[0]?.id ?? '');
             const className = (satisfyingAtt as any)?.classroom_name || (physicalAtt as any)?.classroom_name || classroomMap.get(classId) || classrooms[0]?.name || 'Batch Classroom';
             const timeSlot = sched?.start_time
                 ? `${sched.start_time.slice(0, 5)} - ${sched.end_time?.slice(0, 5) || ''}`
@@ -1310,6 +1349,29 @@ export function evaluateStudentFeeCycle(
 
             if (isCancelled) {
                 cancelledCount++;
+                const cancelReason = activeHoliday?.reason || cancelledSessions.find(cs => cs.date === iterDateStr)?.reason;
+                const altDateStr = activeHoliday?.alternative_date;
+                let altDisplay = '';
+                if (altDateStr) {
+                    const [aYr, aMo, aDa] = altDateStr.split('-').map(Number);
+                    altDisplay = formatPrettyDate(new Date(aYr, aMo - 1, aDa));
+                }
+                const statusText = activeHoliday
+                    ? (altDisplay
+                        ? `🚫 Class Off (Alt: ${altDisplay.split(' ').slice(0, 2).join(' ')})`
+                        : activeHoliday.holiday_type === 'alternative_pending'
+                            ? '🚫 Class Off (Alt Pending)'
+                            : '🚫 Class Off')
+                    : '🚫 Class Off';
+                const noteText = activeHoliday
+                    ? `${cancelReason ? `Class off: ${cancelReason}.` : 'Class off declared by teacher/academy.'}${
+                        altDisplay
+                            ? ` Replacement scheduled for ${altDisplay}.`
+                            : activeHoliday.holiday_type === 'alternative_pending'
+                                ? ' Replacement date pending.'
+                                : ' No alternative class.'
+                    }`
+                    : (cancelReason ? `Class off: ${cancelReason}` : 'Class off declared by academy/teacher.');
                 sessions.push({
                     id: `reg-${iterDateStr}-${classId}`,
                     date: iterDateStr,
@@ -1320,11 +1382,11 @@ export function evaluateStudentFeeCycle(
                     classroomName: className,
                     sessionType: 'regular',
                     status: 'cancelled',
-                    statusLabel: '🚫 Class Cancelled',
+                    statusLabel: statusText,
                     creditImpact: 'not_consumed',
-                    creditImpactLabel: '0 classes consumed (cancelled)',
+                    creditImpactLabel: '0 classes consumed (class off)',
                     isDiscrepancy: false,
-                    notes: 'Session cancelled by academy/teacher.'
+                    notes: noteText
                 });
             } else if (satisfyingAtt) {
                 // Scheduled class satisfied by an attendance record (either on same date or on-behalf-of)

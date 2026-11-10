@@ -469,7 +469,7 @@ export default function FeesManagementDashboard() {
 
                     // Batch-fetch all operational records for the loaded students without artificial rolling lower-bound
                     // to ensure authoritative ledger calculation has symmetrical lifetime payment and attendance scope.
-                    const [attRes, ovRes, lvsRes, schedRes] = await Promise.all([
+                    const [attRes, ovRes, lvsRes, schedRes, holidaysRes] = await Promise.all([
                         supabaseAuth
                             .from('attendance')
                             .select('*')
@@ -485,7 +485,11 @@ export default function FeesManagementDashboard() {
                             .eq('status', 'approved'),
                         supabaseAuth
                             .from('batch_schedules')
-                            .select('id, classroom_id, day_of_week, start_time, end_time')
+                            .select('id, classroom_id, day_of_week, start_time, end_time'),
+                        supabaseAuth
+                            .from('classroom_holidays')
+                            .select('id, classroom_id, holiday_date, holiday_type, alternative_date, reason, status')
+                            .eq('status', 'active')
                     ]);
 
                     const newMetrics: Record<string, StudentFeeCycleMetrics> = {};
@@ -503,6 +507,7 @@ export default function FeesManagementDashboard() {
                             attendance: attRes.data || [],
                             overrides: ovRes.data || [],
                             leaveRequests: lvsRes.data || [],
+                            classroomHolidays: holidaysRes.data || [],
                             payments: studentPaymentsMap[s.id] || [],
                             today: now
                         });
@@ -1016,7 +1021,7 @@ export default function FeesManagementDashboard() {
 
             // Fetch complete student history without artificial rolling lower-bound to guarantee
             // symmetrical payment and attendance scope for authoritative fee cycle ledger evaluation
-            const [attRes, ovRes, lvsRes, schedRes] = await Promise.all([
+            const [attRes, ovRes, lvsRes, schedRes, holidaysRes] = await Promise.all([
                 supabaseAuth
                     .from('attendance')
                     .select('*')
@@ -1033,7 +1038,11 @@ export default function FeesManagementDashboard() {
                 supabaseAuth
                     .from('batch_schedules')
                     .select('id, classroom_id, day_of_week, start_time, end_time')
-                    .in('classroom_id', sClassrooms.map(c => c.id).filter(Boolean))
+                    .in('classroom_id', sClassrooms.map(c => c.id).filter(Boolean)),
+                supabaseAuth
+                    .from('classroom_holidays')
+                    .select('id, classroom_id, holiday_date, holiday_type, alternative_date, reason, status')
+                    .eq('status', 'active')
             ]);
 
             // Resolve any historical or alternative classrooms present in attendance records
@@ -1076,11 +1085,13 @@ export default function FeesManagementDashboard() {
                 attendance: enrichedAttendance,
                 overrides: ovRes.data || [],
                 leaveRequests: lvsRes.data || [],
+                classroomHolidays: holidaysRes.data || [],
                 payments: studentPayments,
                 today: now
             });
 
             setLedgerReport(report);
+            setStudentMetricsMap(prev => ({ ...prev, [student.id]: report.metrics }));
         } catch (err) {
             console.error('Error opening fee cycle ledger:', err);
         } finally {

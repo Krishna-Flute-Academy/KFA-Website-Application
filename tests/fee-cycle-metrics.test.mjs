@@ -489,3 +489,51 @@ test('16. Makeup Reconciliation: Direct missed_session_date column linking', () 
     assert.equal(result.metrics.classesAvailable, 1);
 });
 
+test('17. Fee Cycle Ledger: Declared Class Off (classroomHolidays) marks date as Class Off instead of Attendance Missing', () => {
+    const today = new Date(2026, 10, 10, 12, 0, 0); // 10 Nov 2026
+    const ledger = getStudentFeeCycleLedger({
+        student: {
+            id: '415a3448-37d3-4f6c-a7d4-79e56100f244',
+            name: 'prasad Nakka',
+            fees_basis: 'monthly',
+            fees_collection_date: 17,
+            join_date: '2026-07-17'
+        },
+        classrooms: [{ id: '83f78aff-f957-4c2e-9b91-2f29b10ad16b', name: 'Saturday Slot 12 (Online - 7:30 PM)' }],
+        batchSchedules: [{ classroom_id: '83f78aff-f957-4c2e-9b91-2f29b10ad16b', day_of_week: 6 }],
+        attendance: [
+            { student_id: '415a3448-37d3-4f6c-a7d4-79e56100f244', classroom_id: '83f78aff-f957-4c2e-9b91-2f29b10ad16b', date: '2026-10-24', status: 'present' },
+            { student_id: '415a3448-37d3-4f6c-a7d4-79e56100f244', classroom_id: '83f78aff-f957-4c2e-9b91-2f29b10ad16b', date: '2026-10-31', status: 'present' },
+            { student_id: '415a3448-37d3-4f6c-a7d4-79e56100f244', classroom_id: '83f78aff-f957-4c2e-9b91-2f29b10ad16b', date: '2026-11-07', status: 'present' }
+        ],
+        classroomHolidays: [
+            {
+                id: '5d5bc50a-9ffc-46ff-a379-747e0996c390',
+                classroom_id: '83f78aff-f957-4c2e-9b91-2f29b10ad16b',
+                holiday_date: '2026-10-17',
+                holiday_type: 'no_alternative',
+                reason: 'Dushera festival',
+                status: 'active'
+            }
+        ],
+        payments: [{ payment_date: '2026-10-17', status: 'approved', classes_added: 4 }],
+        today
+    });
+
+    assert.equal(ledger.summary.unresolvedSessions, 0, 'Declared Class Off must not be flagged as unresolved');
+    const missingDiag = ledger.diagnostics.find(d => d.type === 'unresolved_session');
+    assert.equal(missingDiag, undefined, 'No Attendance Missing diagnostic for 17 Oct');
+
+    const oct17Session = ledger.sessions.find(s => s.date === '2026-10-17');
+    assert.ok(oct17Session);
+    assert.equal(oct17Session.status, 'cancelled');
+    assert.match(oct17Session.statusLabel, /Class Off/);
+    assert.equal(oct17Session.creditImpact, 'not_consumed');
+    assert.equal(oct17Session.isDiscrepancy, false);
+
+    assert.equal(ledger.summary.consumedClasses, 3);
+    assert.equal(ledger.summary.creditsRemaining, 1);
+    assert.equal(ledger.summary.classesAvailable, 1, '1 upcoming class on 14 Nov remains available');
+});
+
+

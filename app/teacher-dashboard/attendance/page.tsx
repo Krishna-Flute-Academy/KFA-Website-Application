@@ -1189,7 +1189,7 @@ export default function AttendancePage() {
     const handleCancelHoliday = async (holiday: any) => {
         if (!holiday?.id) return;
         const reason = window.prompt(
-            `Cancel declared holiday on ${holiday.holiday_date}?\nPlease enter a cancellation reason (minimum 3 characters):`,
+            `Cancel declared class off on ${holiday.holiday_date}?\nPlease enter a cancellation reason (minimum 3 characters):`,
             'Regular class restored by teacher'
         );
         if (!reason || reason.trim().length < 3) {
@@ -1208,8 +1208,8 @@ export default function AttendancePage() {
             await fetchClassroomHolidays();
             fetchPendingReport();
         } catch (err: any) {
-            console.error('Error cancelling holiday:', err);
-            alert(err?.message || 'Failed to cancel holiday.');
+            console.error('Error cancelling class off:', err);
+            alert(err?.message || 'Failed to cancel class off.');
         }
     };
 
@@ -1868,7 +1868,7 @@ export default function AttendancePage() {
             try {
                 const batchForRoom = activeBatchesOnSelectedDate.find(b => b.id === batchId);
                 if (batchForRoom?.activeHoliday) {
-                    throw new Error(`Cannot record attendance: ${selectedDate} is declared as a holiday for this classroom.`);
+                    throw new Error(`Cannot record attendance: ${selectedDate} is declared as a class off for this classroom.`);
                 }
                 let onBehalfDate = batchOnBehalfOfMap[batchId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
                 if (onBehalfDate) {
@@ -2360,7 +2360,7 @@ export default function AttendancePage() {
             try {
                 const batchForRoom = activeBatchesRef.current.find(b => b.id === classroomId);
                 if (batchForRoom?.activeHoliday) {
-                    throw new Error(`Cannot record attendance: ${selectedDate} is declared as a holiday for this classroom.`);
+                    throw new Error(`Cannot record attendance: ${selectedDate} is declared as a class off for this classroom.`);
                 }
                 const onBehalfDate = batchOnBehalfOfMap[classroomId] || batchForRoom?.alternativeHoliday?.holiday_date || batchForRoom?.linkedHolidayDate || null;
                 const { data: insData, error } = await supabaseAuth
@@ -3452,7 +3452,7 @@ export default function AttendancePage() {
                         </div>
 
                         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full lg:w-auto">
-                            {/* Declare Holiday Button (BR-22 & BR-23) */}
+                            {/* Declare Class Off Button (BR-22 & BR-23) */}
                             <button
                                 type="button"
                                 onClick={() => {
@@ -3467,13 +3467,13 @@ export default function AttendancePage() {
                                     });
                                 }}
                                 className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
-                                title="Declare classroom holiday (Single or Multiple Classes — With or Without Alternative Class)"
+                                title="Declare class off (Single or Multiple Classes — With or Without Alternative Class)"
                             >
                                 <span>🏖️</span>
-                                <span>Declare Holiday</span>
+                                <span>Declare Class Off</span>
                             </button>
 
-                            {/* Holiday Audit Log Button */}
+                            {/* Class Off Audit Log Button */}
                             <button
                                 type="button"
                                 onClick={() => {
@@ -3488,10 +3488,10 @@ export default function AttendancePage() {
                                     });
                                 }}
                                 className="px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
-                                title="View Holiday Declaration & Rescheduling Audit History"
+                                title="View Class Off Declaration & Rescheduling Audit History"
                             >
                                 <span>📋</span>
-                                <span className="hidden xl:inline">Holiday History</span>
+                                <span className="hidden xl:inline">Class Off History</span>
                             </button>
 
                             {/* Audit Trail Button */}
@@ -3795,10 +3795,10 @@ export default function AttendancePage() {
                                                                 {batch.activeHoliday && (
                                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                                                                         {batch.activeHoliday.holiday_type === 'no_alternative'
-                                                                            ? '🏖️ Holiday — No Alternative'
+                                                                            ? '🏖️ Class Off — No Alternative'
                                                                             : batch.activeHoliday.holiday_type === 'alternative_pending'
-                                                                                ? '⏳ Holiday — Alt Pending'
-                                                                                : `🏖️ Holiday — Alt: ${formatLocalDateStr(batch.activeHoliday.alternative_date)}`}
+                                                                                ? '⏳ Class Off — Alt Pending'
+                                                                                : `🏖️ Class Off — Alt: ${formatLocalDateStr(batch.activeHoliday.alternative_date)}`}
                                                                     </span>
                                                                 )}
                                                                 {batch.activeHoliday && (
@@ -3835,14 +3835,14 @@ export default function AttendancePage() {
                                                                     });
                                                                 }}
                                                                 className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-300 text-[10px] font-bold transition-colors cursor-pointer"
-                                                                title="Declare Holiday for this class"
+                                                                title="Declare Class Off for this class"
                                                             >
-                                                                <span>🏖️ Holiday</span>
+                                                                <span>🏖️ Class Off</span>
                                                             </button>
                                                         )}
                                                         {batch.activeHoliday ? (
                                                             <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-1 sm:px-2.5 sm:py-1 bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-full whitespace-nowrap">
-                                                                🔒 Holiday Locked
+                                                                🔒 Class Off Locked
                                                             </span>
                                                         ) : summary && summary.total > 0 ? (
                                                             <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-1 sm:px-2.5 sm:py-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 border border-emerald-100 dark:border-emerald-900 rounded-full whitespace-nowrap">
@@ -3864,17 +3864,17 @@ export default function AttendancePage() {
                                                 {/* Accordion Content */}
                                                 {isExpanded && (
                                                     <div className="border-t border-slate-100 dark:border-slate-800 p-3.5 sm:p-4 bg-slate-50/50 dark:bg-slate-850/20">
-                                                        {/* ── Declared Holiday Banner & Actions (BR-22 & BR-23) ── */}
+                                                        {/* ── Declared Class Off Banner & Actions (BR-22 & BR-23) ── */}
                                                         {batch.activeHoliday && (
                                                             <div className="mb-3.5 p-3.5 sm:p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                                                 <div className="space-y-1">
                                                                     <div className="flex items-center gap-2 flex-wrap">
                                                                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200">
                                                                             {batch.activeHoliday.holiday_type === 'no_alternative'
-                                                                                ? '🏖️ Holiday — No Alternative Class'
+                                                                                ? '🏖️ Class Off — No Alternative Class'
                                                                                 : batch.activeHoliday.holiday_type === 'alternative_pending'
-                                                                                    ? '⏳ Holiday — Alternative Class Pending'
-                                                                                    : '🏖️ Holiday — Alternative Scheduled'}
+                                                                                    ? '⏳ Class Off — Alternative Class Pending'
+                                                                                    : '🏖️ Class Off — Alternative Scheduled'}
                                                                         </span>
                                                                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                                                                             0 Credit Deduction
@@ -3884,7 +3884,7 @@ export default function AttendancePage() {
                                                                         {batch.activeHoliday.holiday_type === 'no_alternative' ? (
                                                                             <>No replacement class or attendance on this date. Unused credits remain intact.</>
                                                                         ) : batch.activeHoliday.holiday_type === 'alternative_pending' ? (
-                                                                            <>Alternative class date &amp; time not set yet. Schedule the alternative date or create a Special Session on behalf of this holiday.</>
+                                                                            <>Alternative class date &amp; time not set yet. Schedule the alternative date or create a Special Session on behalf of this class off.</>
                                                                         ) : (() => {
                                                                             const altDateClean = String(batch.activeHoliday.alternative_date || '').split('T')[0];
                                                                             const linkedSpecialClass = temporaryClasses.find(tc => {
@@ -3976,7 +3976,7 @@ export default function AttendancePage() {
                                                                         onClick={() => handleCancelHoliday(batch.activeHoliday)}
                                                                         className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold text-xs transition-all cursor-pointer"
                                                                     >
-                                                                        Cancel Holiday
+                                                                        Cancel Class Off
                                                                     </button>
                                                                 </div>
                                                             </div>
@@ -3992,7 +3992,7 @@ export default function AttendancePage() {
                                                                         </span>
                                                                     </div>
                                                                     <p className="text-xs font-semibold text-blue-900 dark:text-blue-200">
-                                                                        Attendance recorded in this class counts on behalf of the declared holiday on{' '}
+                                                                        Attendance recorded in this class counts on behalf of the class off on{' '}
                                                                         <strong>{formatLocalDateStr(batch.alternativeHoliday?.holiday_date || batch.linkedHolidayDate!, true)}</strong>.
                                                                         Present/Late/Uninformed Absent deducts <strong>1 credit</strong> (no double deduction, no makeup entitlement).
                                                                     </p>
@@ -4008,7 +4008,7 @@ export default function AttendancePage() {
                                                                     <div className="min-w-0">
                                                                         <div className="flex items-center gap-2 flex-wrap">
                                                                             <span className="font-bold text-slate-900 dark:text-slate-100">
-                                                                                Take this class on behalf of another scheduled or holiday class?
+                                                                                Take this class on behalf of another scheduled or class off session?
                                                                             </span>
                                                                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300">
                                                                                 Class Accounting
@@ -4050,7 +4050,7 @@ export default function AttendancePage() {
                                                                                         const holDateStr = String(h.holiday_date).split('T')[0];
                                                                                         return (
                                                                                             <option key={`hol_${h.id}`} value={`HOLIDAY:${h.id}:${holDateStr}`}>
-                                                                                                🏖️ Holiday on {formatLocalDateStr(holDateStr, true)}{h.classroom_id !== batch.id ? ` — ${classrooms.find(c => c.id === h.classroom_id)?.name || 'Class'}` : ''}
+                                                                                                🏖️ Class Off on {formatLocalDateStr(holDateStr, true)}{h.classroom_id !== batch.id ? ` — ${classrooms.find(c => c.id === h.classroom_id)?.name || 'Class'}` : ''}
                                                                                             </option>
                                                                                         );
                                                                                     })}
@@ -4076,7 +4076,7 @@ export default function AttendancePage() {
                                                                 {batch.activeHoliday && (
                                                                     <div className="mb-2.5 px-3 py-2 rounded-xl bg-amber-100/90 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 flex items-center justify-between gap-2 text-xs font-bold text-amber-900 dark:text-amber-200">
                                                                         <span>
-                                                                            🔒 Attendance is blurred and locked because this class is marked as a Holiday ({batch.activeHoliday.holiday_type === 'no_alternative' ? 'No Alternative' : 'Attendance taken in Alternative Class'}).
+                                                                            🔒 Attendance is blurred and locked because this class is marked as Class Off ({batch.activeHoliday.holiday_type === 'no_alternative' ? 'No Alternative' : 'Attendance taken in Alternative Class'}).
                                                                         </span>
                                                                     </div>
                                                                 )}
@@ -4305,7 +4305,7 @@ export default function AttendancePage() {
                                                                 <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest truncate">{group.name}</span>
                                                                 {groupHoliday && (
                                                                     <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                                                                        🔒 Holiday Locked ({groupHoliday.holiday_type === 'no_alternative' ? 'No Alternative' : 'Alt Class'})
+                                                                        🔒 Class Off Locked ({groupHoliday.holiday_type === 'no_alternative' ? 'No Alternative' : 'Alt Class'})
                                                                     </span>
                                                                 )}
                                                                 <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-wider shrink-0">{group.entries.length} student{group.entries.length !== 1 ? 's' : ''}</span>
@@ -4647,11 +4647,11 @@ export default function AttendancePage() {
                                                                         {session.holidayInfo ? (
                                                                             session.holidayInfo.alternativeStatus === 'not_scheduled' ? (
                                                                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                                                                                    🏖️ Holiday Marked — Alternative Class Not Scheduled Yet
+                                                                                    🏖️ Class Off — Alternative Class Not Scheduled Yet
                                                                                 </span>
                                                                             ) : (
                                                                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
-                                                                                    🏖️ Holiday Marked — Alt Class Attendance Pending ({formatLocalDateStr(session.holidayInfo.alternativeDate!, true)})
+                                                                                    🏖️ Class Off — Alt Class Attendance Pending ({formatLocalDateStr(session.holidayInfo.alternativeDate!, true)})
                                                                                 </span>
                                                                             )
                                                                         ) : session.markedCount === 0 ? (
@@ -5338,7 +5338,7 @@ export default function AttendancePage() {
                                                                                         ? 'bg-rose-50 text-rose-750 dark:bg-rose-955/20 dark:text-rose-455'
                                                                                         : 'bg-amber-50 text-amber-750 dark:bg-amber-955/20 dark:text-amber-455'
                                                                         }`} title={request.cancellation_reason || undefined}>
-                                                                            {request.status === 'cancelled' ? 'Cancelled (Holiday)' : request.status}
+                                                                            {request.status === 'cancelled' ? 'Cancelled (Class Off)' : request.status}
                                                                         </span>
                                                                     </td>
                                                                     <td className="px-5 py-4 text-xs">

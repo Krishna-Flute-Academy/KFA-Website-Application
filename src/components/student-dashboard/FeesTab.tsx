@@ -35,13 +35,16 @@ export default function FeesTab({ profile, payments, authoritativeFeeStatus, not
 
                 const cIds = (csData || []).map((c: any) => c.classroom_id).filter(Boolean);
 
-                const [schedRes, overRes, leaveRes, attRes] = await Promise.all([
+                const [schedRes, overRes, leaveRes, attRes, holidaysRes] = await Promise.all([
                     cIds.length > 0
                         ? supabaseAuth.from('batch_schedules').select('id, classroom_id, day_of_week, start_time, end_time').in('classroom_id', cIds)
                         : Promise.resolve({ data: [] }),
                     supabaseAuth.from('session_student_overrides').select('*').eq('student_id', profile.id),
                     supabaseAuth.from('leave_requests').select('*').eq('student_id', profile.id),
-                    supabaseAuth.from('attendance').select('*').eq('student_id', profile.id)
+                    supabaseAuth.from('attendance').select('*').eq('student_id', profile.id),
+                    cIds.length > 0
+                        ? supabaseAuth.from('classroom_holidays').select('id, classroom_id, holiday_date, holiday_type, alternative_date, reason, status').in('classroom_id', cIds).eq('status', 'active')
+                        : Promise.resolve({ data: [] })
                 ]);
 
                 if (!isMounted) return;
@@ -55,6 +58,7 @@ export default function FeesTab({ profile, payments, authoritativeFeeStatus, not
                         fees_classes_paid: profile.fees_classes_paid || 0,
                         fees_amount: profile.fees_amount || 0
                     },
+                    classrooms: cIds.map((id: string) => ({ id })),
                     payments: payments || [],
                     attendance: (attRes.data || []).map((a: any) => ({
                         id: a.id,
@@ -64,7 +68,8 @@ export default function FeesTab({ profile, payments, authoritativeFeeStatus, not
                     })),
                     batchSchedules: (schedRes.data || []) as any,
                     overrides: (overRes.data || []) as any,
-                    leaveRequests: (leaveRes.data || []) as any
+                    leaveRequests: (leaveRes.data || []) as any,
+                    classroomHolidays: (holidaysRes.data || []) as any
                 });
 
                 setFeeMetrics(m);

@@ -1766,7 +1766,7 @@ export default function ClassroomsPage() {
                                                             )}
                                                             {(room as any).isHoliday && (
                                                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400 border border-rose-300">
-                                                                    Holiday
+                                                                    Class Off
                                                                 </span>
                                                             )}
                                                             {room.type === 'temporary' ? (
@@ -1833,9 +1833,9 @@ export default function ClassroomsPage() {
                                                     ) : (room as any).isHoliday ? (
                                                         <span 
                                                             className="px-4 min-h-[44px] text-xs font-bold rounded-xl bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-not-allowed"
-                                                            title={`Holiday declared. Rescheduled to ${(room as any).holidayInfo?.alternative_date || 'later'}.`}
+                                                            title={`Class Off declared. Rescheduled to ${(room as any).holidayInfo?.alternative_date || 'later'}.`}
                                                         >
-                                                            Holiday
+                                                            Class Off
                                                         </span>
                                                     ) : (
                                                         <button

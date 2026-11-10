@@ -313,7 +313,7 @@ export function derivePendingAttendanceSessions(params: {
                     alternativeDate: altDateStr,
                     alternativeStartTime: activeHoliday.alternative_start_time || null,
                     alternativeEndTime: activeHoliday.alternative_end_time || null,
-                    reason: activeHoliday.reason || 'Declared Holiday',
+                    reason: activeHoliday.reason || 'Class Off',
                     alternativeStatus: isNotScheduledYet ? 'not_scheduled' : 'attendance_pending'
                 }
             });

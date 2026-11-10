@@ -69,7 +69,7 @@ export default function HolidayAuditHistoryModal({
                 setLogs((data as any) || []);
             } catch (err: any) {
                 console.error('Error fetching holiday audit logs:', err);
-                setError(err?.message || 'Failed to load holiday audit history.');
+                setError(err?.message || 'Failed to load class off audit history.');
             } finally {
                 setLoading(false);
             }
@@ -90,7 +90,7 @@ export default function HolidayAuditHistoryModal({
                             <History className="w-5 h-5 text-amber-400" />
                         </div>
                         <div>
-                            <h3 className="font-bold text-lg leading-tight">Holiday Audit Trail (BR-24)</h3>
+                            <h3 className="font-bold text-lg leading-tight">Class Off Audit Trail (BR-24)</h3>
                             <p className="text-xs text-slate-300 mt-0.5">{classroomName}</p>
                         </div>
                     </div>
@@ -121,8 +121,8 @@ export default function HolidayAuditHistoryModal({
                     {!loading && !error && logs.length === 0 && (
                         <div className="py-12 text-center text-slate-400">
                             <Shield className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-                            <p className="text-sm font-medium">No holiday audit records found for this classroom.</p>
-                            <p className="text-xs text-slate-500 mt-1">Audit logs are recorded automatically when holidays are declared or cancelled.</p>
+                            <p className="text-sm font-medium">No class off audit records found for this classroom.</p>
+                            <p className="text-xs text-slate-500 mt-1">Audit logs are recorded automatically when a class off is declared or cancelled.</p>
                         </div>
                     )}
 
@@ -147,7 +147,7 @@ export default function HolidayAuditHistoryModal({
                                                     {log.action}
                                                 </span>
                                                 <span className="text-sm font-bold text-slate-900 dark:text-white">
-                                                    Holiday Date: {log.holiday_date}
+                                                    Class Off Date: {log.holiday_date}
                                                 </span>
                                             </div>
                                             <span className="text-xs text-slate-400 flex items-center gap-1">

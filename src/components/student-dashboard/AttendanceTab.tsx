@@ -468,8 +468,8 @@ export default function AttendanceTab({
                                                     </span>
                                                 )}
                                                 {isCancelled && (
-                                                    <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5" title={req.cancellation_reason || 'Classroom holiday declared'}>
-                                                        <XCircle className="w-3.5 h-3.5 text-slate-500" /> Cancelled (Holiday)
+                                                    <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5" title={req.cancellation_reason || 'Class off declared'}>
+                                                        <XCircle className="w-3.5 h-3.5 text-slate-500" /> Cancelled (Class Off)
                                                     </span>
                                                 )}
                                             </div>

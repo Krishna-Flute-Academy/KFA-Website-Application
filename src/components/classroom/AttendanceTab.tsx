@@ -113,7 +113,7 @@ export default function AttendanceTab({
                     </button>
                 </div>
 
-                {/* Holiday Management Action Buttons */}
+                {/* Class Off Management Action Buttons */}
                 <div className="flex items-center gap-2 flex-wrap">
                     {onDeclareHoliday && (
                         <button
@@ -121,7 +121,7 @@ export default function AttendanceTab({
                             onClick={onDeclareHoliday}
                             className="px-3.5 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                         >
-                            🏖️ Declare Holiday
+                            🏖️ Declare Class Off
                         </button>
                     )}
                     {onViewHolidayAudit && (
@@ -130,13 +130,13 @@ export default function AttendanceTab({
                             onClick={onViewHolidayAudit}
                             className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
                         >
-                            📋 Holiday History
+                            📋 Class Off History
                         </button>
                     )}
                 </div>
             </div>
 
-            {/* Active Holiday Banner (BR-22 / BR-23) */}
+            {/* Active Class Off Banner (BR-22 / BR-23) */}
             {activeHoliday && (
                 <div className="p-4 rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50/90 dark:bg-amber-950/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 dark:text-amber-200 shadow-sm">
                     <div className="flex items-start sm:items-center gap-3">
@@ -146,11 +146,11 @@ export default function AttendanceTab({
                         <div>
                             <h4 className="font-bold text-sm text-amber-950 dark:text-amber-100 flex items-center gap-2 flex-wrap">
                                 {activeHoliday.holiday_type === 'alternative_pending' ? (
-                                    <span>Declared Holiday — Alternative Pending</span>
+                                    <span>Class Off — Alternative Pending</span>
                                 ) : activeHoliday.holiday_type === 'alternative_scheduled' || activeHoliday.holiday_type === 'with_alternative' ? (
-                                    <span>Declared Holiday — Alternative Scheduled for {activeHoliday.alternative_date}</span>
+                                    <span>Class Off — Alternative Scheduled for {activeHoliday.alternative_date}</span>
                                 ) : (
-                                    <span>Declared Holiday — No Alternative Class</span>
+                                    <span>Class Off — No Alternative Class</span>
                                 )}
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 uppercase tracking-wider">
                                     0 Credit Deduction
@@ -192,7 +192,7 @@ export default function AttendanceTab({
                                 onClick={() => onCancelHoliday(activeHoliday)}
                                 className="px-3.5 py-1.5 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-950 dark:text-amber-200 text-xs font-semibold rounded-xl transition-colors shadow-xs cursor-pointer"
                             >
-                                Cancel Holiday
+                                Cancel Class Off
                             </button>
                         )}
                     </div>
@@ -270,17 +270,17 @@ export default function AttendanceTab({
                 {activeHoliday && !attendanceLoading && activeAttendanceRoster.length > 0 && (
                     <div className="bg-amber-50/90 dark:bg-amber-950/60 border-b border-amber-200 dark:border-amber-800/60 px-5 py-2.5 flex items-center justify-between text-xs text-amber-900 dark:text-amber-200">
                         <span className="font-bold flex items-center gap-2">
-                            <span>🔒 Attendance Blurred & Locked for Declared Holiday</span>
+                            <span>🔒 Attendance Blurred & Locked for Class Off</span>
                             <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-200/80 dark:bg-amber-900/70 font-extrabold uppercase tracking-wider">
                                 0 Credit Deduction
                             </span>
                         </span>
                         <span className="text-[11px] text-amber-800 dark:text-amber-300 font-medium">
                             {activeHoliday.holiday_type === 'no_alternative'
-                                ? 'Holiday — No Alternative Class'
+                                ? 'Class Off — No Alternative Class'
                                 : activeHoliday.alternative_date
                                     ? `Take attendance on Alternative Class (${activeHoliday.alternative_date})`
-                                    : 'Schedule or create an Alternative Class to take attendance on behalf of this holiday'}
+                                    : 'Schedule or create an Alternative Class to take attendance on behalf of this class off'}
                         </span>
                     </div>
                 )}
@@ -363,7 +363,7 @@ export default function AttendanceTab({
                                                 <button
                                                     key={opt.key}
                                                     disabled={isSaving || isCoveredLocked || !!activeHoliday}
-                                                    title={activeHoliday ? `Attendance recording disabled for declared holiday (${activeHoliday.reason})` : (isCoveredLocked ? `Attendance covered on ${coveredInfo.actualDate}` : (isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`))}
+                                                    title={activeHoliday ? `Attendance recording disabled for class off (${activeHoliday.reason})` : (isCoveredLocked ? `Attendance covered on ${coveredInfo.actualDate}` : (isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`))}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         if (isCoveredLocked || activeHoliday) return;

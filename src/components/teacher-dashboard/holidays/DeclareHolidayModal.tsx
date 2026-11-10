@@ -181,12 +181,12 @@ export default function DeclareHolidayModal({
         }
 
         if (scope === 'current' && !effectiveSingleRoomId) {
-            setError('Please select a classroom for the holiday declaration.');
+            setError('Please select a classroom for the class off declaration.');
             return;
         }
 
         if (scope === 'selected' && selectedClassroomIds.length === 0) {
-            setError('Please select at least one classroom for the holiday declaration.');
+            setError('Please select at least one classroom for the class off declaration.');
             return;
         }
 
@@ -196,7 +196,7 @@ export default function DeclareHolidayModal({
                 return;
             }
             if (alternativeDate === holidayDate) {
-                setError('Alternative date cannot be the same as the holiday date.');
+                setError('Alternative date cannot be the same as the class off date.');
                 return;
             }
         }
@@ -246,8 +246,8 @@ export default function DeclareHolidayModal({
             onSuccess();
             onClose();
         } catch (err: any) {
-            console.error('Error declaring holiday:', err);
-            setError(err?.message || 'Failed to declare holiday.');
+            console.error('Error declaring class off:', err);
+            setError(err?.message || 'Failed to declare class off.');
         } finally {
             setLoading(false);
         }
@@ -263,7 +263,7 @@ export default function DeclareHolidayModal({
                             <Calendar className="w-5 h-5" />
                         </div>
                         <div>
-                            <h3 className="font-bold text-lg leading-tight">Declare Classroom Holiday</h3>
+                            <h3 className="font-bold text-lg leading-tight">Declare Class Off</h3>
                             <p className="text-xs text-amber-100 mt-0.5">
                                 {scope === 'all_scheduled' ? 'All Scheduled Classrooms on Date' : scope === 'selected' ? `${selectedClassroomIds.length} Selected Classroom${selectedClassroomIds.length === 1 ? '' : 's'}` : effectiveSingleRoomName}
                             </p>
@@ -445,10 +445,10 @@ export default function DeclareHolidayModal({
                         </div>
                     )}
 
-                    {/* Holiday Date */}
+                    {/* Class Off Date */}
                     <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                            Holiday Date (Original Class Cancelled) *
+                            Class Off Date (Original Class Cancelled) *
                         </label>
                         <input
                             id="holidayDate"
@@ -460,10 +460,10 @@ export default function DeclareHolidayModal({
                         />
                     </div>
 
-                    {/* Holiday Type 3-State Toggle */}
+                    {/* Class Off Type 3-State Toggle */}
                     <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
-                            Holiday State
+                            Class Off State
                         </label>
                         <div className="space-y-2">
                             {/* Option 1: Alternative Pending */}
@@ -485,7 +485,7 @@ export default function DeclareHolidayModal({
                                 <div>
                                     <div className="font-bold text-xs">⏳ Alternative Pending (Schedule Later)</div>
                                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                        Holiday is declared immediately. Replacement date and time can be confirmed later per classroom. 0 deduction now.
+                                        Class off is declared immediately. Replacement date and time can be confirmed later per classroom. 0 deduction now.
                                     </p>
                                 </div>
                             </label>
@@ -533,7 +533,7 @@ export default function DeclareHolidayModal({
                                 <div>
                                     <div className="font-bold text-xs">🏖️ No Alternative Class</div>
                                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                        Holiday without replacement. 0 deduction. Unused credits remain preserved for regular future sessions.
+                                        Class off without replacement. 0 deduction. Unused credits remain preserved for regular future sessions.
                                     </p>
                                 </div>
                             </label>
@@ -586,7 +586,7 @@ export default function DeclareHolidayModal({
                     {/* Reason */}
                     <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                            Holiday Declaration Reason *
+                            Class Off Reason *
                         </label>
                         <textarea
                             id="holidayReason"
@@ -607,7 +607,7 @@ export default function DeclareHolidayModal({
                         </div>
                         <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-slate-600 dark:text-slate-400">
                             <li>Original session on {holidayDate || 'selected date'} is <strong>cancelled</strong> with <strong>0 credit deduction</strong>.</li>
-                            <li><strong>Never creates a makeup entitlement</strong> merely because a holiday or pending alternative is declared.</li>
+                            <li><strong>Never creates a makeup entitlement</strong> merely because a class off or pending alternative is declared.</li>
                             <li>Credit deduction (1 credit) occurs <strong>only when the replacement session is conducted and marked</strong>.</li>
                         </ul>
                     </div>
@@ -627,7 +627,7 @@ export default function DeclareHolidayModal({
                             disabled={loading}
                             className="px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                         >
-                            {loading ? 'Declaring...' : scope === 'all_scheduled' ? 'Declare Bulk Holiday' : 'Declare Holiday'}
+                            {loading ? 'Declaring...' : scope === 'all_scheduled' ? 'Declare Bulk Class Off' : 'Declare Class Off'}
                         </button>
                     </div>
                 </form>

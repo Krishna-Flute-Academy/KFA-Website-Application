@@ -60,7 +60,7 @@ export default function ScheduleAlternativeModal({
         }
 
         if (altDate === holiday.holiday_date) {
-            setError('Alternative class date cannot be the same as the original holiday date.');
+            setError('Alternative class date cannot be the same as the original class off date.');
             return;
         }
 
@@ -155,7 +155,7 @@ export default function ScheduleAlternativeModal({
                     )}
 
                     <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1">
-                        <div className="text-slate-500 dark:text-slate-400 font-medium">Holiday Context:</div>
+                        <div className="text-slate-500 dark:text-slate-400 font-medium">Class Off Context:</div>
                         <div className="font-semibold text-slate-900 dark:text-white">
                             Original Missed Class: <span className="text-amber-600 dark:text-amber-400">{holiday.holiday_date}</span>
                         </div>

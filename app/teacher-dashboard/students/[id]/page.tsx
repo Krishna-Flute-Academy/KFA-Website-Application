@@ -552,12 +552,15 @@ export default function StudentProfilePage() {
                         .map((cs: any) => cs.classroom_id)
                         .filter(Boolean);
 
-                    const [schedRes, overridesRes, leavesRes] = await Promise.all([
+                    const [schedRes, overridesRes, leavesRes, holidaysRes] = await Promise.all([
                         allStudentClassroomIds.length > 0
                             ? supabaseAuth.from('batch_schedules').select('id, classroom_id, day_of_week, start_time, end_time').in('classroom_id', allStudentClassroomIds)
                             : Promise.resolve({ data: [] }),
                         supabaseAuth.from('session_student_overrides').select('*').eq('student_id', studentId),
-                        supabaseAuth.from('leave_requests').select('*').eq('student_id', studentId)
+                        supabaseAuth.from('leave_requests').select('*').eq('student_id', studentId),
+                        allStudentClassroomIds.length > 0
+                            ? supabaseAuth.from('classroom_holidays').select('id, classroom_id, holiday_date, holiday_type, alternative_date, reason, status').in('classroom_id', allStudentClassroomIds).eq('status', 'active')
+                            : Promise.resolve({ data: [] })
                     ]);
 
                     const m = calculateStudentFeeCycleMetrics({
@@ -569,6 +572,11 @@ export default function StudentProfilePage() {
                             fees_classes_paid: userData.fees_classes_paid || 0,
                             fees_amount: userData.fees_amount || 0
                         },
+                        classrooms: (studentRooms || []).map((cs: any) => ({
+                            id: cs.classroom_id,
+                            name: Array.isArray(cs.classrooms) ? cs.classrooms[0]?.name : cs.classrooms?.name,
+                            joined_at: cs.joined_at
+                        })),
                         payments: payData || [],
                         attendance: (attData || []).map((a: any) => ({
                             id: a.id,
@@ -578,7 +586,8 @@ export default function StudentProfilePage() {
                         })),
                         batchSchedules: (schedRes.data || []) as any,
                         overrides: (overridesRes.data || []) as any,
-                        leaveRequests: (leavesRes.data || []) as any
+                        leaveRequests: (leavesRes.data || []) as any,
+                        classroomHolidays: (holidaysRes.data || []) as any
                     });
                     setFeeMetrics(m);
                 }

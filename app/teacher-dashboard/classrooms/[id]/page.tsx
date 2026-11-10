@@ -2495,7 +2495,7 @@ export default function ClassroomDashboardPage({
 
     const handleCancelHoliday = async (holiday: any) => {
         if (!holiday?.id) return;
-        const reason = window.prompt(`Enter reason for cancelling holiday on ${holiday.holiday_date}:`);
+        const reason = window.prompt(`Enter reason for cancelling class off on ${holiday.holiday_date}:`);
         if (!reason || reason.trim().length < 3) {
             if (reason !== null) {
                 alert('A valid cancellation reason (minimum 3 characters) is required.');
@@ -2515,10 +2515,10 @@ export default function ClassroomDashboardPage({
                 console.error('Error cancelling alternative class special session:', sessErr);
             }
             await fetchClassroomAttendance();
-            alert('Holiday successfully cancelled.');
+            alert('Class Off successfully cancelled.');
         } catch (err: any) {
-            console.error('Error cancelling holiday:', err);
-            alert(`Failed to cancel holiday: ${err.message || err}`);
+            console.error('Error cancelling class off:', err);
+            alert(`Failed to cancel class off: ${err.message || err}`);
         }
     };
 

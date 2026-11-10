@@ -515,7 +515,7 @@ export default function CreateClassPage() {
                         .ilike('description', `%[HolidayId:${linkedHoliday.id}]%`);
                     const activeAlt = (existingAlt || []).find((r: any) => (r.status || 'active').toLowerCase() !== 'archived');
                     if (activeAlt) {
-                        alert(`An alternative class "${activeAlt.name}" already exists for this holiday. Reschedule it from the holiday instead of creating a new one.`);
+                        alert(`An alternative class "${activeAlt.name}" already exists for this class off. Reschedule it from the class off instead of creating a new one.`);
                         setSubmitting(false);
                         return;
                     }
@@ -729,10 +729,10 @@ export default function CreateClassPage() {
                                             <div className="flex items-center gap-2 text-xs font-black uppercase text-amber-700 dark:text-amber-400 tracking-wider">
                                                 <span>⚡ Special Session Configuration</span>
                                             </div>
-                                            {/* Optional On Behalf Of Declared Holiday Selector (BR-22) */}
+                                            {/* Optional On Behalf Of Declared Class Off Selector (BR-22) */}
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">
-                                                    🏖️ On Behalf Of Declared Holiday Class (Optional — BR-22)
+                                                    🏖️ On Behalf Of Declared Class Off (Optional — BR-22)
                                                 </label>
                                                 <select
                                                     value={selectedHolidayId}
@@ -763,13 +763,13 @@ export default function CreateClassPage() {
                                                     <option value="">-- No (Regular Special Session / Makeup) --</option>
                                                     {activeHolidays.map((h: any) => (
                                                         <option key={h.id} value={h.id}>
-                                                            🏖️ {h.classroomName} — Holiday on {h.holiday_date} ({h.holiday_type === 'alternative_pending' ? 'Alt Pending' : `Alt: ${h.alternative_date}`})
+                                                            🏖️ {h.classroomName} — Class Off on {h.holiday_date} ({h.holiday_type === 'alternative_pending' ? 'Alt Pending' : `Alt: ${h.alternative_date}`})
                                                         </option>
                                                     ))}
                                                 </select>
                                                 {selectedHolidayId && (
                                                     <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 mt-1.5">
-                                                        ✓ This Special Session will be linked as the official replacement class for the selected holiday. Present/Late/Uninformed Absent will deduct 1 regular credit on behalf of the holiday class.
+                                                        ✓ This Special Session will be linked as the official replacement class for the selected class off. Present/Late/Uninformed Absent will deduct 1 regular credit on behalf of the class off date.
                                                     </p>
                                                 )}
                                             </div>

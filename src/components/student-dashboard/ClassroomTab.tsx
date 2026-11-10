@@ -300,6 +300,7 @@ export default function ClassroomTab({
     const getSchedulesForDate = (date: Date): any[] => {
         const dateStr = getLocalYYYYMMDD(date);
         const dayOfWeek = date.getDay();
+        const matchedHoliday = classroomHolidays.find(h => h.holiday_date === dateStr);
         
         const dayClasses: any[] = [];
         
@@ -316,8 +317,8 @@ export default function ClassroomTab({
             });
         });
         
-        // 2. Check matching recurring batch schedules (only if there are no overrides/makeups for today)
-        if (makeups.length === 0) {
+        // 2. Check matching recurring batch schedules (only if there are no overrides/makeups or class off for this date)
+        if (makeups.length === 0 && !matchedHoliday) {
             const regulars = batchSchedules.filter(s => s.day_of_week === dayOfWeek);
             regulars.forEach(r => {
                 dayClasses.push({
@@ -342,7 +343,7 @@ export default function ClassroomTab({
             ...c,
             fulfilled: fulfilled ? { actualDate: fulfilled.actualDate } : null
         }));
-    }, [batchSchedules, makeupSchedules, classroom, attendance]);
+    }, [batchSchedules, makeupSchedules, classroom, attendance, classroomHolidays]);
 
     // Calculate tomorrow's classes and later classes
     const tomorrowClasses = useMemo(() => {
@@ -354,7 +355,7 @@ export default function ClassroomTab({
             ...c,
             fulfilled: fulfilled ? { actualDate: fulfilled.actualDate } : null
         }));
-    }, [batchSchedules, makeupSchedules, classroom, attendance]);
+    }, [batchSchedules, makeupSchedules, classroom, attendance, classroomHolidays]);
 
     const upcomingClassesLater = useMemo(() => {
         const classes: any[] = [];
@@ -373,7 +374,7 @@ export default function ClassroomTab({
             classes.push(...dayClasses);
         }
         return classes.sort((a, b) => a.date.getTime() - b.date.getTime());
-    }, [batchSchedules, makeupSchedules, classroom, attendance]);
+    }, [batchSchedules, makeupSchedules, classroom, attendance, classroomHolidays]);
 
     // Format local date strings
     const formatLocalDate = (dateStr: string): Date => {
@@ -798,31 +799,31 @@ export default function ClassroomTab({
                                                 {cell.holiday && cell.holiday.holiday_type === 'no_alternative' && (
                                                     <div 
                                                         className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 truncate" 
-                                                        title={`Holiday — No Alternative. Original class cancelled; 0 credit deduction. (${cell.holiday.reason})`}
+                                                        title={`Class Off — No Alternative. Original class cancelled; 0 credit deduction. (${cell.holiday.reason})`}
                                                     >
-                                                        🏖️ Holiday (No Alt)
+                                                        🏖️ Class Off (No Alt)
                                                     </div>
                                                 )}
                                                 {cell.holiday && cell.holiday.holiday_type === 'alternative_pending' && (
                                                     <div 
                                                         className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 truncate" 
-                                                        title={`Holiday — Alternative Pending (replacement date to be announced). Original class cancelled; 0 credit deduction. (${cell.holiday.reason})`}
+                                                        title={`Class Off — Alternative Pending (replacement date to be announced). Original class cancelled; 0 credit deduction. (${cell.holiday.reason})`}
                                                     >
-                                                        ⏳ Holiday (Alt Pending)
+                                                        ⏳ Class Off (Alt Pending)
                                                     </div>
                                                 )}
                                                 {cell.holiday && (cell.holiday.holiday_type === 'with_alternative' || cell.holiday.holiday_type === 'alternative_scheduled') && (
                                                     <div 
                                                         className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 truncate" 
-                                                        title={`Holiday — Alternative Scheduled on ${formatLocalDateStr(cell.holiday.alternative_date, false)}. Original class cancelled. (${cell.holiday.reason})`}
+                                                        title={`Class Off — Alternative Scheduled on ${formatLocalDateStr(cell.holiday.alternative_date, false)}. Original class cancelled. (${cell.holiday.reason})`}
                                                     >
-                                                        🏖️ Holiday (Alt: {formatLocalDateStr(cell.holiday.alternative_date, false)})
+                                                        🏖️ Class Off (Alt: {formatLocalDateStr(cell.holiday.alternative_date, false)})
                                                     </div>
                                                 )}
                                                 {cell.alternativeHoliday && (
                                                     <div 
                                                         className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30 truncate" 
-                                                        title={`Alternative Class on behalf of holiday on ${formatLocalDateStr(cell.alternativeHoliday.holiday_date, true)}. Normal credit deduction applies.`}
+                                                        title={`Alternative Class on behalf of class off on ${formatLocalDateStr(cell.alternativeHoliday.holiday_date, true)}. Normal credit deduction applies.`}
                                                     >
                                                         🔄 On Behalf Of {formatLocalDateStr(cell.alternativeHoliday.holiday_date, false)}
                                                     </div>
