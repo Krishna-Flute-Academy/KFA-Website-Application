@@ -41,11 +41,12 @@ export default function SignupPage() {
 
         // Step 1: Create auth user
         const { data, error: signUpError } = await supabaseAuth.auth.signUp({
-            email,
+            email: email.trim(),
             password,
             options: {
+                emailRedirectTo: `${window.location.origin}/auth/callback`,
                 data: {
-                    full_name: name,
+                    full_name: name.trim(),
                     phone: phone,
                     role: 'pending',
                 }
@@ -54,6 +55,12 @@ export default function SignupPage() {
 
         if (signUpError) {
             setError(signUpError.message);
+            setLoading(false);
+            return;
+        }
+
+        if (data?.user && (!data.user.identities || data.user.identities.length === 0)) {
+            setError('An account with this email already exists. Please sign in instead.');
             setLoading(false);
             return;
         }

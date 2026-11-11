@@ -37,6 +37,7 @@ import BlogNotification from './BlogNotification';
 import { getStudentFeeStatus, calculateAuthoritativeFeeStatus } from '../../lib/fee-utils';
 import { htmlToPlainText, truncatePlainText } from '../../lib/text-utils';
 import ProfileCompletionModal from '../common/ProfileCompletionModal';
+import ForcePasswordChangeModal from '../common/ForcePasswordChangeModal';
 import { INITIAL_MODULES } from '../../../app/teacher-dashboard/inventory/initial-data';
 import { getStudentAccess } from '../../lib/student-lifecycle';
 import { fetchEffectiveClassroomParticipants } from '../../lib/classroom-participants';
@@ -434,6 +435,7 @@ export default function StudentDashboardContainer() {
     const [submitVideoFile, setSubmitVideoFile] = useState<File | null>(null);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
+    const [showForcePasswordModal, setShowForcePasswordModal] = useState(false);
 
     // Leave requests and Authoritative Fee Status calculation
     const [myLeaveRequests, setMyLeaveRequests] = useState<any[]>([]);
@@ -801,6 +803,12 @@ export default function StudentDashboardContainer() {
                 return;
             }
             setProfile(user);
+
+            if (session.user.user_metadata?.must_change_password === true) {
+                setShowForcePasswordModal(true);
+            } else {
+                setShowForcePasswordModal(false);
+            }
 
             const isNameIncomplete = !user.name || user.name.trim().toLowerCase() === 'new student';
             const isPhoneIncomplete = !user.phone || user.phone.trim().replace(/\D/g, '').length < 10;
@@ -3992,8 +4000,13 @@ export default function StudentDashboardContainer() {
             {profile && (
                 <>
                     <BlogNotification studentId={profile.id} broadcasts={broadcasts} />
+                    <ForcePasswordChangeModal
+                        isOpen={showForcePasswordModal}
+                        userEmail={profile.email}
+                        onComplete={() => setShowForcePasswordModal(false)}
+                    />
                     <ProfileCompletionModal
-                        isOpen={showProfileModal}
+                        isOpen={showProfileModal && !showForcePasswordModal}
                         userId={profile.id}
                         initialName={profile.name || ''}
                         initialPhone={profile.phone || ''}

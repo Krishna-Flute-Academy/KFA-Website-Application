@@ -2,8 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@supabase/supabase-js';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, Plus, ArrowLeft } from 'lucide-react';
+import { Loader2, Plus, ArrowLeft, Eye, EyeOff, RefreshCw, Copy, Check, CheckCircle2, Mail } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -27,11 +28,29 @@ function generateUUID() {
     });
 }
 
+function generateTempPassword() {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
+    let suffix = '';
+    for (let i = 0; i < 6; i++) {
+        suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `Kfa@${suffix}`;
+}
+
 export default function AddStudentPage() {
     const router = useRouter();
-    const [studentId] = useState(() => generateUUID());
+    const [studentId, setStudentId] = useState(() => generateUUID());
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [showPassword, setShowPassword] = useState(true);
+    const [copiedPassword, setCopiedPassword] = useState(false);
+    const [copiedCredentials, setCopiedCredentials] = useState(false);
+    const [createdCredentials, setCreatedCredentials] = useState<{
+        name: string;
+        email: string;
+        password: string;
+        emailConfirmationSent: boolean;
+    } | null>(null);
     const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; id: string; role?: string } | null>(null);
     const [classrooms, setClassrooms] = useState<(Classroom & { teacher_id?: string })[]>([]);
     const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
@@ -40,6 +59,7 @@ export default function AddStudentPage() {
     const [formData, setFormData] = useState({
         fullName: '',
         email: '',
+        password: generateTempPassword(),
         phone: '',
         startDate: new Date().toISOString().split('T')[0],
         batchId: '',
@@ -114,6 +134,15 @@ export default function AddStudentPage() {
         e.preventDefault();
         if (!teacherProfile) return;
 
+        const cleanName = formData.fullName.trim();
+        const cleanEmail = formData.email.trim().toLowerCase();
+        const cleanPassword = formData.password.trim();
+
+        if (cleanPassword.length < 6) {
+            alert('Error: Temporary password must be at least 6 characters long.');
+            return;
+        }
+
         setSubmitting(true);
         try {
             // Canonical rule: Monthly billing due day equals student join-date day
@@ -125,16 +154,71 @@ export default function AddStudentPage() {
                 ? (formData.teacherId || selectedClassroom?.teacher_id || null)
                 : teacherProfile.id;
 
-            // Genuinely transactional atomic student onboarding
-            // Executes user profile creation, initial prepaid credit allocation, and batch enrollment
+            // 1. Check if a non-pending user with this email already exists in public.users
+            const { data: existingUser } = await supabaseAuth
+                .from('users')
+                .select('id, role')
+                .ilike('email', cleanEmail)
+                .maybeSingle();
+
+            if (existingUser && existingUser.role !== 'pending') {
+                throw new Error(`A user with email ${cleanEmail} is already registered.`);
+            }
+
+            // 2. Create the Supabase Auth account using an isolated non-persisting client
+            // so the admin/teacher's own active session in localStorage is never overwritten.
+            // This triggers the confirmation email to the student and flags must_change_password: true.
+            let effectiveStudentId = existingUser?.id || studentId;
+            let emailConfirmationSent = false;
+
+            if (!existingUser) {
+                const supabaseAuthUrl = process.env.NEXT_PUBLIC_AUTH_SUPABASE_URL || '';
+                const supabaseAuthAnonKey = process.env.NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY || '';
+                const isolatedAuthClient = createClient(supabaseAuthUrl, supabaseAuthAnonKey, {
+                    auth: {
+                        persistSession: false,
+                        autoRefreshToken: false,
+                        detectSessionInUrl: false,
+                    }
+                });
+
+                const { data: signUpData, error: signUpError } = await isolatedAuthClient.auth.signUp({
+                    email: cleanEmail,
+                    password: cleanPassword,
+                    options: {
+                        emailRedirectTo: `${window.location.origin}/auth/callback`,
+                        data: {
+                            full_name: cleanName,
+                            phone: formData.phone || null,
+                            must_change_password: true,
+                        }
+                    }
+                });
+
+                if (signUpError) {
+                    throw signUpError;
+                }
+
+                if (signUpData?.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0) {
+                    throw new Error(`An authentication account with ${cleanEmail} already exists.`);
+                }
+
+                if (signUpData?.user?.id) {
+                    effectiveStudentId = signUpData.user.id;
+                    emailConfirmationSent = true;
+                }
+            }
+
+            // 3. Genuinely transactional atomic student onboarding
+            // Executes user profile creation/promotion, initial prepaid credit allocation, and batch enrollment
             // within a single database transaction. All steps succeed or roll back atomically.
-            const stableIdempotencyKey = `onboard_${studentId}`;
+            const stableIdempotencyKey = `onboard_${effectiveStudentId}`;
             const initialCredits = Number(formData.feesClassesPaid) || 0;
 
             const { data: onboardResult, error: onboardError } = await supabaseAuth.rpc('onboard_student_atomic', {
-                p_student_id: studentId,
-                p_name: formData.fullName.trim(),
-                p_email: formData.email.trim(),
+                p_student_id: effectiveStudentId,
+                p_name: cleanName,
+                p_email: cleanEmail,
                 p_phone: formData.phone || null,
                 p_role: 'student',
                 p_status: 'active',
@@ -162,8 +246,13 @@ export default function AddStudentPage() {
             // an auth.users record prior to onboarding, catch blocks must invoke supabaseAdmin.auth.admin.deleteUser(id)
             // to ensure zero orphaned authentication credentials remain after an onboarding failure.
 
-            // Success!
-            router.push('/teacher-dashboard/students');
+            // Show the credentials summary modal so the admin can copy and share with the student
+            setCreatedCredentials({
+                name: cleanName,
+                email: cleanEmail,
+                password: cleanPassword,
+                emailConfirmationSent
+            });
 
         } catch (err: any) {
             console.error('Error adding student:', err);
@@ -238,7 +327,7 @@ export default function AddStudentPage() {
                                         </div>
                                         <div className="space-y-2">
                                             <label htmlFor="student-email" className="text-sm font-bold text-slate-700 block cursor-pointer">
-                                                Email Address <span className="text-rose-500">*</span>
+                                                Email Address (Login ID) <span className="text-rose-500">*</span>
                                             </label>
                                             <input
                                                 id="student-email"
@@ -251,6 +340,60 @@ export default function AddStudentPage() {
                                                 value={formData.email}
                                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                             />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label htmlFor="student-password" className="text-sm font-bold text-slate-700 block cursor-pointer">
+                                                Pre-generated Temporary Password <span className="text-rose-500">*</span>
+                                            </label>
+                                            <div className="relative flex items-center gap-2">
+                                                <div className="relative flex-1">
+                                                    <input
+                                                        id="student-password"
+                                                        required
+                                                        minLength={6}
+                                                        type={showPassword ? 'text' : 'password'}
+                                                        aria-required="true"
+                                                        aria-label="Pre-generated Temporary Password"
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3 text-sm font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                        placeholder="At least 6 characters"
+                                                        value={formData.password}
+                                                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowPassword(!showPassword)}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                                        aria-label="Toggle password visibility"
+                                                    >
+                                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                    </button>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, password: generateTempPassword() })}
+                                                    className="px-3 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer shrink-0"
+                                                    title="Generate a new password"
+                                                    aria-label="Generate a new temporary password"
+                                                >
+                                                    <RefreshCw size={16} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(formData.password);
+                                                        setCopiedPassword(true);
+                                                        setTimeout(() => setCopiedPassword(false), 2000);
+                                                    }}
+                                                    className="px-3 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer shrink-0"
+                                                    title="Copy temporary password"
+                                                    aria-label="Copy temporary password"
+                                                >
+                                                    {copiedPassword ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
+                                                </button>
+                                            </div>
+                                            <p className="text-[11px] text-slate-500">
+                                                Student will receive a verification email and must change this password upon first login.
+                                            </p>
                                         </div>
                                         <div className="space-y-2">
                                             <label htmlFor="student-phone" className="text-sm font-bold text-slate-700 block cursor-pointer">Phone Number</label>
@@ -534,6 +677,117 @@ export default function AddStudentPage() {
                     </div>
                 </main>
             </div>
+
+            {createdCredentials && (
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="student-credentials-modal-title"
+                    className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200"
+                >
+                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 sm:p-8 text-left space-y-5">
+                        <div className="flex items-center gap-3">
+                            <div className="size-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                <CheckCircle2 className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <h3 id="student-credentials-modal-title" className="text-lg font-bold text-slate-900">
+                                    Student Registered!
+                                </h3>
+                                <p className="text-xs text-slate-500">
+                                    {createdCredentials.emailConfirmationSent
+                                        ? 'Verification email has been sent to the student.'
+                                        : 'Student profile has been activated.'}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 text-sm">
+                            <div>
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Student Name</span>
+                                <span className="font-bold text-slate-800">{createdCredentials.name}</span>
+                            </div>
+                            <div>
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Login Email ID</span>
+                                <span className="font-mono font-semibold text-slate-800 break-all">{createdCredentials.email}</span>
+                            </div>
+                            <div>
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Temporary Password</span>
+                                <span className="font-mono font-bold text-[#a15912] bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg inline-block mt-0.5">
+                                    {createdCredentials.password}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-xs text-blue-900 space-y-1 leading-relaxed">
+                            <div className="font-bold flex items-center gap-1.5 text-blue-800">
+                                <Mail className="w-3.5 h-3.5" />
+                                <span>Student First-Login Steps:</span>
+                            </div>
+                            <ol className="list-decimal list-inside space-y-0.5 text-blue-800/90">
+                                <li>Click the verification link sent to <strong>{createdCredentials.email}</strong>.</li>
+                                <li>Sign in at <strong>/login</strong> using the Email ID & Temporary Password above.</li>
+                                <li>Set a new personal password when prompted on first login.</li>
+                            </ol>
+                        </div>
+
+                        <div className="flex flex-col gap-2.5 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const loginUrl = `${window.location.origin}/login`;
+                                    const msg = `Welcome to Krishna Flute Academy, ${createdCredentials.name}!\n\nLogin Portal: ${loginUrl}\nEmail ID: ${createdCredentials.email}\nTemporary Password: ${createdCredentials.password}\n\nSteps to Sign In:\n1. Open the verification email sent to ${createdCredentials.email} and click the confirmation link.\n2. Sign in with the Email ID and Temporary Password above.\n3. Set your own new password when prompted on your first login.`;
+                                    navigator.clipboard.writeText(msg);
+                                    setCopiedCredentials(true);
+                                    setTimeout(() => setCopiedCredentials(false), 2500);
+                                }}
+                                className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                            >
+                                {copiedCredentials ? (
+                                    <>
+                                        <Check className="w-4 h-4 text-emerald-400" />
+                                        <span>Copied Credentials & Instructions!</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Copy className="w-4 h-4" />
+                                        <span>Copy Credentials & Instructions</span>
+                                    </>
+                                )}
+                            </button>
+
+                            <div className="flex items-center gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setCreatedCredentials(null);
+                                        setStudentId(generateUUID());
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            fullName: '',
+                                            email: '',
+                                            password: generateTempPassword(),
+                                            phone: '',
+                                            profilePicUrl: '',
+                                            notes: ''
+                                        }));
+                                    }}
+                                    className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                                >
+                                    Add Another
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => router.push('/teacher-dashboard/students')}
+                                    className="flex-1 py-2.5 px-4 rounded-xl bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 text-xs font-bold transition-colors cursor-pointer"
+                                >
+                                    Go to Students List
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

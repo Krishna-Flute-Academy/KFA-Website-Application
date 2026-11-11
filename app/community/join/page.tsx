@@ -59,6 +59,7 @@ function JoinCommunityContent() {
                 email: cleanEmail,
                 password,
                 options: {
+                    emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTarget)}`,
                     data: {
                         account_type: 'community',
                         full_name: cleanName,
@@ -72,9 +73,9 @@ function JoinCommunityContent() {
                 return;
             }
 
-            // Client-side self-healing upsert into public.community_profiles
+            // Client-side self-healing upsert into public.community_profiles when session is active
             // Note: Does NOT insert into public.users.
-            if (data?.user) {
+            if (data?.user && data?.session) {
                 try {
                     await supabaseAuth
                         .from('community_profiles')

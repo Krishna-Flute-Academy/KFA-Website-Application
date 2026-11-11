@@ -13,12 +13,17 @@ function LoginContent() {
     const loginType = searchParams.get('type') || 'student';
     const isTeacher = loginType === 'teacher';
     const justRegistered = searchParams.get('registered') === '1';
+    const justVerified = searchParams.get('verified') === '1';
+    const prefilledEmail = searchParams.get('email') || '';
     const redirectParam = searchParams.get('redirect') || searchParams.get('returnUrl') || searchParams.get('next');
 
-    const [email, setEmail] = useState('');
+    const [email, setEmail] = useState(prefilledEmail);
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [unconfirmedEmail, setUnconfirmedEmail] = useState(false);
+    const [resendingEmail, setResendingEmail] = useState(false);
+    const [resendSuccess, setResendSuccess] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
 
@@ -43,10 +48,37 @@ function LoginContent() {
         // On success the browser is redirected to Google — no further action needed
     };
 
+    // ── Resend Confirmation Email ─────────────────────────────────────────────
+    const handleResendConfirmation = async () => {
+        if (!email.trim()) return;
+        setResendingEmail(true);
+        setResendSuccess(null);
+        try {
+            const { error: resendErr } = await supabaseAuth.auth.resend({
+                type: 'signup',
+                email: email.trim(),
+                options: {
+                    emailRedirectTo: `${window.location.origin}/auth/callback`,
+                }
+            });
+            if (resendErr) {
+                setError(resendErr.message || 'Could not resend verification email. Please try again shortly.');
+            } else {
+                setResendSuccess(`Verification link sent to ${email.trim()}! Please check your inbox and spam folder.`);
+            }
+        } catch (err: any) {
+            setError(err?.message || 'Failed to resend verification email.');
+        } finally {
+            setResendingEmail(false);
+        }
+    };
+
     // ── Email / Password Login ────────────────────────────────────────────────
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+        setUnconfirmedEmail(false);
+        setResendSuccess(null);
 
         if (!email || !password) {
             setError('Please enter both email and password.');
@@ -61,7 +93,11 @@ function LoginContent() {
             });
 
             if (signInError) {
-                if (signInError.message?.toLowerCase().includes('invalid login credentials')) {
+                const lowerMsg = signInError.message?.toLowerCase() || '';
+                if (lowerMsg.includes('email not confirmed')) {
+                    setUnconfirmedEmail(true);
+                    setError('Your email address is not verified yet. Please click the confirmation link sent to your email inbox before signing in.');
+                } else if (lowerMsg.includes('invalid login credentials')) {
                     setError('Invalid login credentials. If you originally signed up using Google, please click "Continue with Google" above.');
                 } else {
                     setError(typeof signInError === 'string' ? signInError : signInError.message || 'Failed to sign in. Please check your credentials.');
@@ -169,11 +205,41 @@ function LoginContent() {
                             </div>
                         )}
 
+                        {/* Email verified banner */}
+                        {justVerified && (
+                            <div className="mb-4 p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-800 text-sm rounded-xl flex items-start gap-2.5">
+                                <span className="text-lg leading-none">✅</span>
+                                <div>
+                                    <p className="font-bold">Email Verified Successfully!</p>
+                                    <p className="text-xs mt-0.5 text-emerald-700">Please sign in below using your Email ID and temporary password to set your new password.</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {resendSuccess && (
+                            <div className="mb-4 p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-semibold rounded-xl flex items-start gap-2">
+                                <span>📧</span>
+                                <span>{resendSuccess}</span>
+                            </div>
+                        )}
+
                         {/* Error Banner */}
                         {error && (
-                            <div className="mb-5 p-3.5 bg-rose-50 border border-rose-300 text-rose-700 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 text-xs font-semibold rounded-xl flex items-start gap-2 shadow-xs">
-                                <span className="text-base leading-none shrink-0">⚠️</span>
-                                <span>{typeof error === 'object' ? (error as any)?.message || JSON.stringify(error) : String(error)}</span>
+                            <div className="mb-5 p-3.5 bg-rose-50 border border-rose-300 text-rose-700 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 text-xs font-semibold rounded-xl flex flex-col gap-2 shadow-xs">
+                                <div className="flex items-start gap-2">
+                                    <span className="text-base leading-none shrink-0">⚠️</span>
+                                    <span>{typeof error === 'object' ? (error as any)?.message || JSON.stringify(error) : String(error)}</span>
+                                </div>
+                                {unconfirmedEmail && email.trim() && (
+                                    <button
+                                        type="button"
+                                        onClick={handleResendConfirmation}
+                                        disabled={resendingEmail}
+                                        className="self-start ml-6 mt-1 px-3 py-1.5 rounded-lg bg-[#a15912] hover:bg-[#8a4b0f] text-white text-[11px] font-bold transition-colors disabled:opacity-60 cursor-pointer"
+                                    >
+                                        {resendingEmail ? 'Sending...' : 'Resend Verification Email'}
+                                    </button>
+                                )}
                             </div>
                         )}
 

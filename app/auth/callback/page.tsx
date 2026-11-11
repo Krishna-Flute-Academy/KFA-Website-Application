@@ -38,6 +38,19 @@ export default function AuthCallbackPage() {
                 return;
             }
 
+            // If this is an admin-pre-registered student confirming their email address,
+            // require them to sign in with their Email ID and temporary password on /login
+            // so they can complete the mandatory password change step.
+            if (
+                session.user.user_metadata?.must_change_password === true &&
+                session.user.app_metadata?.provider !== 'google'
+            ) {
+                const confirmedEmail = session.user.email || '';
+                await supabaseAuth.auth.signOut({ scope: 'local' });
+                router.push(`/login?verified=1${confirmedEmail ? `&email=${encodeURIComponent(confirmedEmail)}` : ''}`);
+                return;
+            }
+
             const userId = session.user.id;
             const googleName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
             const googleEmail = session.user.email || '';
