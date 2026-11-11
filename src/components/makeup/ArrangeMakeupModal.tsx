@@ -24,13 +24,18 @@ import {
     scheduleMakeupInExistingClass,
     rescheduleMakeup,
     scheduleMakeupAsSpecialSession,
-    getNextScheduleOccurrences,
-    isDateMatchingSchedules,
     getDayOfWeekFromDateStr,
-    getDayName,
     formatTime12hr,
     PermanentClassroomOption
 } from '../../lib/makeup-sessions';
+
+const getLocalTodayDate = (): string => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 
 export interface ArrangeMakeupModalProps {
     isOpen: boolean;
@@ -78,7 +83,7 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
     const [permanentClassrooms, setPermanentClassrooms] = useState<PermanentClassroomOption[]>([]);
     const [activeAlternativeHolidays, setActiveAlternativeHolidays] = useState<any[]>([]);
     const [selectedClassroomId, setSelectedClassroomId] = useState<string>('');
-    const [makeupDate, setMakeupDate] = useState<string>('');
+    const [makeupDate, setMakeupDate] = useState<string>(getLocalTodayDate());
     const [existingNotes, setExistingNotes] = useState<string>('');
 
     // Pathway 2: Create Special Session State
@@ -112,8 +117,11 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
 
         setErrorMessage(null);
         setIsLoadingClassrooms(true);
+        setSelectedClassroomId('');
+        setExistingNotes('');
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getLocalTodayDate();
+        setMakeupDate(todayStr);
 
         fetchAvailablePermanentClassrooms(supabaseAuth, currentTeacherId, isAdmin)
             .then(rooms => {
@@ -138,85 +146,23 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
             .then(({ data }: any) => {
                 const holidays = data || [];
                 setActiveAlternativeHolidays(holidays);
-
-                // Default date: prefer active alternative date if present, else today
-                const activeAlt = holidays.find((h: any) => h.alternative_date && h.status === 'active');
-                if (activeAlt) {
-                    setMakeupDate(activeAlt.alternative_date);
-                } else {
-                    setMakeupDate(todayStr);
-                }
             })
             .catch((err: any) => {
                 console.error('Failed to load alternative holidays in makeup modal:', err);
-                setMakeupDate(todayStr);
             });
 
         // Pre-fill special session defaults
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        const tYear = tomorrow.getFullYear();
+        const tMonth = String(tomorrow.getMonth() + 1).padStart(2, '0');
+        const tDay = String(tomorrow.getDate()).padStart(2, '0');
+        const tomorrowStr = `${tYear}-${tMonth}-${tDay}`;
         setSessionDate(tomorrowStr);
         setSessionTitle(`Makeup Session - ${student?.name || 'Student'}`);
         if (currentTeacherId) setAssignedTeacherId(currentTeacherId);
 
     }, [isOpen, currentTeacherId, isAdmin, student?.name]);
-
-    // Quick Date Suggestions: Alternative dates first, then upcoming active class days
-    const quickDateSuggestions = useMemo(() => {
-        const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
-        const pills: Array<{ date: string; dayName: string; formatted: string; isAlternative: boolean }> = [];
-        const seenDates = new Set<string>();
-
-        // 1. Any active alternative holiday dates
-        for (const h of activeAlternativeHolidays || []) {
-            if (h.alternative_date && h.status === 'active' && !seenDates.has(h.alternative_date)) {
-                seenDates.add(h.alternative_date);
-                const [y, m, d] = h.alternative_date.split('-').map(Number);
-                const dt = new Date(y, m - 1, d);
-                const dayName = dt.toLocaleDateString('en-US', { weekday: 'short' });
-                pills.push({
-                    date: h.alternative_date,
-                    dayName: `${dayName} • Alternative`,
-                    formatted: dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                    isAlternative: true
-                });
-            }
-        }
-
-        // 2. Collect scheduled days of week from permanent classrooms
-        const scheduledDows = new Set<number>();
-        for (const r of permanentClassrooms) {
-            for (const dow of r.daysOfWeek || []) {
-                scheduledDows.add(dow);
-            }
-        }
-
-        // 3. Next 14 days that have scheduled classes
-        const cur = new Date(today);
-        for (let i = 0; i < 14 && pills.length < 5; i++) {
-            const y = cur.getFullYear();
-            const m = String(cur.getMonth() + 1).padStart(2, '0');
-            const d = String(cur.getDate()).padStart(2, '0');
-            const dStr = `${y}-${m}-${d}`;
-            const dow = cur.getDay();
-
-            if (!seenDates.has(dStr) && scheduledDows.has(dow)) {
-                seenDates.add(dStr);
-                const dayName = dStr === todayStr ? 'Today' : cur.toLocaleDateString('en-US', { weekday: 'short' });
-                pills.push({
-                    date: dStr,
-                    dayName,
-                    formatted: cur.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                    isAlternative: false
-                });
-            }
-            cur.setDate(cur.getDate() + 1);
-        }
-
-        return pills.sort((a, b) => a.date.localeCompare(b.date));
-    }, [activeAlternativeHolidays, permanentClassrooms]);
 
     // Available Classes for the selected date
     const availableClassesOnDate = useMemo(() => {
@@ -452,40 +398,14 @@ export const ArrangeMakeupModal: React.FC<ArrangeMakeupModalProps> = ({
                     {/* ──────────────────────────────────────────────────────────── */}
                     {makeupMode === 'existing_class' && (
                         <div className="space-y-4 pt-1 animate-in fade-in-50 duration-150">
-                            {/* Step 1: Makeup Attendance Date First */}
-                            <div className="space-y-2">
+                            {/* Step 1: Makeup Attendance Date */}
+                            <div className="space-y-1.5">
                                 <div className="flex items-center justify-between">
                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                                         1. Makeup Attendance Date <span className="text-rose-500">*</span>
                                     </label>
                                     <span className="text-[10px] text-slate-400 font-medium">Select class date</span>
                                 </div>
-
-                                {/* Quick Select Date Pills */}
-                                {quickDateSuggestions.length > 0 && (
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {quickDateSuggestions.map((sug) => {
-                                            const isSelected = makeupDate === sug.date;
-                                            return (
-                                                <button
-                                                    key={sug.date}
-                                                    type="button"
-                                                    onClick={() => setMakeupDate(sug.date)}
-                                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                                                        isSelected
-                                                            ? 'bg-[#ecb613] text-slate-900 shadow-xs ring-2 ring-[#ecb613]/50'
-                                                            : sug.isAlternative
-                                                                ? 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
-                                                                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
-                                                    }`}
-                                                >
-                                                    {sug.isAlternative && <Sparkles className="size-3 text-amber-600" />}
-                                                    <span>{sug.formatted} ({sug.dayName})</span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                )}
 
                                 {/* Date Input */}
                                 <div className="relative">
