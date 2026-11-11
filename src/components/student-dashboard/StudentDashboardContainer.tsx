@@ -804,10 +804,17 @@ export default function StudentDashboardContainer() {
             }
             setProfile(user);
 
-            if (session.user.user_metadata?.must_change_password === true) {
+            const isGoogleSession = session.user.app_metadata?.provider === 'google' || 
+                session.user.user_metadata?.iss?.includes('google') ||
+                (Array.isArray(session.user.identities) && session.user.identities.some((id: any) => id.provider === 'google'));
+
+            if (session.user.user_metadata?.must_change_password === true && !isGoogleSession) {
                 setShowForcePasswordModal(true);
             } else {
                 setShowForcePasswordModal(false);
+                if (isGoogleSession && session.user.user_metadata?.must_change_password === true) {
+                    supabaseAuth.auth.updateUser({ data: { must_change_password: false } }).catch(() => {});
+                }
             }
 
             const isNameIncomplete = !user.name || user.name.trim().toLowerCase() === 'new student';

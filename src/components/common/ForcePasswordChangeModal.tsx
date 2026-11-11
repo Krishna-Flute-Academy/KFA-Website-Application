@@ -50,13 +50,19 @@ export default function ForcePasswordChangeModal({
             });
 
             const timeoutPromise = new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('Password update timed out. Please try again.')), 10000)
+                setTimeout(() => reject(new Error('Password update timed out. Please check your connection and try again.')), 30000)
             );
 
             const { error } = await Promise.race([updatePromise, timeoutPromise]);
 
             if (error) {
                 throw error;
+            }
+
+            try {
+                await supabaseAuth.auth.refreshSession();
+            } catch (refreshErr) {
+                console.warn('Session refresh after password update skipped:', refreshErr);
             }
 
             setSuccess(true);

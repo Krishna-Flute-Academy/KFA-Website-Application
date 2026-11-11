@@ -38,17 +38,26 @@ export default function AuthCallbackPage() {
                 return;
             }
 
+            const isGoogleAuth = session.user.app_metadata?.provider === 'google' || 
+                session.user.user_metadata?.iss?.includes('google') ||
+                (Array.isArray(session.user.identities) && session.user.identities.some((id: any) => id.provider === 'google'));
+
             // If this is an admin-pre-registered student confirming their email address,
             // require them to sign in with their Email ID and temporary password on /login
             // so they can complete the mandatory password change step.
             if (
                 session.user.user_metadata?.must_change_password === true &&
-                session.user.app_metadata?.provider !== 'google'
+                !isGoogleAuth
             ) {
                 const confirmedEmail = session.user.email || '';
                 await supabaseAuth.auth.signOut({ scope: 'local' });
                 router.push(`/login?verified=1${confirmedEmail ? `&email=${encodeURIComponent(confirmedEmail)}` : ''}`);
                 return;
+            } else if (isGoogleAuth && session.user.user_metadata?.must_change_password === true) {
+                // If signing in via Google, clear must_change_password automatically
+                supabaseAuth.auth.updateUser({
+                    data: { must_change_password: false }
+                }).catch(() => {});
             }
 
             const userId = session.user.id;

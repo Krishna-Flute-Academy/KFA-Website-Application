@@ -25,7 +25,11 @@ const createSupabaseAuthClient = () => createClient(supabaseAuthUrl, supabaseAut
         storageKey: 'kfa-auth-token',
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true
+        detectSessionInUrl: true,
+        // Bypass navigator.locks to prevent browser lock contention and deadlocks on multi-channel/auth operations
+        lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<any>) => {
+            return await fn();
+        }
     }
 });
 
