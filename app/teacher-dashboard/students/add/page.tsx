@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
 import { Loader2, Plus, ArrowLeft, Eye, EyeOff, RefreshCw, Copy, Check, CheckCircle2, Mail } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
@@ -165,48 +164,40 @@ export default function AddStudentPage() {
                 throw new Error(`A user with email ${cleanEmail} is already registered.`);
             }
 
-            // 2. Create the Supabase Auth account using an isolated non-persisting client
-            // so the admin/teacher's own active session in localStorage is never overwritten.
-            // This triggers the confirmation email to the student and flags must_change_password: true.
+            // 2. Create the Supabase Auth account server-side with email_confirm: true
+            // so the student can log in immediately with the temporary password (no 1-hour link expiry)
+            // and is prompted to set a personal password on first login.
             let effectiveStudentId = existingUser?.id || studentId;
-            let emailConfirmationSent = false;
+            let createdAuthUserId: string | null = null;
+            const { data: sessionData } = await supabaseAuth.auth.getSession();
+            const accessToken = sessionData.session?.access_token;
 
             if (!existingUser) {
-                const supabaseAuthUrl = process.env.NEXT_PUBLIC_AUTH_SUPABASE_URL || '';
-                const supabaseAuthAnonKey = process.env.NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY || '';
-                const isolatedAuthClient = createClient(supabaseAuthUrl, supabaseAuthAnonKey, {
-                    auth: {
-                        persistSession: false,
-                        autoRefreshToken: false,
-                        detectSessionInUrl: false,
-                    }
+                if (!accessToken) {
+                    throw new Error('Your session has expired. Please log in again.');
+                }
+
+                const authRes = await fetch('/api/admin/students/create-auth-user', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                    body: JSON.stringify({
+                        email: cleanEmail,
+                        password: cleanPassword,
+                        fullName: cleanName,
+                        phone: formData.phone || null,
+                    }),
                 });
 
-                const { data: signUpData, error: signUpError } = await isolatedAuthClient.auth.signUp({
-                    email: cleanEmail,
-                    password: cleanPassword,
-                    options: {
-                        emailRedirectTo: `${window.location.origin}/auth/callback`,
-                        data: {
-                            full_name: cleanName,
-                            phone: formData.phone || null,
-                            must_change_password: true,
-                        }
-                    }
-                });
-
-                if (signUpError) {
-                    throw signUpError;
+                const authPayload = await authRes.json().catch(() => ({}));
+                if (!authRes.ok || !authPayload?.userId) {
+                    throw new Error(authPayload?.error || 'Failed to create student authentication account.');
                 }
 
-                if (signUpData?.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0) {
-                    throw new Error(`An authentication account with ${cleanEmail} already exists.`);
-                }
-
-                if (signUpData?.user?.id) {
-                    effectiveStudentId = signUpData.user.id;
-                    emailConfirmationSent = true;
-                }
+                effectiveStudentId = authPayload.userId;
+                createdAuthUserId = authPayload.userId;
             }
 
             // 3. Genuinely transactional atomic student onboarding
@@ -238,20 +229,26 @@ export default function AddStudentPage() {
                 p_payment_method: 'UPI'
             });
 
-            if (onboardError) throw onboardError;
-
-            // Explicit Failure Recovery Architecture:
-            // In KFA, Supabase Auth user identity is merged on-demand via handle_new_user() when the
-            // student first authenticates with their confirmed email. If an external admin flow pre-creates
-            // an auth.users record prior to onboarding, catch blocks must invoke supabaseAdmin.auth.admin.deleteUser(id)
-            // to ensure zero orphaned authentication credentials remain after an onboarding failure.
+            if (onboardError) {
+                if (createdAuthUserId && accessToken) {
+                    await fetch('/api/admin/students/create-auth-user', {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${accessToken}`,
+                        },
+                        body: JSON.stringify({ userId: createdAuthUserId }),
+                    }).catch(() => {});
+                }
+                throw onboardError;
+            }
 
             // Show the credentials summary modal so the admin can copy and share with the student
             setCreatedCredentials({
                 name: cleanName,
                 email: cleanEmail,
                 password: cleanPassword,
-                emailConfirmationSent
+                emailConfirmationSent: false
             });
 
         } catch (err: any) {
@@ -725,9 +722,8 @@ export default function AddStudentPage() {
                                 <span>Student First-Login Steps:</span>
                             </div>
                             <ol className="list-decimal list-inside space-y-0.5 text-blue-800/90">
-                                <li>Click the verification link sent to <strong>{createdCredentials.email}</strong>.</li>
-                                <li>Sign in at <strong>/login</strong> using the Email ID & Temporary Password above.</li>
-                                <li>Set a new personal password when prompted on first login.</li>
+                                <li>Go to <strong>/login</strong> and sign in with the Email ID & Temporary Password above.</li>
+                                <li>Set a new personal password when prompted on first login (no expiry link needed).</li>
                             </ol>
                         </div>
 
@@ -736,7 +732,7 @@ export default function AddStudentPage() {
                                 type="button"
                                 onClick={() => {
                                     const loginUrl = `${window.location.origin}/login`;
-                                    const msg = `Welcome to Krishna Flute Academy, ${createdCredentials.name}!\n\nLogin Portal: ${loginUrl}\nEmail ID: ${createdCredentials.email}\nTemporary Password: ${createdCredentials.password}\n\nSteps to Sign In:\n1. Open the verification email sent to ${createdCredentials.email} and click the confirmation link.\n2. Sign in with the Email ID and Temporary Password above.\n3. Set your own new password when prompted on your first login.`;
+                                    const msg = `Welcome to Krishna Flute Academy, ${createdCredentials.name}!\n\nLogin Portal: ${loginUrl}\nEmail ID: ${createdCredentials.email}\nTemporary Password: ${createdCredentials.password}\n\nSteps to Sign In:\n1. Open ${loginUrl} and sign in with the Email ID and Temporary Password above.\n2. Set your own new password when prompted on your first login.`;
                                     navigator.clipboard.writeText(msg);
                                     setCopiedCredentials(true);
                                     setTimeout(() => setCopiedCredentials(false), 2500);

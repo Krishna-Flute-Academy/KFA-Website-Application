@@ -618,7 +618,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 fixed md:sticky top-0 left-0 h-screen z-50 transition-transform duration-300 md:translate-x-0
                 ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
             `}>
-            <div className="p-6 flex items-center justify-between">
+            <div className="px-5 py-4 flex items-center justify-between">
                 <div className="flex flex-col justify-center">
                     <h1 className="font-black text-xl leading-tight text-slate-950 dark:text-white select-none">
                         {userRole === 'admin' ? 'Music Admin' : 'Teacher Portal'}
@@ -636,7 +636,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 </button>
             </div>
 
-            <nav className="flex-1 px-3 space-y-1.5 mt-6 overflow-y-auto">
+            <nav className="flex-1 min-h-0 px-3 space-y-1 mt-2 overflow-y-auto">
                 {menuItems.map((item) => {
                     const normalizedPathname = normalizePath(pathname);
                     const normalizedItemHref = normalizePath(item.href);
@@ -648,7 +648,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     return (
                         <Link
                             key={item.name}
-                            className={`flex items-center gap-3 py-3 transition-all relative ${isActive
+                            className={`flex items-center gap-3 py-2.5 transition-all relative ${isActive
                                     ? 'bg-gradient-to-r from-amber-500/10 to-amber-500/0 text-[#b45309] dark:text-[#ecb613] font-black border-l-4 border-[#d97706] pl-3.5 pr-4 rounded-r-2xl'
                                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/70 px-4 rounded-xl'
                                 }`}
@@ -687,53 +687,53 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 })}
             </nav>
 
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50/50 dark:bg-slate-900/30">
+            <div className="p-3 border-t border-slate-200 dark:border-slate-800 space-y-2 bg-slate-50/50 dark:bg-slate-900/30 shrink-0">
                 {/* Storage Status Widget */}
-                <div className="px-4 py-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-xs">
-                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-[#d97706]">
-                        <span>Storage Status</span>
-                        {isFetchingStorage && (
-                            <span className="animate-pulse text-slate-400">Updating...</span>
-                        )}
+                <div className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1.5 shadow-xs">
+                    <div className="flex items-center justify-between gap-2 text-[10px] leading-none">
+                        <span className="font-black uppercase tracking-wider text-[#d97706]">Storage</span>
+                        <span className="font-bold text-slate-500 dark:text-slate-400 truncate">
+                            {isFetchingStorage && storageUsed === null ? (
+                                'Calculating...'
+                            ) : (
+                                <>
+                                    {`${formatStorageSize(storageUsed || 0)} / ${formatStorageSize(storageLimit)}`}
+                                    {isFetchingStorage && <span className="ml-1 animate-pulse">…</span>}
+                                </>
+                            )}
+                        </span>
                     </div>
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden border border-transparent dark:border-slate-800">
+                    <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden border border-transparent dark:border-slate-800">
                         <div 
-                            className="bg-[#d97706] h-2 rounded-full transition-all duration-500 ease-out" 
+                            className="bg-[#d97706] h-1.5 rounded-full transition-all duration-500 ease-out" 
                             style={{ width: `${storagePercentage}%` }}
                         ></div>
-                    </div>
-                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-none">
-                        {isFetchingStorage && storageUsed === null ? (
-                            'Calculating...'
-                        ) : (
-                            `${formatStorageSize(storageUsed || 0)} of ${formatStorageSize(storageLimit)} used`
-                        )}
                     </div>
                 </div>
 
                 {/* Visit Main Website (Outside Academy Portal) */}
-                <div className="pt-2 pb-1 border-t border-slate-150 dark:border-slate-800">
+                <div className="space-y-0.5">
                     <Link
                         href="/"
                         onClick={() => setIsOpen(false)}
-                        className="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                         title="Visit Main Website"
                     >
-                        <span className="material-symbols-outlined text-[20px]">public</span>
+                        <span className="material-symbols-outlined text-[18px]">public</span>
                         <span className="text-xs font-semibold">Visit Main Website</span>
                     </Link>
+
+                    <button
+                        onClick={handleLogoutWithClear}
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer"
+                    >
+                        <span className="material-symbols-outlined text-[18px]">logout</span>
+                        <span className="text-sm font-semibold">Logout</span>
+                    </button>
                 </div>
 
-                <button
-                    onClick={handleLogoutWithClear}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
-                >
-                    <span className="material-symbols-outlined">logout</span>
-                    <span className="text-sm font-semibold">Logout</span>
-                </button>
-
-                <div className="mt-4 flex items-center gap-3 px-3 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 shadow-xs">
-                    <div className="size-10 rounded-full overflow-hidden border border-amber-500/20 bg-amber-500/10 flex items-center justify-center shrink-0">
+                <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 shadow-xs">
+                    <div className="size-8 rounded-full overflow-hidden border border-amber-500/20 bg-amber-500/10 flex items-center justify-center shrink-0">
                         {teacherProfile?.profile_pic_url ? (
                             <img 
                                 src={teacherProfile.profile_pic_url} 
@@ -741,14 +741,14 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                 className="w-full h-full object-cover" 
                             />
                         ) : (
-                            <span className="text-sm font-black text-amber-600 dark:text-amber-400">
+                            <span className="text-xs font-black text-amber-600 dark:text-amber-400">
                                 {teacherProfile?.name ? teacherProfile.name.charAt(0).toUpperCase() : 'U'}
                             </span>
                         )}
                     </div>
                     <div className="overflow-hidden min-w-0">
-                        <p className="text-sm font-black truncate text-slate-900 dark:text-white">{teacherProfile?.name || 'User'}</p>
-                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                        <p className="text-xs font-black truncate text-slate-900 dark:text-white leading-tight">{teacherProfile?.name || 'User'}</p>
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide leading-tight">
                             {userRole === 'admin' ? 'Administrator' : 'Instructor'}
                         </p>
                     </div>

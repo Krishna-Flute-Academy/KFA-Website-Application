@@ -13,6 +13,7 @@ import { getStudentStatusBadge } from '../../../src/lib/student-lifecycle';
 import { fetchAcademyTeachers } from '../../../src/lib/teachers';
 import { PauseLearningModal } from '../../../src/components/teacher-dashboard/students/PauseLearningModal';
 import { ResumeLearningModal } from '../../../src/components/teacher-dashboard/students/ResumeLearningModal';
+import { StudentActionMenu } from '../../../src/components/teacher-dashboard/students/StudentActionMenu';
 
 const GUIDANCE_TEMPLATES = [
     {
@@ -406,22 +407,28 @@ export default function StudentDirectory() {
         }
     };
 
-    const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
-    const actionMenuRef = useRef<HTMLDivElement>(null);
+    const [activeActionMenuStudent, setActiveActionMenuStudent] = useState<StudentData | null>(null);
+    const [activeActionMenuTrigger, setActiveActionMenuTrigger] = useState<HTMLElement | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
 
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
-                setActiveActionMenuId(null);
-            }
+    const handleCloseActionMenu = useCallback((restoreFocus = false) => {
+        const trigger = activeActionMenuTrigger;
+        setActiveActionMenuStudent(null);
+        setActiveActionMenuTrigger(null);
+        if (restoreFocus && trigger) {
+            requestAnimationFrame(() => trigger.focus());
         }
-        if (activeActionMenuId) {
-            document.addEventListener('mousedown', handleClickOutside);
-            return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [activeActionMenuTrigger]);
+
+    const handleActionMenuToggle = (student: StudentData, el: HTMLElement) => {
+        if (activeActionMenuStudent?.id === student.id) {
+            handleCloseActionMenu(false);
+        } else {
+            setActiveActionMenuStudent(student);
+            setActiveActionMenuTrigger(el);
         }
-    }, [activeActionMenuId]);
+    };
 
     // Single delete
     const [studentToDelete, setStudentToDelete] = useState<{ id: string, name: string } | null>(null);
@@ -545,6 +552,7 @@ export default function StudentDirectory() {
     }
     const [recycleBin, setRecycleBin] = useState<DeletedStudentItem[]>([]);
     const [showRecycleBin, setShowRecycleBin] = useState(false);
+    const [isPurgingBin, setIsPurgingBin] = useState(false);
 
     useEffect(() => {
         const savedBin = localStorage.getItem('students_recycle_bin');
@@ -1447,15 +1455,73 @@ export default function StudentDirectory() {
         }
     };
 
-    const handlePermanentDeleteStudent = (itemId: string) => {
-        if (!window.confirm("Are you sure you want to permanently delete this student from the Recycle Bin? This action is permanent and cannot be undone.")) return;
-        const updatedBin = recycleBin.filter(b => b.id !== itemId);
-        saveRecycleBin(updatedBin);
+    const purgeStudentsFromServer = async (studentIds: string[]): Promise<{ deletedIds: string[]; failed: Array<{ id: string; reason: string }> }> => {
+        const { data: sessionData } = await supabaseAuth.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+        if (!accessToken) {
+            throw new Error('Your session has expired. Please log in again.');
+        }
+
+        const res = await fetch('/api/admin/students/permanent-delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ studentIds }),
+        });
+
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(payload?.error || 'Failed to permanently delete student data.');
+        }
+
+        return {
+            deletedIds: Array.isArray(payload.deletedIds) ? payload.deletedIds : [],
+            failed: Array.isArray(payload.failed) ? payload.failed : [],
+        };
     };
 
-    const handleClearRecycleBin = () => {
-        if (!window.confirm("Are you sure you want to empty the Recycle Bin? All deleted students will be permanently lost.")) return;
-        saveRecycleBin([]);
+    const handlePermanentDeleteStudent = async (itemId: string) => {
+        if (isPurgingBin) return;
+        if (!window.confirm("Are you sure you want to permanently delete this student from the Recycle Bin? All their database records and login account will be permanently removed.")) return;
+
+        setIsPurgingBin(true);
+        try {
+            const { deletedIds, failed } = await purgeStudentsFromServer([itemId]);
+            if (deletedIds.includes(itemId)) {
+                saveRecycleBin(recycleBin.filter(b => b.id !== itemId));
+            }
+            if (failed.length > 0) {
+                alert(`Failed to permanently delete student: ${failed.map(f => f.reason).join(', ')}`);
+            }
+        } catch (err: any) {
+            console.error('Error permanently deleting student:', err);
+            alert(err?.message || 'An unexpected error occurred while permanently deleting the student.');
+        } finally {
+            setIsPurgingBin(false);
+        }
+    };
+
+    const handleClearRecycleBin = async () => {
+        if (isPurgingBin || recycleBin.length === 0) return;
+        if (!window.confirm("Are you sure you want to empty the Recycle Bin? All deleted students' database records and login accounts will be permanently removed.")) return;
+
+        setIsPurgingBin(true);
+        try {
+            const targetIds = recycleBin.map(b => b.id);
+            const { deletedIds, failed } = await purgeStudentsFromServer(targetIds);
+            const deletedSet = new Set(deletedIds);
+            saveRecycleBin(recycleBin.filter(b => !deletedSet.has(b.id)));
+            if (failed.length > 0) {
+                alert(`Some students could not be permanently deleted:\n${failed.map(f => `${f.id}: ${f.reason}`).join('\n')}`);
+            }
+        } catch (err: any) {
+            console.error('Error emptying recycle bin:', err);
+            alert(err?.message || 'An unexpected error occurred while emptying the Recycle Bin.');
+        } finally {
+            setIsPurgingBin(false);
+        }
     };
 
     // ─── Download CSV Template ────────────────────────────────────────────────
@@ -1812,7 +1878,7 @@ export default function StudentDirectory() {
     }
 
     return (
-        <div className="bg-[#f8f8f6] dark:bg-[#221d10] text-slate-900 dark:text-slate-100 font-sans min-h-screen font-sans">
+        <div className="bg-[#f8f8f6] dark:bg-[#221d10] text-slate-900 dark:text-slate-100 font-sans h-screen supports-[height:100dvh]:h-[100dvh] overflow-hidden">
             {/* ─── Single Delete Confirmation Modal ───────────────────────────────── */}
             {studentToDelete && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -2064,10 +2130,11 @@ export default function StudentDirectory() {
                                 {recycleBin.length > 0 && (
                                     <button
                                         onClick={handleClearRecycleBin}
-                                        className="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/20 dark:text-rose-450 dark:hover:bg-rose-900/30 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                                        disabled={isPurgingBin}
+                                        className="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/20 dark:text-rose-450 dark:hover:bg-rose-900/30 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 disabled:opacity-50 cursor-pointer"
                                     >
                                         <span className="material-symbols-outlined text-sm">delete_forever</span>
-                                        Empty Bin
+                                        {isPurgingBin ? 'Purging...' : 'Empty Bin'}
                                     </button>
                                 )}
                                 <button
@@ -2106,7 +2173,8 @@ export default function StudentDirectory() {
                                                 </button>
                                                 <button
                                                     onClick={() => handlePermanentDeleteStudent(item.id)}
-                                                    className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all"
+                                                    disabled={isPurgingBin}
+                                                    className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
                                                     title="Delete Permanently"
                                                 >
                                                     <span className="material-symbols-outlined text-lg">delete</span>
@@ -2526,10 +2594,10 @@ export default function StudentDirectory() {
                 </div>
             )}
 
-            <div className="flex min-h-screen">
+            <div className="flex h-full overflow-hidden">
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
-                <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
                     <TeacherHeader 
                         title="Student Directory" 
                         avatarUrl={teacherProfile?.profile_pic_url}
@@ -2539,7 +2607,7 @@ export default function StudentDirectory() {
                         backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                     />
 
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
+                    <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 md:p-8">
                         <div className="max-w-7xl mx-auto w-full space-y-6">
                             {/* ── Page Header & Top Actions ────────────────────────── */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -3011,126 +3079,14 @@ export default function StudentDirectory() {
                                                     <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
                                                         <button
                                                             type="button"
-                                                            onClick={() => setActiveActionMenuId(activeActionMenuId === student.id ? null : student.id)}
+                                                            onClick={(e) => handleActionMenuToggle(student, e.currentTarget)}
                                                             className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                                                             aria-label="Student actions"
+                                                            aria-haspopup="menu"
+                                                            aria-expanded={activeActionMenuStudent?.id === student.id}
                                                         >
                                                             <span className="material-symbols-outlined text-xl">more_vert</span>
                                                         </button>
-                                                        {activeActionMenuId === student.id && (
-                                                            <div 
-                                                                ref={actionMenuRef}
-                                                                className="absolute right-0 top-full mt-1 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 text-left"
-                                                            >
-                                                                <Link
-                                                                    href={`/teacher-dashboard/students/${student.id}`}
-                                                                    onClick={() => setActiveActionMenuId(null)}
-                                                                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                                                                >
-                                                                    <span className="material-symbols-outlined text-sm text-slate-400">visibility</span>
-                                                                    View Profile
-                                                                </Link>
-                                                                <Link
-                                                                    href={`/teacher-dashboard/students/${student.id}/edit`}
-                                                                    onClick={() => setActiveActionMenuId(null)}
-                                                                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                                                                >
-                                                                    <span className="material-symbols-outlined text-sm text-slate-400">edit</span>
-                                                                    Edit Student
-                                                                </Link>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setActiveActionMenuId(null);
-                                                                        openSingleGuidanceModal(student);
-                                                                    }}
-                                                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-left cursor-pointer"
-                                                                >
-                                                                    <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
-                                                                    Add Guidance Note
-                                                                </button>
-                                                                <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-                                                                {student.status === 'Active' ? (
-                                                                    <>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                setActiveActionMenuId(null);
-                                                                                handlePauseStudent(student);
-                                                                            }}
-                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-left cursor-pointer"
-                                                                        >
-                                                                            <span className="material-symbols-outlined text-sm">pause_circle</span>
-                                                                            Pause Learning
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                setActiveActionMenuId(null);
-                                                                                handleArchiveStudent(student);
-                                                                            }}
-                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-left cursor-pointer"
-                                                                        >
-                                                                            <span className="material-symbols-outlined text-sm">archive</span>
-                                                                            Archive Student
-                                                                        </button>
-                                                                    </>
-                                                                ) : student.status === 'Inactive' ? (
-                                                                    <>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                setActiveActionMenuId(null);
-                                                                                handleResumeStudent(student);
-                                                                            }}
-                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-left cursor-pointer"
-                                                                        >
-                                                                            <span className="material-symbols-outlined text-sm">play_circle</span>
-                                                                            Resume Learning
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                setActiveActionMenuId(null);
-                                                                                handleArchiveStudent(student);
-                                                                            }}
-                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-left cursor-pointer"
-                                                                        >
-                                                                            <span className="material-symbols-outlined text-sm">archive</span>
-                                                                            Archive Student
-                                                                        </button>
-                                                                    </>
-                                                                ) : (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => {
-                                                                            setActiveActionMenuId(null);
-                                                                            handleOpenReactivateModal(student);
-                                                                        }}
-                                                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-left cursor-pointer"
-                                                                    >
-                                                                        <span className="material-symbols-outlined text-sm">unarchive</span>
-                                                                        Re-enroll Student
-                                                                    </button>
-                                                                )}
-                                                                {teacherProfile?.role === 'admin' && (
-                                                                    <>
-                                                                        <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                setActiveActionMenuId(null);
-                                                                                setStudentToDelete({ id: student.id, name: student.name });
-                                                                            }}
-                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-left cursor-pointer"
-                                                                        >
-                                                                            <span className="material-symbols-outlined text-sm">delete</span>
-                                                                            Delete Student
-                                                                        </button>
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 </div>
 
@@ -3480,141 +3436,15 @@ export default function StudentDirectory() {
                                                                     <div className="relative">
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => setActiveActionMenuId(activeActionMenuId === student.id ? null : student.id)}
+                                                                            onClick={(e) => handleActionMenuToggle(student, e.currentTarget)}
                                                                             className="size-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                                                                             title="More actions"
+                                                                            aria-label={`More actions for ${student.name}`}
+                                                                            aria-haspopup="menu"
+                                                                            aria-expanded={activeActionMenuStudent?.id === student.id}
                                                                         >
                                                                             <span className="material-symbols-outlined text-lg">more_vert</span>
                                                                         </button>
-                                                                        {activeActionMenuId === student.id && (
-                                                                            <div 
-                                                                                ref={actionMenuRef}
-                                                                                className="absolute right-0 top-full mt-1.5 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 text-left"
-                                                                            >
-                                                                                <Link
-                                                                                    href={`/teacher-dashboard/students/${student.id}`}
-                                                                                    onClick={() => setActiveActionMenuId(null)}
-                                                                                    className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                                                                                >
-                                                                                    <span className="material-symbols-outlined text-base text-slate-400">visibility</span>
-                                                                                    View Profile
-                                                                                </Link>
-                                                                                <Link
-                                                                                    href={`/teacher-dashboard/students/${student.id}/edit`}
-                                                                                    onClick={() => setActiveActionMenuId(null)}
-                                                                                    className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                                                                                >
-                                                                                    <span className="material-symbols-outlined text-base text-slate-400">edit</span>
-                                                                                    Edit Student
-                                                                                </Link>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => {
-                                                                                        setActiveActionMenuId(null);
-                                                                                        router.push(`/teacher-dashboard/messages?chat=${student.id}`);
-                                                                                    }}
-                                                                                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer"
-                                                                                >
-                                                                                    <span className="material-symbols-outlined text-base text-slate-400">chat</span>
-                                                                                    Send Message
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => {
-                                                                                        setActiveActionMenuId(null);
-                                                                                        openSingleGuidanceModal(student);
-                                                                                    }}
-                                                                                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer"
-                                                                                >
-                                                                                    <Lightbulb className="w-4 h-4 text-amber-500" />
-                                                                                    Add Guidance Note
-                                                                                </button>
-
-                                                                                <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-
-                                                                                {/* Lifecycle Transitions */}
-                                                                                {student.status === 'Active' ? (
-                                                                                    <>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                setActiveActionMenuId(null);
-                                                                                                handlePauseStudent(student);
-                                                                                            }}
-                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors text-left cursor-pointer"
-                                                                                        >
-                                                                                            <span className="material-symbols-outlined text-base">pause_circle</span>
-                                                                                            Pause Learning
-                                                                                        </button>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                setActiveActionMenuId(null);
-                                                                                                handleArchiveStudent(student);
-                                                                                            }}
-                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer"
-                                                                                        >
-                                                                                            <span className="material-symbols-outlined text-base">archive</span>
-                                                                                            Archive Student
-                                                                                        </button>
-                                                                                    </>
-                                                                                ) : student.status === 'Inactive' ? (
-                                                                                    <>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                setActiveActionMenuId(null);
-                                                                                                handleResumeStudent(student);
-                                                                                            }}
-                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors text-left cursor-pointer"
-                                                                                        >
-                                                                                            <span className="material-symbols-outlined text-base">play_circle</span>
-                                                                                            Resume Learning
-                                                                                        </button>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                setActiveActionMenuId(null);
-                                                                                                handleArchiveStudent(student);
-                                                                                            }}
-                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer"
-                                                                                        >
-                                                                                            <span className="material-symbols-outlined text-base">archive</span>
-                                                                                            Archive Student
-                                                                                        </button>
-                                                                                    </>
-                                                                                ) : (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => {
-                                                                                            setActiveActionMenuId(null);
-                                                                                            handleOpenReactivateModal(student);
-                                                                                        }}
-                                                                                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors text-left cursor-pointer"
-                                                                                        >
-                                                                                        <span className="material-symbols-outlined text-base">unarchive</span>
-                                                                                        Re-enroll Student
-                                                                                    </button>
-                                                                                )}
-
-                                                                                {teacherProfile?.role === 'admin' && (
-                                                                                    <>
-                                                                                        <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                setActiveActionMenuId(null);
-                                                                                                setStudentToDelete({ id: student.id, name: student.name });
-                                                                                            }}
-                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors text-left cursor-pointer"
-                                                                                        >
-                                                                                            <span className="material-symbols-outlined text-base">delete</span>
-                                                                                            Delete Student
-                                                                                        </button>
-                                                                                    </>
-                                                                                )}
-                                                                            </div>
-                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -3679,6 +3509,22 @@ export default function StudentDirectory() {
                 onClose={handleCloseAttentionPopover}
                 onMouseEnter={handlePopoverMouseEnter}
                 onMouseLeave={handlePopoverMouseLeave}
+            />
+
+            {/* Student Row Action Menu Portal */}
+            <StudentActionMenu
+                isOpen={!!activeActionMenuStudent}
+                triggerEl={activeActionMenuTrigger}
+                student={activeActionMenuStudent}
+                isAdmin={teacherProfile?.role === 'admin'}
+                onClose={handleCloseActionMenu}
+                onSendMessage={(s) => router.push(`/teacher-dashboard/messages?chat=${s.id}`)}
+                onAddGuidance={(s) => openSingleGuidanceModal(s as StudentData)}
+                onPause={(s) => handlePauseStudent(s as StudentData)}
+                onResume={(s) => handleResumeStudent(s as StudentData)}
+                onArchive={(s) => handleArchiveStudent(s as StudentData)}
+                onReactivate={(s) => handleOpenReactivateModal(s as StudentData)}
+                onDelete={(s) => setStudentToDelete({ id: s.id, name: s.name })}
             />
 
             {/* Pause Learning Modal */}

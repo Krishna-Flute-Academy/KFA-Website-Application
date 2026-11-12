@@ -82,12 +82,12 @@ export default function StatsSummary({
     ];
 
     return (
-        <section className={`grid grid-cols-2 ${isAdmin ? 'lg:grid-cols-4' : 'sm:grid-cols-3'} gap-3 sm:gap-4 md:gap-6 w-full`}>
+        <section className={`grid grid-cols-2 ${isAdmin ? 'lg:grid-cols-2 2xl:grid-cols-4' : 'sm:grid-cols-3'} gap-3 sm:gap-4 md:gap-5 w-full`}>
             {statsList.map((stat, i) => (
                 <Link 
                     key={i} 
                     href={stat.href} 
-                    className={`bg-white dark:bg-slate-900 p-3 sm:p-5 rounded-r-2xl rounded-l-md border border-slate-200 dark:border-slate-800 shadow-xs transition-all hover:scale-[1.02] hover:shadow-md flex flex-col md:flex-row md:items-center gap-1.5 sm:gap-4 relative overflow-hidden ${stat.borderClass} ${!isAdmin && i === 2 ? 'col-span-2 sm:col-span-1' : ''}`}
+                    className={`bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-r-2xl rounded-l-md border border-slate-200 dark:border-slate-800 shadow-xs transition-all hover:scale-[1.02] hover:shadow-md flex flex-col md:flex-row md:items-center gap-1.5 sm:gap-3.5 relative overflow-hidden ${stat.borderClass} ${!isAdmin && i === 2 ? 'col-span-2 sm:col-span-1' : ''}`}
                 >
                     {/* Status dot notification for mobile */}
                     {stat.statusDot && (
@@ -99,8 +99,8 @@ export default function StatsSummary({
                     </div>
 
                     <div className="min-w-0 flex-1 text-center md:text-left w-full">
-                        <div className="hidden md:flex items-center justify-between gap-1">
-                            <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider truncate">{stat.label}</p>
+                        <div className="hidden md:flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                            <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider whitespace-nowrap">{stat.label}</p>
                             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${stat.statusClass}`}>
                                 {stat.status}
                             </span>
