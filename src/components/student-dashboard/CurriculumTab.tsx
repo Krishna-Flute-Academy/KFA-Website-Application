@@ -436,8 +436,20 @@ export default function CurriculumTab({
                                     placeholder="Search syllabus..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full pl-9 pr-4 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-none text-slate-850 placeholder:text-slate-400 transition-all"
+                                    className="w-full pl-9 pr-8 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-none text-slate-850 placeholder:text-slate-400 transition-all"
+                                    aria-label="Search syllabus"
                                 />
+                                {searchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSearchQuery('')}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                        title="Clear search"
+                                        aria-label="Clear search"
+                                    >
+                                        <X className="w-2.5 h-2.5" />
+                                    </button>
+                                )}
                             </div>
                             <div className="bg-amber-500/10 text-amber-700 text-[10px] sm:text-xs font-extrabold px-2.5 sm:px-3 py-1.5 rounded-full shrink-0 text-center">
                                 Completed: {completedLessonsCount} / {totalAllocatedLessons}
@@ -467,11 +479,19 @@ export default function CurriculumTab({
                         {filteredModules.length === 0 ? (
                             <div className="py-12 text-center text-slate-400">
                                 {searchQuery.trim() !== '' ? (
-                                    <>
+                                    <div role="status" aria-live="polite">
                                         <Search className="w-8 h-8 mx-auto mb-2 text-slate-300 animate-pulse" />
                                         <p className="text-xs font-bold text-slate-500">No matching topics found.</p>
                                         <p className="text-[10px] text-slate-400 mt-0.5">Try searching with a different keyword.</p>
-                                    </>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSearchQuery('')}
+                                            className="mt-3 px-3 py-1 bg-slate-100 hover:bg-amber-500 hover:text-white border border-slate-200 rounded-xl text-[11px] font-bold text-slate-600 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                            aria-label="Clear search query"
+                                        >
+                                            Clear Search Query
+                                        </button>
+                                    </div>
                                 ) : courseLessons.length === 0 ? (
                                     <>
                                         <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-slate-300" />

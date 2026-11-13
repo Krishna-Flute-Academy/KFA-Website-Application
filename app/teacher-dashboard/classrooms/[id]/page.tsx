@@ -4041,8 +4041,7 @@ export default function ClassroomDashboardPage({
         }
     }, [curriculumTab, selectedStudentForCurriculum, studentProgress, courseLessons, courseChapters, getClassSummary]);
 
-    const visibleCurriculum = useMemo(() => {
-        const hasSearch = getSearchTokens(curriculumSearchQuery).length > 0;
+    const sourceCurriculum = useMemo(() => {
         const categoriesMap: Record<string, {
             categoryName: string;
             categoryOrder: number;
@@ -4069,23 +4068,12 @@ export default function ClassroomDashboardPage({
             const modAlloc = allocatedInventoryItems.find(a => (a.module_id && a.module_id === mod.id) || (a.inventory_ref_type === 'module' && a.inventory_ref_id === mod.id));
 
             const { categoryName, categoryOrder } = getCategoryInfo(mod);
-            const isCategoryMatch = hasSearch ? matchesSearchTokens([categoryName], curriculumSearchQuery) : false;
-            const isModuleMatch = hasSearch ? matchesSearchTokens([mod.title, mod.description, categoryName], curriculumSearchQuery) : false;
 
             const modChapters = courseChapters.filter(c => c.module_id === mod.id);
             const chapterNodes: any[] = [];
 
             modChapters.forEach(chap => {
                 const chapAlloc = allocatedInventoryItems.find(a => (a.chapter_id && a.chapter_id === chap.id) || (a.inventory_ref_type === 'chapter' && a.inventory_ref_id === chap.id));
-
-                const isChapterMatch = hasSearch ? matchesSearchTokens([
-                    chap.title,
-                    chap.description,
-                    `ch${chap.chapter_number}`,
-                    `chapter ${chap.chapter_number}`,
-                    mod.title,
-                    categoryName
-                ], curriculumSearchQuery) : false;
 
                 const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
                 const lessonNodes: any[] = [];
@@ -4116,30 +4104,17 @@ export default function ClassroomDashboardPage({
                     const isLessonAllocated = !!lessonAlloc || !!chapAlloc || !!modAlloc || hasRelevantProgress || hasRelevantSpotlight;
 
                     if (isLessonAllocated) {
-                        const isLessonMatch = hasSearch ? matchesSearchTokens([
-                            lesson.title,
-                            lesson.description,
-                            `topic ${lesson.lesson_number}`,
-                            chap.title,
-                            mod.title,
-                            categoryName
-                        ], curriculumSearchQuery) : false;
-
-                        const matchesSearch = !hasSearch || isCategoryMatch || isModuleMatch || isChapterMatch || isLessonMatch;
-
-                        if (matchesSearch) {
-                            lessonNodes.push({
-                                ...lesson,
-                                allocationId: lessonAlloc ? lessonAlloc.id : (chapAlloc ? chapAlloc.id : (modAlloc ? modAlloc.id : null)),
-                                isExplicit: !!lessonAlloc
-                            });
-                        }
+                        lessonNodes.push({
+                            ...lesson,
+                            allocationId: lessonAlloc ? lessonAlloc.id : (chapAlloc ? chapAlloc.id : (modAlloc ? modAlloc.id : null)),
+                            isExplicit: !!lessonAlloc
+                        });
                     }
                 });
 
                 const isChapterVisible = lessonNodes.length > 0 || !!chapAlloc;
 
-                if (isChapterVisible && (!hasSearch || isCategoryMatch || isModuleMatch || isChapterMatch || lessonNodes.length > 0)) {
+                if (isChapterVisible) {
                     chapterNodes.push({
                         ...chap,
                         allocationId: chapAlloc ? chapAlloc.id : (modAlloc ? modAlloc.id : null),
@@ -4151,7 +4126,7 @@ export default function ClassroomDashboardPage({
 
             const isModuleVisible = chapterNodes.length > 0 || !!modAlloc;
 
-            if (isModuleVisible && (!hasSearch || isCategoryMatch || isModuleMatch || chapterNodes.length > 0)) {
+            if (isModuleVisible) {
                 if (!categoriesMap[categoryName]) {
                     categoriesMap[categoryName] = {
                         categoryName,
@@ -4175,13 +4150,86 @@ export default function ClassroomDashboardPage({
                 ...cat,
                 modules: cat.modules.sort((a, b) => a.module_number - b.module_number)
             }));
-    }, [allocatedInventoryItems, courseModules, courseChapters, courseLessons, categories, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress, studentSpotlights, relevantCurriculumStudents, curriculumSearchQuery]);
+    }, [allocatedInventoryItems, courseModules, courseChapters, courseLessons, categories, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress, studentSpotlights, relevantCurriculumStudents]);
+
+    const visibleCurriculum = useMemo(() => {
+        if (!getSearchTokens(curriculumSearchQuery).length) {
+            return sourceCurriculum;
+        }
+
+        const filteredCategories: any[] = [];
+
+        sourceCurriculum.forEach(cat => {
+            const isCategoryMatch = matchesSearchTokens([cat.categoryName], curriculumSearchQuery);
+            const filteredModules: any[] = [];
+
+            cat.modules.forEach((mod: any) => {
+                const isModuleMatch = matchesSearchTokens([mod.title, mod.description, cat.categoryName], curriculumSearchQuery);
+                const filteredChapters: any[] = [];
+
+                mod.chapters.forEach((chap: any) => {
+                    const isChapterMatch = matchesSearchTokens([
+                        chap.title,
+                        chap.description,
+                        `ch${chap.chapter_number}`,
+                        `chapter ${chap.chapter_number}`,
+                        mod.title,
+                        cat.categoryName
+                    ], curriculumSearchQuery);
+
+                    const filteredLessons: any[] = [];
+
+                    chap.lessons.forEach((lesson: any) => {
+                        const isLessonMatch = matchesSearchTokens([
+                            lesson.title,
+                            lesson.description,
+                            `topic ${lesson.lesson_number}`,
+                            chap.title,
+                            mod.title,
+                            cat.categoryName
+                        ], curriculumSearchQuery);
+
+                        if (isCategoryMatch || isModuleMatch || isChapterMatch || isLessonMatch) {
+                            filteredLessons.push(lesson);
+                        }
+                    });
+
+                    const isChapterVisible = filteredLessons.length > 0 || ((isCategoryMatch || isModuleMatch || isChapterMatch) && chap.isExplicit);
+
+                    if (isChapterVisible) {
+                        filteredChapters.push({
+                            ...chap,
+                            lessons: filteredLessons
+                        });
+                    }
+                });
+
+                const isModuleVisible = filteredChapters.length > 0 || ((isCategoryMatch || isModuleMatch) && mod.isExplicit);
+
+                if (isModuleVisible) {
+                    filteredModules.push({
+                        ...mod,
+                        chapters: filteredChapters
+                    });
+                }
+            });
+
+            if (filteredModules.length > 0) {
+                filteredCategories.push({
+                    ...cat,
+                    modules: filteredModules
+                });
+            }
+        });
+
+        return filteredCategories;
+    }, [sourceCurriculum, curriculumSearchQuery]);
 
     const cohortMetrics = useMemo(() => {
         const activeLessons: any[] = [];
         const activeLessonIds = new Set<string>();
 
-        visibleCurriculum.forEach(cat => {
+        sourceCurriculum.forEach(cat => {
             cat.modules.forEach((m: any) => {
                 m.chapters.forEach((c: any) => {
                     c.lessons.forEach((l: any) => {
@@ -4218,13 +4266,13 @@ export default function ClassroomDashboardPage({
             inProgressCount,
             spotlightCount
         };
-    }, [visibleCurriculum, getClassSummary, relevantCurriculumStudents, studentSpotlights]);
+    }, [sourceCurriculum, getClassSummary, relevantCurriculumStudents, studentSpotlights]);
 
     const syllabusLessons = useMemo(() => {
         const lessonsSet = new Set<string>();
         const uniqueLessons: any[] = [];
 
-        visibleCurriculum.forEach(cat => {
+        sourceCurriculum.forEach(cat => {
             cat.modules.forEach((m: any) => {
                 m.chapters.forEach((c: any) => {
                     c.lessons.forEach((l: any) => {
@@ -4238,7 +4286,7 @@ export default function ClassroomDashboardPage({
         });
 
         return uniqueLessons.sort((a, b) => a.lesson_number - b.lesson_number);
-    }, [visibleCurriculum]);
+    }, [sourceCurriculum]);
 
     const getRealStudentProgress = useCallback((studentId: string, defaultMockVal: number) => {
         const studentUnlockedLessons = syllabusLessons.filter(lesson => {
@@ -4281,8 +4329,8 @@ export default function ClassroomDashboardPage({
     const hasAnyVisibleModule = useMemo(() => {
         if (curriculumTab === 'classwide') return true;
         if (!selectedStudentForCurriculum) return false;
-        return visibleCurriculum.length > 0;
-    }, [curriculumTab, selectedStudentForCurriculum, visibleCurriculum]);
+        return sourceCurriculum.length > 0;
+    }, [curriculumTab, selectedStudentForCurriculum, sourceCurriculum]);
 
     const handleExpandAllCurriculum = () => {
         setExpandedHeadlines({});
@@ -6060,6 +6108,7 @@ export default function ClassroomDashboardPage({
                             selectedStudentForCurriculum={selectedStudentForCurriculum}
                             setSelectedStudentForCurriculum={setSelectedStudentForCurriculum}
                             allocatedInventoryItems={allocatedInventoryItems}
+                            hasAssignedCurriculum={sourceCurriculum.length > 0}
                             hasAnyVisibleModule={hasAnyVisibleModule}
                             curriculumSearchQuery={curriculumSearchQuery}
                             setCurriculumSearchQuery={setCurriculumSearchQuery}

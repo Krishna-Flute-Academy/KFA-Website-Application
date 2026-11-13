@@ -15,6 +15,7 @@ interface CurriculumTabProps {
     selectedStudentForCurriculum: any;
     setSelectedStudentForCurriculum: (student: any) => void;
     allocatedInventoryItems: any[];
+    hasAssignedCurriculum?: boolean;
     hasAnyVisibleModule: boolean;
     curriculumSearchQuery: string;
     setCurriculumSearchQuery: (query: string) => void;
@@ -80,6 +81,7 @@ export default function CurriculumTab({
     selectedStudentForCurriculum,
     setSelectedStudentForCurriculum,
     allocatedInventoryItems,
+    hasAssignedCurriculum,
     hasAnyVisibleModule,
     curriculumSearchQuery,
     setCurriculumSearchQuery,
@@ -291,7 +293,7 @@ export default function CurriculumTab({
                                 No students are currently assigned to this classroom.
                             </p>
                         </div>
-                    ) : visibleCurriculum.length === 0 ? (
+                    ) : (hasAssignedCurriculum !== undefined ? !hasAssignedCurriculum : (visibleCurriculum.length === 0 && !curriculumSearchQuery.trim())) ? (
                         <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center min-h-[400px]">
                             <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner">
                                 <BookOpen className="size-10 text-amber-500" />
@@ -350,13 +352,15 @@ export default function CurriculumTab({
                                         value={curriculumSearchQuery}
                                         onChange={(e) => setCurriculumSearchQuery(e.target.value)}
                                         className="w-full pl-9 pr-9 py-1.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#ecb613] focus:ring-1 focus:ring-[#ecb613]/30 transition-all font-semibold"
+                                        aria-label="Search levels, chapters, topics"
                                     />
                                     {curriculumSearchQuery && (
                                         <button
                                             type="button"
                                             onClick={() => setCurriculumSearchQuery('')}
-                                            className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-405 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500"
                                             title="Clear search"
+                                            aria-label="Clear search"
                                         >
                                             <X className="size-2.5" />
                                         </button>
@@ -364,7 +368,7 @@ export default function CurriculumTab({
                                 </div>
 
                                 {curriculumSearchQuery.trim() && (
-                                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 self-center hidden sm:inline whitespace-nowrap">
+                                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 self-center hidden sm:inline whitespace-nowrap" aria-live="polite">
                                         {(() => {
                                             const modCount = visibleCurriculum.reduce((acc, cat) => acc + (cat.modules ? cat.modules.length : 0), 0);
                                             return `${modCount} ${modCount === 1 ? 'module found' : 'modules found'}`;
@@ -395,18 +399,23 @@ export default function CurriculumTab({
 
                             {visibleCurriculum.length === 0 ? (
                                 /* Search empty state */
-                                <div className="p-10 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-2xl shadow-sm text-slate-405 flex flex-col items-center justify-center min-h-[220px] border-dashed">
+                                <div 
+                                    role="status"
+                                    aria-live="polite"
+                                    className="p-10 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-2xl shadow-sm text-slate-400 flex flex-col items-center justify-center min-h-[220px] border-dashed"
+                                >
                                     <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 mb-4 animate-pulse">
                                         <Search className="size-6 text-amber-500" />
                                     </div>
-                                    <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">No Matching Results</h3>
+                                    <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">No matching curriculum found</h3>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm leading-relaxed text-center font-medium">
-                                        We couldn't find any levels, chapters, or topics matching "{curriculumSearchQuery}".
+                                        We couldn&apos;t find any levels, chapters, or topics matching &ldquo;{curriculumSearchQuery}&rdquo;.
                                     </p>
                                     <button
                                         type="button"
                                         onClick={() => setCurriculumSearchQuery('')}
-                                        className="mt-4 px-4 py-2 bg-slate-100 dark:bg-slate-850 hover:bg-amber-500 hover:text-white border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
+                                        className="mt-4 px-4 py-2 bg-slate-100 dark:bg-slate-850 hover:bg-amber-500 hover:text-white border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        aria-label="Clear search query"
                                     >
                                         Clear Search Query
                                     </button>
