@@ -1491,13 +1491,19 @@ export default function StudentDirectory() {
             const { deletedIds, failed } = await purgeStudentsFromServer([itemId]);
             if (deletedIds.includes(itemId)) {
                 saveRecycleBin(recycleBin.filter(b => b.id !== itemId));
-            }
-            if (failed.length > 0) {
-                alert(`Failed to permanently delete student: ${failed.map(f => f.reason).join(', ')}`);
+            } else if (failed.length > 0) {
+                const failReason = failed.map(f => f.reason).join(', ');
+                const forceRemove = window.confirm(`Server reported an issue: ${failReason}\n\nDo you want to remove this item from your local Recycle Bin anyway?`);
+                if (forceRemove) {
+                    saveRecycleBin(recycleBin.filter(b => b.id !== itemId));
+                }
             }
         } catch (err: any) {
             console.error('Error permanently deleting student:', err);
-            alert(err?.message || 'An unexpected error occurred while permanently deleting the student.');
+            const forceRemove = window.confirm(`${err?.message || 'Failed to contact server.'}\n\nDo you want to remove this student from your Recycle Bin view anyway?`);
+            if (forceRemove) {
+                saveRecycleBin(recycleBin.filter(b => b.id !== itemId));
+            }
         } finally {
             setIsPurgingBin(false);
         }
@@ -1512,13 +1518,21 @@ export default function StudentDirectory() {
             const targetIds = recycleBin.map(b => b.id);
             const { deletedIds, failed } = await purgeStudentsFromServer(targetIds);
             const deletedSet = new Set(deletedIds);
-            saveRecycleBin(recycleBin.filter(b => !deletedSet.has(b.id)));
+            const remaining = recycleBin.filter(b => !deletedSet.has(b.id));
+            saveRecycleBin(remaining);
+
             if (failed.length > 0) {
-                alert(`Some students could not be permanently deleted:\n${failed.map(f => `${f.id}: ${f.reason}`).join('\n')}`);
+                const forceClear = window.confirm(`Some students could not be purged from the server:\n${failed.map(f => `${f.id}: ${f.reason}`).join('\n')}\n\nDo you want to clear them from your local Recycle Bin anyway?`);
+                if (forceClear) {
+                    saveRecycleBin([]);
+                }
             }
         } catch (err: any) {
             console.error('Error emptying recycle bin:', err);
-            alert(err?.message || 'An unexpected error occurred while emptying the Recycle Bin.');
+            const forceClear = window.confirm(`${err?.message || 'An unexpected error occurred while communicating with the server.'}\n\nDo you want to clear your local Recycle Bin anyway?`);
+            if (forceClear) {
+                saveRecycleBin([]);
+            }
         } finally {
             setIsPurgingBin(false);
         }

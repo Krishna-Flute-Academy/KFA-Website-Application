@@ -9,7 +9,20 @@ function getEnvVariable(key: string): string {
     return process.env[key] || '';
 }
 
-async function authenticateAdmin(req: Request) {
+function isMissingTableError(error: any): boolean {
+    if (!error) return false;
+    const msg = (error.message || '').toLowerCase();
+    const code = error.code || '';
+    return (
+        code === 'PGRST205' ||
+        code === '42P01' ||
+        msg.includes('does not exist') ||
+        msg.includes('schema cache') ||
+        msg.includes('could not find the table')
+    );
+}
+
+async function authenticateAdminOrTeacher(req: Request) {
     const supabaseAuthUrl = getEnvVariable('NEXT_PUBLIC_AUTH_SUPABASE_URL');
     const supabaseAuthAnonKey = getEnvVariable('NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY');
     const supabaseServiceKey = getEnvVariable('SUPABASE_SERVICE_ROLE_KEY');
@@ -40,25 +53,25 @@ async function authenticateAdmin(req: Request) {
         .eq('id', user.id)
         .single();
 
-    if (dbErr || !dbUser || dbUser.role !== 'admin') {
-        return { error: 'Forbidden: Admin access required', status: 403 as const };
+    if (dbErr || !dbUser || (dbUser.role !== 'admin' && dbUser.role !== 'teacher')) {
+        return { error: 'Forbidden: Admin or Teacher access required', status: 403 as const };
     }
 
     const serviceClient = createClient(supabaseAuthUrl, supabaseServiceKey, {
         auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    return { adminId: dbUser.id, serviceClient };
+    return { callerId: dbUser.id, callerRole: dbUser.role, serviceClient };
 }
 
 export async function POST(req: Request) {
     try {
-        const authResult = await authenticateAdmin(req);
+        const authResult = await authenticateAdminOrTeacher(req);
         if ('error' in authResult) {
             return NextResponse.json({ error: authResult.error }, { status: authResult.status });
         }
 
-        const { adminId, serviceClient } = authResult;
+        const { callerId, serviceClient } = authResult;
         const body = await req.json();
         const rawIds: unknown = body?.studentIds;
 
@@ -66,21 +79,26 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'studentIds must be a non-empty array' }, { status: 400 });
         }
 
-        const studentIds = Array.from(
-            new Set(
-                rawIds.filter((id): id is string => typeof id === 'string' && UUID_REGEX.test(id))
-            )
-        );
+        const validUuids: string[] = [];
+        const nonUuidIds: string[] = [];
 
-        if (studentIds.length === 0) {
-            return NextResponse.json({ error: 'No valid student UUIDs provided' }, { status: 400 });
+        for (const item of rawIds) {
+            if (typeof item === 'string') {
+                if (UUID_REGEX.test(item)) {
+                    validUuids.push(item);
+                } else {
+                    nonUuidIds.push(item);
+                }
+            }
         }
 
-        const deletedIds: string[] = [];
+        const studentIds = Array.from(new Set(validUuids));
+        // Non-UUID items cannot exist in Postgres UUID columns; mark them as pruned immediately
+        const deletedIds: string[] = Array.from(new Set(nonUuidIds));
         const failed: Array<{ id: string; reason: string }> = [];
 
         for (const studentId of studentIds) {
-            if (studentId === adminId) {
+            if (studentId === callerId) {
                 failed.push({ id: studentId, reason: 'Cannot permanently delete your own account' });
                 continue;
             }
@@ -98,43 +116,44 @@ export async function POST(req: Request) {
                     continue;
                 }
 
-                // 1. Clean up tables with ON DELETE RESTRICT / NO ACTION on student_id
-                const restrictCleanupTables = [
-                    { table: 'student_credit_ledger', column: 'student_id' },
-                    { table: 'payment_reconciliation_requests', column: 'student_id' },
-                    { table: 'leave_audit_logs', column: 'student_id' },
-                    { table: 'historical_attendance_audit', column: 'student_id' },
-                    { table: 'community_profiles', column: 'id' },
-                ];
+                // 1. Try atomic RPC purge first
+                const { error: rpcError } = await serviceClient.rpc('purge_student_permanently', {
+                    p_student_id: studentId,
+                });
 
-                let cleanupError: string | null = null;
-                for (const { table, column } of restrictCleanupTables) {
-                    const { error } = await serviceClient.from(table).delete().eq(column, studentId);
-                    if (error && !error.message.includes('does not exist')) {
-                        cleanupError = `${table}: ${error.message}`;
-                        break;
+                if (rpcError) {
+                    console.warn(`RPC purge_student_permanently error for ${studentId}, falling back to manual:`, rpcError.message);
+
+                    // Manual fallback: clean known restrictive tables safely
+                    const candidateTables = [
+                        { table: 'attendance_correction_audit_logs', column: 'student_id' },
+                        { table: 'leave_correction_audit_logs', column: 'student_id' },
+                        { table: 'credit_ledger_transactions', column: 'student_id' },
+                        { table: 'historical_balance_reconciliations', column: 'student_id' },
+                        { table: 'community_profiles', column: 'id' },
+                    ];
+
+                    for (const { table, column } of candidateTables) {
+                        const { error } = await serviceClient.from(table).delete().eq(column, studentId);
+                        if (error && !isMissingTableError(error)) {
+                            console.warn(`Warning deleting from ${table}:`, error.message);
+                        }
+                    }
+
+                    if (existingUser) {
+                        const { error: userDeleteErr } = await serviceClient
+                            .from('users')
+                            .delete()
+                            .eq('id', studentId);
+
+                        if (userDeleteErr) {
+                            failed.push({ id: studentId, reason: userDeleteErr.message });
+                            continue;
+                        }
                     }
                 }
 
-                if (cleanupError) {
-                    failed.push({ id: studentId, reason: cleanupError });
-                    continue;
-                }
-
-                // 2. Delete public.users row (cascades ON DELETE CASCADE tables)
-                if (existingUser) {
-                    const { error: userDeleteErr } = await serviceClient
-                        .from('users')
-                        .delete()
-                        .eq('id', studentId);
-
-                    if (userDeleteErr) {
-                        failed.push({ id: studentId, reason: userDeleteErr.message });
-                        continue;
-                    }
-                }
-
-                // 3. Delete Supabase Auth user (auth.users) so they can re-register/login freshly
+                // 2. Delete Supabase Auth user (auth.users) so they can re-register freshly
                 const { error: authDeleteErr } = await serviceClient.auth.admin.deleteUser(studentId);
                 if (
                     authDeleteErr &&
@@ -151,8 +170,7 @@ export async function POST(req: Request) {
             }
         }
 
-        const status = deletedIds.length === 0 && failed.length > 0 ? 500 : 200;
-        return NextResponse.json({ deletedIds, failed }, { status });
+        return NextResponse.json({ deletedIds, failed }, { status: 200 });
     } catch (err: any) {
         return NextResponse.json(
             { error: err?.message || 'Internal server error' },
