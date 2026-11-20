@@ -258,32 +258,32 @@ export default function EditStudentPage() {
                 <main className="flex-1 flex flex-col min-w-0">
                     <TeacherHeader title="Edit Student Profile" />
 
-                    <div className="flex-1 overflow-y-auto p-12">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-12">
                         <div className="max-w-4xl mx-auto">
-                            <div className="mb-10 flex items-end justify-between">
+                            <div className="mb-6 sm:mb-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                                 <div>
-                                    <nav className="flex items-center gap-2 text-sm text-slate-400 mb-3">
+                                    <nav className="flex items-center gap-2 text-sm text-slate-400 mb-2 sm:mb-3">
                                         <Link href="/teacher-dashboard/students" className="hover:text-[#ecb613] transition-colors">Students</Link>
                                         <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                                         <Link href={`/teacher-dashboard/students/${studentId}`} className="hover:text-[#ecb613] transition-colors">Profile</Link>
                                         <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                                         <span className="text-slate-600 font-medium tracking-tight">Edit</span>
                                     </nav>
-                                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight leading-none">Edit Profile</h2>
-                                    <p className="text-slate-500 mt-2.5">Update {formData.fullName}'s information and settings.</p>
+                                    <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-tight">Edit Profile</h2>
+                                    <p className="text-slate-500 mt-1 sm:mt-2 text-sm">Update {formData.fullName}&apos;s information and settings.</p>
                                 </div>
                                 <Link
                                     href={`/teacher-dashboard/students/${studentId}`}
-                                    className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-[#ecb613] transition-all bg-white border border-slate-200 px-5 py-2.5 rounded-xl shadow-sm hover:shadow-md"
+                                    className="self-start sm:self-auto flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-[#ecb613] transition-all bg-white border border-slate-200 px-4 sm:px-5 py-2.5 rounded-xl shadow-sm hover:shadow-md shrink-0"
                                 >
                                     <ArrowLeft size={18} strokeWidth={2.5} />
                                     Back to Profile
                                 </Link>
                             </div>
-<div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                                 <div className="h-1.5 w-full bg-[#ecb613]"></div>
-                                <form className="p-10" onSubmit={handleSubmit}>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                                <form className="p-4 sm:p-6 lg:p-10" onSubmit={handleSubmit}>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6 md:gap-8 mb-8 sm:mb-10">
                                         <div className="space-y-2 md:col-span-2">
                                             <label className="text-sm font-bold text-slate-700 block">Profile Picture</label>
                                             <ImageUploadWithCrop
@@ -293,8 +293,9 @@ export default function EditStudentPage() {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Full Name</label>
+                                            <label htmlFor="edit-student-name" className="text-sm font-bold text-slate-700 block cursor-pointer">Full Name</label>
                                             <input
+                                                id="edit-student-name"
                                                 required
                                                 type="text"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
@@ -303,10 +304,11 @@ export default function EditStudentPage() {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Status</label>
+                                            <label htmlFor="edit-student-status" className="text-sm font-bold text-slate-700 block cursor-pointer">Status</label>
                                             <div className="relative">
                                                 <select
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                    id="edit-student-status"
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
                                                     value={formData.status}
                                                     onChange={(e) => {
                                                         setFormData({ ...formData, status: e.target.value });
@@ -320,8 +322,9 @@ export default function EditStudentPage() {
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Email Address</label>
+                                            <label htmlFor="edit-student-email" className="text-sm font-bold text-slate-700 block cursor-pointer">Email Address</label>
                                             <input
+                                                id="edit-student-email"
                                                 required
                                                 type="email"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
@@ -330,8 +333,9 @@ export default function EditStudentPage() {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Phone Number</label>
+                                            <label htmlFor="edit-student-phone" className="text-sm font-bold text-slate-700 block cursor-pointer">Phone Number</label>
                                             <input
+                                                id="edit-student-phone"
                                                 type="tel"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                 value={formData.phone}
@@ -340,10 +344,11 @@ export default function EditStudentPage() {
                                         </div>
                                         
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Experience Level</label>
+                                            <label htmlFor="edit-student-level" className="text-sm font-bold text-slate-700 block cursor-pointer">Experience Level</label>
                                             <div className="relative">
                                                 <select
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
+                                                    id="edit-student-level"
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
                                                     value={formData.level}
                                                     onChange={(e) => setFormData({ ...formData, level: e.target.value })}
                                                 >
@@ -356,10 +361,11 @@ export default function EditStudentPage() {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Class Learning Mode</label>
+                                            <label htmlFor="edit-student-learning-mode" className="text-sm font-bold text-slate-700 block cursor-pointer">Class Learning Mode</label>
                                             <div className="relative">
                                                 <select
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                    id="edit-student-learning-mode"
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
                                                     value={formData.learningMode}
                                                     onChange={(e) => setFormData({ ...formData, learningMode: e.target.value })}
                                                 >
@@ -368,13 +374,19 @@ export default function EditStudentPage() {
                                                 </select>
                                                 <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                             </div>
+                                            {formData.learningMode && (
+                                                <p className="text-[11px] text-slate-500 font-medium">
+                                                    Mode: <span className="font-semibold text-slate-700">{formData.learningMode === 'online' ? 'Online (Live Virtual Class)' : 'Offline (In-Person Classroom)'}</span>
+                                                </p>
+                                            )}
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Batch Assignment</label>
+                                            <label htmlFor="edit-student-batch" className="text-sm font-bold text-slate-700 block cursor-pointer">Batch Assignment</label>
                                             <div className="relative">
                                                 <select
+                                                    id="edit-student-batch"
                                                     disabled={!isAdmin}
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
                                                     value={formData.batchId}
                                                     onChange={(e) => {
                                                         const newBatchId = e.target.value;
@@ -395,13 +407,19 @@ export default function EditStudentPage() {
                                                 </select>
                                                 <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                             </div>
+                                            {formData.batchId && (
+                                                <p className="text-[11px] text-slate-500 font-medium">
+                                                    Assigned Batch: <span className="font-semibold text-slate-700">{classrooms.find(r => r.id === formData.batchId)?.name || 'Selected'}</span>
+                                                </p>
+                                            )}
                                         </div>
                                         {isAdmin && (
                                             <div className="space-y-2">
-                                                <label className="text-sm font-bold text-slate-700 block">Teacher Assignment</label>
+                                                <label htmlFor="edit-student-teacher" className="text-sm font-bold text-slate-700 block cursor-pointer">Teacher Assignment</label>
                                                 <div className="relative">
                                                     <select
-                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                        id="edit-student-teacher"
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
                                                         value={formData.teacherId}
                                                         onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
                                                     >
@@ -415,8 +433,9 @@ export default function EditStudentPage() {
                                             </div>
                                         )}
                                         <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Join Date</label>
+                                            <label htmlFor="edit-student-start-date" className="text-sm font-bold text-slate-700 block cursor-pointer">Join Date</label>
                                             <input
+                                                id="edit-student-start-date"
                                                 required
                                                 type="date"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
@@ -436,11 +455,12 @@ export default function EditStudentPage() {
                                         {isAdmin && (
                                             <>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Fees Payment Basis</label>
+                                                    <label htmlFor="edit-student-fees-basis" className="text-sm font-bold text-slate-700 block cursor-pointer">Fees Payment Basis</label>
                                                     <div className="relative">
                                                         <select
+                                                            id="edit-student-fees-basis"
                                                             disabled={!isAdmin}
-                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
                                                             value={formData.feesBasis}
                                                             onChange={(e) => {
                                                                 const basis = e.target.value;
@@ -457,12 +477,18 @@ export default function EditStudentPage() {
                                                         </select>
                                                         <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                                     </div>
+                                                    {formData.feesBasis && (
+                                                        <p id="edit-student-fee-plan-summary" className="text-[11px] text-slate-500 font-medium">
+                                                            Billing Plan: <span className="font-semibold text-slate-700">{formData.feesBasis === 'monthly' ? 'Monthly Subscription (4 classes / month)' : 'Class-basis (Pay Per Class / 1 class)'}</span>
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">
+                                                    <label htmlFor="edit-student-fees-amount" className="text-sm font-bold text-slate-700 block cursor-pointer">
                                                         {formData.feesBasis === 'class' ? 'Fee Per Class (₹)' : 'Monthly Fees Amount (₹)'}
                                                     </label>
                                                     <input
+                                                        id="edit-student-fees-amount"
                                                         required
                                                         disabled={!isAdmin}
                                                         type="number"
@@ -473,7 +499,7 @@ export default function EditStudentPage() {
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Fees Collection Date (Day of Month)</label>
+                                                    <label htmlFor="edit-student-fees-collection-date" className="text-sm font-bold text-slate-700 block cursor-pointer">Fees Collection Date (Day of Month)</label>
                                                     {formData.feesBasis === 'class' ? (
                                                         <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-400 italic">
                                                             N/A — Collection day is not applicable for Class-basis students.
@@ -481,9 +507,10 @@ export default function EditStudentPage() {
                                                     ) : (
                                                         <div className="relative">
                                                             <select
+                                                                id="edit-student-fees-collection-date"
                                                                 disabled={!isAdmin}
                                                                 required={formData.feesBasis === 'monthly'}
-                                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none disabled:opacity-60 disabled:cursor-not-allowed font-bold"
+                                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none disabled:opacity-60 disabled:cursor-not-allowed font-bold"
                                                                 value={formData.feesCollectionDate}
                                                                 onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
                                                             >
@@ -508,18 +535,19 @@ export default function EditStudentPage() {
                                             </>
                                         )}
                                         <div className="space-y-2 md:col-span-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Additional Notes</label>
+                                            <label htmlFor="edit-student-notes" className="text-sm font-bold text-slate-700 block cursor-pointer">Additional Notes</label>
                                             <textarea
+                                                id="edit-student-notes"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none min-h-[120px] resize-none"
                                                 value={formData.notes}
                                                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                                             ></textarea>
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-end border-t border-slate-100 pt-8 gap-4">
+                                    <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end border-t border-slate-100 pt-6 sm:pt-8 gap-3 sm:gap-4">
                                         <button
                                             type="button"
-                                            className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
+                                            className="w-full sm:w-auto px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors text-center cursor-pointer"
                                             onClick={() => router.back()}
                                         >
                                             Cancel
@@ -527,7 +555,7 @@ export default function EditStudentPage() {
                                         <button
                                             type="submit"
                                             disabled={submitting}
-                                            className="bg-[#ecb613] hover:bg-[#ecb613]/90 text-white px-10 py-3 rounded-xl text-sm font-bold shadow-lg shadow-[#ecb613]/25 transition-all active:scale-[0.98] flex items-center gap-2 disabled:opacity-70"
+                                            className="w-full sm:w-auto bg-[#ecb613] hover:bg-[#ecb613]/90 text-white px-8 sm:px-10 py-3 rounded-xl text-sm font-bold shadow-lg shadow-[#ecb613]/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer"
                                         >
                                             {submitting ? (
                                                 <><Loader2 className="animate-spin size-4" /> Saving...</>

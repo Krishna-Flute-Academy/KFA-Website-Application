@@ -67,10 +67,10 @@ export function UnmarkAttendanceModal({
     };
 
     return (
-        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md flex flex-col p-6 animate-in zoom-in-95 duration-200 text-left">
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md flex flex-col p-4 sm:p-6 max-h-[calc(100dvh-2rem)] overflow-y-auto animate-in zoom-in-95 duration-200 text-left">
                 {/* Header */}
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4 shrink-0">
                     <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-[#ecb613] flex items-center justify-center shrink-0">
                             <RotateCcw className="w-5 h-5" />
@@ -87,7 +87,8 @@ export function UnmarkAttendanceModal({
                     <button
                         onClick={onClose}
                         disabled={loading}
-                        className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                        className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                        aria-label="Close modal"
                     >
                         <X className="w-5 h-5" />
                     </button>
@@ -171,12 +172,12 @@ export function UnmarkAttendanceModal({
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
                     <button
                         type="button"
                         onClick={onClose}
                         disabled={loading}
-                        className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] flex items-center justify-center rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                     >
                         Cancel
                     </button>
@@ -184,7 +185,7 @@ export function UnmarkAttendanceModal({
                         type="button"
                         onClick={handleConfirm}
                         disabled={loading}
-                        className={`px-5 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-md ${
+                        className={`w-full sm:w-auto px-5 py-2.5 min-h-[44px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all shadow-md ${
                             loading
                                 ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none'
                                 : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20 cursor-pointer active:scale-95'

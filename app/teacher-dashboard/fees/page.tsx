@@ -2421,11 +2421,11 @@ export default function FeesManagementDashboard() {
 
             {/* ─── Record Payment Modal ───────────────────────────────────────────── */}
             {showPaymentModal && selectedStudent && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/10">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[calc(100dvh-2rem)]">
+                        <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/10 shrink-0">
                             <div>
-                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
                                     {pendingPaymentToReconcile ? 'Review & Confirm Payment' : 'Record Fee Payment'}
                                 </h3>
                                 <p className="text-xs text-slate-400 mt-1">
@@ -2434,12 +2434,16 @@ export default function FeesManagementDashboard() {
                                         : `Collecting fees in advance for ${selectedStudent.name}`}
                                 </p>
                             </div>
-                            <button onClick={() => { setShowPaymentModal(false); setPendingPaymentToReconcile(null); }} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            <button 
+                                onClick={() => { setShowPaymentModal(false); setPendingPaymentToReconcile(null); }} 
+                                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                aria-label="Close modal"
+                            >
                                 <span className="material-symbols-outlined text-lg">close</span>
                             </button>
                         </div>
 
-                        <form onSubmit={handleRecordPayment} className="p-6 space-y-4">
+                        <form onSubmit={handleRecordPayment} className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
                             {pendingPaymentToReconcile && (
                                 <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl flex items-start gap-2.5 text-xs text-blue-900 dark:text-blue-200">
                                     <AlertCircle className="size-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
@@ -2453,36 +2457,39 @@ export default function FeesManagementDashboard() {
                                 </div>
                             )}
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Amount Paid (₹)</label>
+                                    <label htmlFor="record-payment-amount" className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Amount Paid (₹)</label>
                                     <input
+                                        id="record-payment-amount"
                                         required
                                         type="number"
                                         value={paymentAmount}
                                         onChange={e => setPaymentAmount(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
+                                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
                                     />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Classes Added</label>
+                                    <label htmlFor="record-payment-classes" className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Classes Added</label>
                                     <input
+                                        id="record-payment-classes"
                                         required
                                         type="number"
                                         value={classesAdded}
                                         onChange={e => setClassesAdded(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
+                                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
                                     />
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Payment Method</label>
+                                    <label htmlFor="record-payment-method" className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Payment Method</label>
                                     <select
+                                        id="record-payment-method"
                                         value={paymentMethod}
                                         onChange={e => setPaymentMethod(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
+                                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-10 py-2.5 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold cursor-pointer"
                                     >
                                         <option value="UPI">UPI / GPay / PhonePe</option>
                                         <option value="Cash">Cash</option>
@@ -2491,29 +2498,31 @@ export default function FeesManagementDashboard() {
                                     </select>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Payment Date</label>
+                                    <label htmlFor="record-payment-date" className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Payment Date</label>
                                     <input
+                                        id="record-payment-date"
                                         required
                                         type="date"
                                         value={paymentDate}
                                         onChange={e => handlePaymentDateChange(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none"
+                                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none"
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Notes / Memo</label>
+                                <label htmlFor="record-payment-notes" className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Notes / Memo</label>
                                 <textarea
+                                    id="record-payment-notes"
                                     value={paymentNotes}
                                     onChange={e => setPaymentNotes(e.target.value)}
                                     placeholder="Enter receipt number, months covered, or extra context..."
                                     rows={2}
-                                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none resize-none"
+                                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none resize-none"
                                 />
                             </div>
 
-                            <div className="pt-4 flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800">
+                            <div className="pt-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800">
                                 {pendingPaymentToReconcile ? (
                                     <button
                                         type="button"
@@ -2524,25 +2533,25 @@ export default function FeesManagementDashboard() {
                                                 setPendingPaymentToReconcile(null);
                                             }
                                         }}
-                                        className="px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-colors border border-rose-200 dark:border-rose-800"
+                                        className="px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-colors border border-rose-200 dark:border-rose-800 min-h-[44px] flex items-center justify-center"
                                     >
                                         Reject Submission
                                     </button>
                                 ) : (
                                     <div />
                                 )}
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2">
                                     <button
                                         type="button"
                                         onClick={() => { setShowPaymentModal(false); setPendingPaymentToReconcile(null); }}
-                                        className="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors"
+                                        className="px-4 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors min-h-[44px] flex items-center justify-center"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         type="submit"
                                         disabled={recordingPayment}
-                                        className={`px-6 py-2.5 text-sm font-black text-white rounded-xl shadow-md flex items-center gap-2 ${
+                                        className={`px-6 py-2.5 text-sm font-black text-white rounded-xl shadow-md flex items-center justify-center gap-2 min-h-[44px] ${
                                             pendingPaymentToReconcile
                                                 ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
                                                 : 'bg-[#ecb613] hover:bg-[#ecb613]/90 shadow-[#ecb613]/20'
@@ -2563,22 +2572,26 @@ export default function FeesManagementDashboard() {
 
             {/* ─── Payment History & Logs Modal ─────────────────────────────────────── */}
             {showHistoryModal && selectedStudent && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
-                        <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
+                        <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
                             <div>
-                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Fees History: {selectedStudent.name}</h3>
+                                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Fees History: {selectedStudent.name}</h3>
                                 <p className="text-xs text-slate-400 mt-1">Payment logs, billing plan updates, and alert logs</p>
                             </div>
-                            <button onClick={() => setShowHistoryModal(false)} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            <button 
+                                onClick={() => setShowHistoryModal(false)} 
+                                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                aria-label="Close modal"
+                            >
                                 <span className="material-symbols-outlined text-lg">close</span>
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 sm:space-y-6">
                             
                             {/* Summary widget */}
-                            <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-150 dark:border-slate-800">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 p-3 sm:p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-150 dark:border-slate-800">
                                 <div>
                                     <p className="text-[9px] font-black uppercase text-slate-400">Joining Date</p>
                                     <p className="text-xs font-bold text-slate-700 dark:text-slate-350 mt-1">

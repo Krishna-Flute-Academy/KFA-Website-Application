@@ -3049,13 +3049,17 @@ export default function InventoryLibrary() {
 
                 {/* 0. MODULE EDIT / ADD MODAL */}
                 {activeModal === 'module' && (
-                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 select-none">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-6 max-w-lg w-full max-h-[calc(100dvh-2rem)] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
                             <div className="flex justify-between items-center mb-4 shrink-0">
                                 <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none font-sans">
                                     {editingItem ? 'Edit Level / Module' : 'Create Level / Module'}
                                 </h3>
-                                <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
+                                <button 
+                                    onClick={() => setActiveModal(null)} 
+                                    className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all"
+                                    aria-label="Close modal"
+                                >
                                     <X className="size-5" />
                                 </button>
                             </div>
@@ -3068,7 +3072,7 @@ export default function InventoryLibrary() {
                                     <input 
                                         type="text" 
                                         required
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
                                         placeholder="e.g. Level 5 - Professional Master"
                                         value={moduleForm.title}
                                         onChange={e => setModuleForm(prev => ({ ...prev, title: e.target.value }))}
@@ -3082,22 +3086,22 @@ export default function InventoryLibrary() {
                                     <input 
                                         type="text" 
                                         required
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold mb-1.5"
+                                        className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold mb-1.5"
                                         placeholder="e.g. Proficiency Levels, Specialized Modules, Composition Modules"
                                         value={moduleForm.category}
                                         onChange={e => setModuleForm(prev => ({ ...prev, category: e.target.value }))}
                                     />
                                     {/* Quick Select Tags */}
-                                    <div className="flex flex-wrap gap-1.5 mt-1">
+                                    <div className="flex flex-wrap gap-2 mt-1">
                                         {Object.keys(groupedModules).map(catName => (
                                             <button
                                                 key={catName}
                                                 type="button"
                                                 onClick={() => setModuleForm(prev => ({ ...prev, category: catName }))}
-                                                className={`px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded-lg border transition-all ${
+                                                className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all min-h-[32px] flex items-center ${
                                                     moduleForm.category === catName
                                                         ? 'bg-amber-500/15 border-amber-500 text-[#d97706]'
-                                                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                                                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                                                 }`}
                                             >
                                                 {catName}
@@ -3124,7 +3128,7 @@ export default function InventoryLibrary() {
                                     <input 
                                         type="number" 
                                         required
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
                                         placeholder="e.g. 5 or 105"
                                         value={moduleForm.module_number}
                                         onChange={e => setModuleForm(prev => ({ ...prev, module_number: Number(e.target.value) }))}
@@ -3133,7 +3137,7 @@ export default function InventoryLibrary() {
 
                                 <button 
                                     type="submit" 
-                                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none"
+                                    className="w-full py-3.5 min-h-[44px] bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none"
                                 >
                                     {editingItem ? 'Save Updates' : 'Add Module'}
                                 </button>
@@ -3144,13 +3148,17 @@ export default function InventoryLibrary() {
 
                 {/* 0.1 CATEGORY RENAME MODAL */}
                 {activeModal === 'category' && (
-                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100 space-y-4">
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 select-none">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-6 max-w-md w-full shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100 space-y-4 max-h-[calc(100dvh-2rem)] overflow-y-auto">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none font-sans">
                                     Rename Headline Category
                                 </h3>
-                                <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
+                                <button 
+                                    onClick={() => setActiveModal(null)} 
+                                    className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all"
+                                    aria-label="Close modal"
+                                >
                                     <X className="size-5" />
                                 </button>
                             </div>
@@ -3163,7 +3171,7 @@ export default function InventoryLibrary() {
                                     <input 
                                         type="text" 
                                         required
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
                                         placeholder="e.g. Proficiency Levels"
                                         value={categoryForm.newName}
                                         onChange={e => setCategoryForm(prev => ({ ...prev, newName: e.target.value }))}
@@ -3175,7 +3183,7 @@ export default function InventoryLibrary() {
 
                                 <button 
                                     type="submit" 
-                                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none font-sans"
+                                    className="w-full py-3.5 min-h-[44px] bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none font-sans"
                                 >
                                     Rename Headline
                                 </button>
@@ -3186,13 +3194,17 @@ export default function InventoryLibrary() {
 
                 {/* 1. CHAPTER EDIT MODAL */}
                 {activeModal === 'chapter' && (
-                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-6 max-w-lg w-full max-h-[calc(100dvh-2rem)] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
                             <div className="flex justify-between items-center select-none mb-4 shrink-0">
                                 <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none">
                                     {editingItem ? 'Edit Chapter Heads Up' : 'Add New Chapter'}
                                 </h3>
-                                <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
+                                <button 
+                                    onClick={() => setActiveModal(null)} 
+                                    className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all"
+                                    aria-label="Close modal"
+                                >
                                     <X className="size-5" />
                                 </button>
                             </div>
@@ -3203,7 +3215,7 @@ export default function InventoryLibrary() {
                                     <input 
                                         type="text" 
                                         required
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
                                         placeholder="e.g. Introduction to Flute"
                                         value={chapterForm.title}
                                         onChange={e => setChapterForm(prev => ({ ...prev, title: e.target.value }))}
@@ -3217,7 +3229,7 @@ export default function InventoryLibrary() {
                                         min="1"
                                         step="1"
                                         required
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
                                         value={chapterForm.chapter_number}
                                         onChange={e => setChapterForm(prev => ({ ...prev, chapter_number: Math.max(1, Number(e.target.value) || 1) }))}
                                     />
@@ -3237,7 +3249,7 @@ export default function InventoryLibrary() {
 
                                 <button 
                                     type="submit" 
-                                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none"
+                                    className="w-full py-3.5 min-h-[44px] bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none"
                                 >
                                     {editingItem ? 'Save Updates' : 'Add Chapter'}
                                 </button>
@@ -3248,13 +3260,17 @@ export default function InventoryLibrary() {
 
                 {/* 2. SIMPLE TOPIC LESSON CARD EDIT MODAL (Headline, Description, Attachment upload, Link) */}
                 {activeModal === 'lesson' && (
-                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-6 max-w-lg w-full max-h-[calc(100dvh-2rem)] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
                             <div className="flex justify-between items-center select-none mb-4 shrink-0">
                                 <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none">
                                     {editingItem ? 'Edit Topic Material' : 'Add Topic Material'}
                                 </h3>
-                                <button onClick={() => { setActiveModal(null); setShowAudioRecorder(false); }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
+                                <button 
+                                    onClick={() => { setActiveModal(null); setShowAudioRecorder(false); }} 
+                                    className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all"
+                                    aria-label="Close modal"
+                                >
                                     <X className="size-5" />
                                 </button>
                             </div>
@@ -3269,7 +3285,7 @@ export default function InventoryLibrary() {
                                     <input 
                                         type="text" 
                                         required
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
                                         placeholder="e.g. Rhythm Practice Patterns"
                                         value={lessonForm.title}
                                         onChange={e => setLessonForm(prev => ({ ...prev, title: e.target.value }))}
@@ -3285,7 +3301,7 @@ export default function InventoryLibrary() {
                                         type="number" 
                                         required
                                         min={1}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
                                         placeholder="e.g. 1 or 2"
                                         value={lessonForm.lesson_number}
                                         onChange={e => setLessonForm(prev => ({ ...prev, lesson_number: Number(e.target.value) }))}
@@ -3489,7 +3505,7 @@ export default function InventoryLibrary() {
 
                                 <button 
                                     type="submit" 
-                                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none"
+                                    className="w-full py-3.5 min-h-[44px] bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none"
                                 >
                                     {editingItem ? 'Save Updates' : 'Add Material'}
                                 </button>

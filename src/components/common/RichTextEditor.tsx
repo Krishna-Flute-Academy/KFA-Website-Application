@@ -228,14 +228,15 @@ export default function RichTextEditor({
     return (
         <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden flex flex-col bg-white dark:bg-slate-900 shadow-2xs">
             {/* Toolbar */}
-            <div className="px-3 py-2.5 bg-slate-50 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700/80 flex flex-wrap items-center gap-1.5 text-slate-600 dark:text-slate-300 text-xs select-none">
+            <div className="px-2.5 sm:px-3 py-2 bg-slate-50 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700/80 flex flex-wrap items-center gap-1.5 text-slate-600 dark:text-slate-300 text-xs select-none overflow-x-auto">
                 
                 {/* Font Family Dropdown */}
                 <select
                     onChange={(e) => applyFontFamily(e.target.value)}
-                    className="h-8 px-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold focus:outline-none cursor-pointer"
+                    className="h-9 sm:h-8 min-h-[36px] sm:min-h-[32px] px-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold focus:outline-none cursor-pointer"
                     defaultValue="sans-serif"
                     title="Font Family"
+                    aria-label="Font Family"
                 >
                     {FONT_FAMILIES.map(f => (
                         <option key={f.value} value={f.value}>{f.name}</option>
@@ -245,9 +246,10 @@ export default function RichTextEditor({
                 {/* Font Size Dropdown */}
                 <select
                     onChange={(e) => applyFontSize(e.target.value)}
-                    className="h-8 px-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold focus:outline-none cursor-pointer"
+                    className="h-9 sm:h-8 min-h-[36px] sm:min-h-[32px] px-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold focus:outline-none cursor-pointer"
                     defaultValue="14px"
                     title="Font Size"
+                    aria-label="Font Size"
                 >
                     {FONT_SIZES.map(s => (
                         <option key={s.value} value={s.value}>{s.name}</option>
@@ -260,32 +262,36 @@ export default function RichTextEditor({
                 <button
                     type="button"
                     onClick={() => executeCmd('bold')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Bold (Ctrl+B)"
+                    aria-label="Bold text"
                 >
                     <Bold className="w-4 h-4" />
                 </button>
                 <button
                     type="button"
                     onClick={() => executeCmd('italic')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Italic (Ctrl+I)"
+                    aria-label="Italic text"
                 >
                     <Italic className="w-4 h-4" />
                 </button>
                 <button
                     type="button"
                     onClick={() => executeCmd('underline')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Underline (Ctrl+U)"
+                    aria-label="Underline text"
                 >
                     <Underline className="w-4 h-4" />
                 </button>
                 <button
                     type="button"
                     onClick={() => executeCmd('strikeThrough')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Strikethrough"
+                    aria-label="Strikethrough text"
                 >
                     <Strikethrough className="w-4 h-4" />
                 </button>
@@ -297,22 +303,24 @@ export default function RichTextEditor({
                     <button
                         type="button"
                         onClick={() => { setShowColorPicker(!showColorPicker); setShowHighlightPicker(false); }}
-                        className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors flex items-center gap-0.5"
+                        className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors gap-0.5"
                         title="Text Color"
+                        aria-label="Text Color"
                     >
                         <Palette className="w-4 h-4 text-amber-600" />
                     </button>
 
                     {showColorPicker && (
-                        <div className="absolute top-full left-0 mt-1 p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 flex gap-1.5">
+                        <div className="absolute top-full left-0 mt-1 p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 flex gap-2">
                             {TEXT_COLORS.map(c => (
                                 <button
                                     key={c.value}
                                     type="button"
                                     onClick={() => { executeCmd('foreColor', c.value); setShowColorPicker(false); }}
-                                    className="w-5 h-5 rounded-full border border-slate-200 hover:scale-110 transition-transform"
+                                    className="w-6 h-6 sm:w-5 sm:h-5 rounded-full border border-slate-200 hover:scale-110 transition-transform"
                                     style={{ backgroundColor: c.value }}
                                     title={c.name}
+                                    aria-label={`Color ${c.name}`}
                                 />
                             ))}
                         </div>
@@ -323,22 +331,24 @@ export default function RichTextEditor({
                     <button
                         type="button"
                         onClick={() => { setShowHighlightPicker(!showHighlightPicker); setShowColorPicker(false); }}
-                        className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors flex items-center gap-0.5"
+                        className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors gap-0.5"
                         title="Highlight Color"
+                        aria-label="Highlight Color"
                     >
                         <Highlighter className="w-4 h-4 text-emerald-600" />
                     </button>
 
                     {showHighlightPicker && (
-                        <div className="absolute top-full left-0 mt-1 p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 flex gap-1.5">
+                        <div className="absolute top-full left-0 mt-1 p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 flex gap-2">
                             {HIGHLIGHT_COLORS.map(c => (
                                 <button
                                     key={c.value}
                                     type="button"
                                     onClick={() => { executeCmd('hiliteColor', c.value); setShowHighlightPicker(false); }}
-                                    className="w-5 h-5 rounded-full border border-slate-300 hover:scale-110 transition-transform flex items-center justify-center text-[9px] font-bold"
+                                    className="w-6 h-6 sm:w-5 sm:h-5 rounded-full border border-slate-300 hover:scale-110 transition-transform flex items-center justify-center text-[9px] font-bold"
                                     style={{ backgroundColor: c.value }}
                                     title={c.name}
+                                    aria-label={`Highlight ${c.name}`}
                                 >
                                     {c.value === 'transparent' ? '✕' : ''}
                                 </button>
@@ -353,24 +363,27 @@ export default function RichTextEditor({
                 <button
                     type="button"
                     onClick={() => executeCmd('justifyLeft')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Align Left"
+                    aria-label="Align left"
                 >
                     <AlignLeft className="w-4 h-4" />
                 </button>
                 <button
                     type="button"
                     onClick={() => executeCmd('justifyCenter')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Align Center"
+                    aria-label="Align center"
                 >
                     <AlignCenter className="w-4 h-4" />
                 </button>
                 <button
                     type="button"
                     onClick={() => executeCmd('justifyRight')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Align Right"
+                    aria-label="Align right"
                 >
                     <AlignRight className="w-4 h-4" />
                 </button>
@@ -381,24 +394,27 @@ export default function RichTextEditor({
                 <button
                     type="button"
                     onClick={() => executeCmd('insertUnorderedList')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Bullet List"
+                    aria-label="Bullet list"
                 >
                     <List className="w-4 h-4" />
                 </button>
                 <button
                     type="button"
                     onClick={() => executeCmd('insertOrderedList')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Numbered List"
+                    aria-label="Numbered list"
                 >
                     <ListOrdered className="w-4 h-4" />
                 </button>
                 <button
                     type="button"
                     onClick={() => executeCmd('formatBlock', 'blockquote')}
-                    className="p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
+                    className="p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-md transition-colors"
                     title="Quote Block"
+                    aria-label="Quote block"
                 >
                     <Quote className="w-4 h-4" />
                 </button>
@@ -409,11 +425,12 @@ export default function RichTextEditor({
                 <button
                     type="button"
                     onClick={() => setShowImageModal(true)}
-                    className="p-1.5 hover:bg-[#ecb613]/20 hover:text-[#ecb613] rounded-md transition-colors font-bold flex items-center gap-1"
+                    className="p-2 sm:p-1.5 min-h-[36px] sm:min-h-[28px] hover:bg-[#ecb613]/20 hover:text-[#ecb613] rounded-md transition-colors font-bold flex items-center gap-1"
                     title="Insert Image"
+                    aria-label="Insert image"
                 >
                     <ImageIcon className="w-4 h-4 text-blue-600" />
-                    <span className="text-[10px] font-bold">Image</span>
+                    <span className="text-xs sm:text-[10px] font-bold">Image</span>
                 </button>
 
                 <button

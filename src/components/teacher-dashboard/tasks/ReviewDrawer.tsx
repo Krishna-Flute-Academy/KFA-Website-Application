@@ -365,7 +365,7 @@ export default function ReviewDrawer({
                             Grading & Feedback
                         </h4>
 
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
                                     Score (Out of 10)
@@ -378,7 +378,7 @@ export default function ReviewDrawer({
                                     placeholder="e.g. 8.5"
                                     value={score}
                                     onChange={(e) => setScore(e.target.value === '' ? '' : Number(e.target.value))}
-                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold focus:ring-2 focus:ring-[#ecb613] outline-none"
+                                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold focus:ring-2 focus:ring-[#ecb613] outline-none"
                                 />
                             </div>
 
@@ -389,7 +389,8 @@ export default function ReviewDrawer({
                                 <select
                                     value={proficiency}
                                     onChange={(e) => setProficiency(e.target.value)}
-                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold focus:ring-2 focus:ring-[#ecb613] outline-none"
+                                    className="w-full pl-3.5 pr-10 py-2.5 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold focus:ring-2 focus:ring-[#ecb613] outline-none cursor-pointer"
+                                    aria-label="Proficiency Level"
                                 >
                                     <option value="">Select Level</option>
                                     <option value="Beginner">Beginner</option>
@@ -435,12 +436,12 @@ export default function ReviewDrawer({
 
                 {/* Drawer Footer Actions */}
                 <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2 shrink-0">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <button
                             type="button"
                             onClick={handleRequestResubmission}
                             disabled={isSaving}
-                            className="py-3 px-4 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 font-extrabold text-xs rounded-xl border border-rose-200 dark:border-rose-800 transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
+                            className="py-3 px-4 min-h-[44px] bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 font-extrabold text-xs rounded-xl border border-rose-200 dark:border-rose-800 transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
                         >
                             <RotateCcw className="w-4 h-4" />
                             Request Resubmission
@@ -450,7 +451,7 @@ export default function ReviewDrawer({
                             type="button"
                             onClick={handleApprove}
                             disabled={isSaving}
-                            className="py-3 px-4 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
+                            className="py-3 px-4 min-h-[44px] bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
                         >
                             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                             Approve Task

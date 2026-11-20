@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
 import { sendClassroomNotification } from '../../../../src/lib/notifications';
-import { Loader2, ArrowLeft, Search, UserPlus, Clock, Info, CheckCircle2, Video, X, Users } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, UserPlus, Clock, Info, CheckCircle2, Video, X, Users, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { fetchAcademyTeachers } from '../../../../src/lib/teachers';
@@ -596,42 +596,42 @@ export default function CreateClassPage() {
 
             <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
                 {/* Header */}
-                <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 sticky top-0 z-30 shrink-0">
+                <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-8 sticky top-0 z-30 shrink-0">
                     <div className="flex items-center gap-4">
-                        <Link href="/teacher-dashboard/classrooms" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors group">
+                        <Link href="/teacher-dashboard/classrooms" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors group" aria-label="Back to classrooms">
                             <ArrowLeft className="size-5 text-slate-500 group-hover:text-slate-900 dark:group-hover:text-white" />
                         </Link>
                         <h2 className="text-lg font-bold tracking-tight">Create New Class</h2>
                     </div>
                 </header>
 
-                <div className="p-8 max-w-[1400px] mx-auto w-full">
-                    <div className="mb-8">
-                        <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">Configure New Class</h3>
-                        <p className="text-slate-500 dark:text-slate-400">Fill in the administrative details to initialize a new training session for the academy.</p>
+                <div className="p-4 sm:p-6 md:p-8 max-w-[1400px] mx-auto w-full">
+                    <div className="mb-6 sm:mb-8">
+                        <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white mb-2">Configure New Class</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Fill in the administrative details to initialize a new training session for the academy.</p>
                     </div>
 
-                    <form onSubmit={handleCreateClass} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <form onSubmit={handleCreateClass} className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
                         {/* Form Section */}
                         <div className="lg:col-span-2 space-y-6">
-                            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                            <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                                 <div className="grid grid-cols-1 gap-6">
                                     {/* Class Type & Scheduling (Moved to Top for Clarity) */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-slate-100 dark:border-slate-800">
                                         <div>
                                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Class Type</label>
-                                            <div className="flex gap-4">
+                                            <div className="flex gap-3 sm:gap-4">
                                                 <button
                                                     type="button"
                                                     onClick={() => setFormData({ ...formData, type: 'permanent' })}
-                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer ${formData.type === 'permanent' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer min-h-[44px] ${formData.type === 'permanent' ? 'border-amber-500 bg-amber-500/15 text-amber-900 dark:text-amber-200 font-extrabold shadow-sm' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                                                 >
                                                     Permanent Class
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => setFormData({ ...formData, type: 'temporary' })}
-                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer ${formData.type === 'temporary' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer min-h-[44px] ${formData.type === 'temporary' ? 'border-amber-500 bg-amber-500/15 text-amber-900 dark:text-amber-200 font-extrabold shadow-sm' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                                                 >
                                                     Special Session
                                                 </button>
@@ -646,7 +646,7 @@ export default function CreateClassPage() {
                                                             key={idx}
                                                             type="button"
                                                             onClick={() => toggleDay(idx)}
-                                                            className={`px-3 py-2.5 rounded-lg text-xs font-bold transition-all ${formData.selectedDays.includes(idx) ? 'bg-[#ecb613] text-slate-900 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                                            className={`px-3 py-2.5 rounded-lg text-xs font-bold transition-all min-h-[38px] ${formData.selectedDays.includes(idx) ? 'bg-[#ecb613] text-slate-900 shadow-sm font-black' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
                                                         >
                                                             {label}
                                                         </button>
@@ -659,7 +659,7 @@ export default function CreateClassPage() {
                                                 <input
                                                     value={formData.classDate}
                                                     onChange={(e) => setFormData({ ...formData, classDate: e.target.value })}
-                                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
+                                                    className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
                                                     type="date"
                                                 />
                                             </div>
@@ -686,7 +686,7 @@ export default function CreateClassPage() {
                                                     type: looksLikeSpecial ? 'temporary' : prev.type
                                                 }));
                                             }}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all"
+                                            className="w-full px-4 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm"
                                             placeholder="e.g. Morning Raag Basics - Intermediate"
                                             type="text"
                                         />
@@ -700,7 +700,7 @@ export default function CreateClassPage() {
                                                 required
                                                 value={formData.teacherId}
                                                 onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
-                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all appearance-none text-sm font-medium"
+                                                className="w-full pl-4 pr-11 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all appearance-none text-sm font-medium"
                                             >
                                                 <option value="">Select a Teacher</option>
                                                 {teachers.map(teacher => (
@@ -717,7 +717,7 @@ export default function CreateClassPage() {
                                         <textarea
                                             value={formData.description}
                                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all"
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm"
                                             placeholder="Detail the curriculum, objectives, and any required materials for this class..."
                                             rows={4}
                                         ></textarea>
@@ -725,91 +725,103 @@ export default function CreateClassPage() {
 
                                     {/* Special Session Options */}
                                     {formData.type === 'temporary' && (
-                                        <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-4">
+                                        <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-4">
                                             <div className="flex items-center gap-2 text-xs font-black uppercase text-amber-700 dark:text-amber-400 tracking-wider">
                                                 <span>⚡ Special Session Configuration</span>
                                             </div>
                                             {/* Optional On Behalf Of Declared Class Off Selector (BR-22) */}
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">
-                                                    🏖️ On Behalf Of Declared Class Off (Optional — BR-22)
+                                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 uppercase tracking-wide">
+                                                    🏖️ Class Off Replacement (Optional)
                                                 </label>
-                                                <select
-                                                    value={selectedHolidayId}
-                                                    onChange={(e) => {
-                                                        const holId = e.target.value;
-                                                        setSelectedHolidayId(holId);
-                                                        if (!holId) return;
-                                                        const hol = activeHolidays.find((h: any) => h.id === holId);
-                                                        if (hol) {
-                                                            const batch = existingBatches.find(b => b.id === hol.classroom_id);
-                                                            if (batch) {
-                                                                setSelectedBatchImportId(batch.id);
-                                                                setSelectedStudents(batch.studentIds);
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                                                    Link this special session as the official makeup for a declared class off (BR-22).
+                                                </p>
+                                                <div className="relative">
+                                                    <select
+                                                        value={selectedHolidayId}
+                                                        onChange={(e) => {
+                                                            const holId = e.target.value;
+                                                            setSelectedHolidayId(holId);
+                                                            if (!holId) return;
+                                                            const hol = activeHolidays.find((h: any) => h.id === holId);
+                                                            if (hol) {
+                                                                const batch = existingBatches.find(b => b.id === hol.classroom_id);
+                                                                if (batch) {
+                                                                    setSelectedBatchImportId(batch.id);
+                                                                    setSelectedStudents(batch.studentIds);
+                                                                }
+                                                                setFormData(prev => ({
+                                                                    ...prev,
+                                                                    type: 'temporary',
+                                                                    name: buildAlternativeClassName(hol.classroomName),
+                                                                    teacherId: prev.teacherId || batch?.teacher_id || prev.teacherId,
+                                                                    purpose: 'other',
+                                                                    creditTreatment: 'consume_credit',
+                                                                    classDate: hol.alternative_date || prev.classDate
+                                                                }));
                                                             }
-                                                            setFormData(prev => ({
-                                                                ...prev,
-                                                                type: 'temporary',
-                                                                name: buildAlternativeClassName(hol.classroomName),
-                                                                teacherId: prev.teacherId || batch?.teacher_id || prev.teacherId,
-                                                                purpose: 'other',
-                                                                creditTreatment: 'consume_credit',
-                                                                classDate: hol.alternative_date || prev.classDate
-                                                            }));
-                                                        }
-                                                    }}
-                                                    className="w-full px-4 py-3 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
-                                                >
-                                                    <option value="">-- No (Regular Special Session / Makeup) --</option>
-                                                    {activeHolidays.map((h: any) => (
-                                                        <option key={h.id} value={h.id}>
-                                                            🏖️ {h.classroomName} — Class Off on {h.holiday_date} ({h.holiday_type === 'alternative_pending' ? 'Alt Pending' : `Alt: ${h.alternative_date}`})
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                                        }}
+                                                        className="w-full pl-4 pr-11 py-3 min-h-[44px] rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium appearance-none"
+                                                    >
+                                                        <option value="">-- No (Regular Special Session / Makeup) --</option>
+                                                        {activeHolidays.map((h: any) => (
+                                                            <option key={h.id} value={h.id}>
+                                                                🏖️ {h.classroomName} — Class Off on {h.holiday_date} ({h.holiday_type === 'alternative_pending' ? 'Alt Pending' : `Alt: ${h.alternative_date}`})
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                                </div>
                                                 {selectedHolidayId && (
                                                     <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 mt-1.5">
                                                         ✓ This Special Session will be linked as the official replacement class for the selected class off. Present/Late/Uninformed Absent will deduct 1 regular credit on behalf of the class off date.
                                                     </p>
                                                 )}
                                             </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                                                 <div>
                                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">
                                                         Session Purpose
                                                     </label>
-                                                    <select
-                                                        value={formData.purpose}
-                                                        onChange={(e) => {
-                                                            const nextPurpose = e.target.value as SpecialSessionPurpose;
-                                                            setFormData({
-                                                                ...formData,
-                                                                purpose: nextPurpose,
-                                                                creditTreatment: getDefaultCreditTreatment(nextPurpose)
-                                                            });
-                                                        }}
-                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
-                                                    >
-                                                        <option value="makeup">Makeup Class (Excused Absence)</option>
-                                                        <option value="extra_class">Extra Class (Bonus)</option>
-                                                        <option value="revision">Revision Session</option>
-                                                        <option value="practice">Supervised Practice</option>
-                                                        <option value="other">Other / Workshop</option>
-                                                    </select>
+                                                    <div className="relative">
+                                                        <select
+                                                            value={formData.purpose}
+                                                            onChange={(e) => {
+                                                                const nextPurpose = e.target.value as SpecialSessionPurpose;
+                                                                setFormData({
+                                                                    ...formData,
+                                                                    purpose: nextPurpose,
+                                                                    creditTreatment: getDefaultCreditTreatment(nextPurpose)
+                                                                });
+                                                            }}
+                                                            className="w-full pl-4 pr-11 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium appearance-none"
+                                                        >
+                                                            <option value="makeup">Makeup Class (Excused Absence)</option>
+                                                            <option value="extra_class">Extra Class (Bonus)</option>
+                                                            <option value="revision">Revision Session</option>
+                                                            <option value="practice">Supervised Practice</option>
+                                                            <option value="other">Other / Workshop</option>
+                                                        </select>
+                                                        <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                                    </div>
                                                 </div>
                                                 <div>
                                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">
                                                         Credit / Fee Treatment
                                                     </label>
-                                                    <select
-                                                        value={formData.creditTreatment}
-                                                        onChange={(e) => setFormData({ ...formData, creditTreatment: e.target.value as any })}
-                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
-                                                    >
-                                                        <option value="makeup">Makeup (Reconciles 1 Missed Class)</option>
-                                                        <option value="complimentary">Complimentary (No Credit Consumed)</option>
-                                                        <option value="consume_credit">Consume Regular Monthly Credit</option>
-                                                    </select>
+                                                    <div className="relative">
+                                                        <select
+                                                            value={formData.creditTreatment}
+                                                            onChange={(e) => setFormData({ ...formData, creditTreatment: e.target.value as any })}
+                                                            className="w-full pl-4 pr-11 py-3 min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium appearance-none"
+                                                        >
+                                                            <option value="makeup">Makeup (Reconciles 1 Missed Class)</option>
+                                                            <option value="complimentary">Complimentary (No Credit Consumed)</option>
+                                                            <option value="consume_credit">Consume Regular Monthly Credit</option>
+                                                        </select>
+                                                        <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -818,18 +830,18 @@ export default function CreateClassPage() {
                                     {/* Delivery Format */}
                                     <div>
                                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Delivery Format</label>
-                                        <div className="flex gap-4 max-w-xs mb-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xs mb-4">
                                             <button
                                                 type="button"
                                                 onClick={() => setFormData({ ...formData, deliveryFormat: 'offline' })}
-                                                className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer text-center ${formData.deliveryFormat === 'offline' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                className={`py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer text-center min-h-[44px] flex items-center justify-center ${formData.deliveryFormat === 'offline' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                                             >
                                                 Offline (In-Person)
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => setFormData({ ...formData, deliveryFormat: 'online' })}
-                                                className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer text-center ${formData.deliveryFormat === 'online' ? 'border-blue-500 bg-blue-50 dark:bg-blue-955/20 text-blue-700 dark:text-blue-400' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                className={`py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer text-center min-h-[44px] flex items-center justify-center ${formData.deliveryFormat === 'online' ? 'border-blue-500 bg-blue-50 dark:bg-blue-955/20 text-blue-700 dark:text-blue-400' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                                             >
                                                 Online
                                             </button>
@@ -846,7 +858,7 @@ export default function CreateClassPage() {
                                                     value={formData.meetingLink}
                                                     onChange={(e) => setFormData({ ...formData, meetingLink: e.target.value })}
                                                     placeholder="e.g. https://meet.google.com/xyz-abcd-efg or Zoom link"
-                                                    className="w-full px-4 py-2.5 rounded-lg border border-blue-200 dark:border-blue-700/60 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all text-sm font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                                                    className="w-full px-4 py-2.5 min-h-[44px] rounded-lg border border-blue-200 dark:border-blue-700/60 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all text-sm font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
                                                 />
                                                 <p className="text-[11px] text-blue-700 dark:text-blue-400 leading-relaxed">
                                                     Saved as the reusable default link for this classroom. Students with authorized access can join class calls directly from their portal.
@@ -891,16 +903,16 @@ export default function CreateClassPage() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center justify-end gap-4 mt-8">
-                                <Link href="/teacher-dashboard/classrooms">
-                                    <button type="button" className="px-6 py-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 sm:gap-4 mt-6 sm:mt-8">
+                                <Link href="/teacher-dashboard/classrooms" className="w-full sm:w-auto">
+                                    <button type="button" className="w-full sm:w-auto px-6 py-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors min-h-[44px] flex items-center justify-center">
                                         Cancel
                                     </button>
                                 </Link>
                                 <button
                                     type="submit"
                                     disabled={submitting}
-                                    className="px-10 py-3 rounded-xl bg-[#ecb613] text-slate-900 font-bold shadow-lg shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-full sm:w-auto px-10 py-3 rounded-xl bg-[#ecb613] text-slate-900 font-bold shadow-lg shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
                                 >
                                     {submitting ? <Loader2 className="size-5 animate-spin" /> : (formData.type === 'temporary' ? 'Create Special Session' : 'Create Permanent Class')}
                                 </button>
@@ -925,31 +937,34 @@ export default function CreateClassPage() {
                                             <Users className="size-3.5 text-[#ecb613]" />
                                             Import Students from Batch (Optional)
                                         </label>
-                                        <select
-                                            value={selectedBatchImportId}
-                                            onChange={(e) => {
-                                                const batchId = e.target.value;
-                                                setSelectedBatchImportId(batchId);
-                                                if (!batchId) return;
-                                                const batch = existingBatches.find(b => b.id === batchId);
-                                                if (batch) {
-                                                    setSelectedStudents(prev => Array.from(new Set([...prev, ...batch.studentIds])));
-                                                    setFormData(prev => ({
-                                                        ...prev,
-                                                        type: 'temporary',
-                                                        teacherId: prev.teacherId || batch.teacher_id || ''
-                                                    }));
-                                                }
-                                            }}
-                                            className="w-full px-3 py-2 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 focus:ring-1 focus:ring-[#ecb613]/50 outline-none"
-                                        >
-                                            <option value="">-- Select batch to add all its students --</option>
-                                            {existingBatches.map(b => (
-                                                <option key={b.id} value={b.id}>
-                                                    {b.name} ({b.studentIds.length} {b.studentIds.length === 1 ? 'student' : 'students'})
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <div className="relative">
+                                            <select
+                                                value={selectedBatchImportId}
+                                                onChange={(e) => {
+                                                    const batchId = e.target.value;
+                                                    setSelectedBatchImportId(batchId);
+                                                    if (!batchId) return;
+                                                    const batch = existingBatches.find(b => b.id === batchId);
+                                                    if (batch) {
+                                                        setSelectedStudents(prev => Array.from(new Set([...prev, ...batch.studentIds])));
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            type: 'temporary',
+                                                            teacherId: prev.teacherId || batch.teacher_id || ''
+                                                        }));
+                                                    }
+                                                }}
+                                                className="w-full pl-4 pr-11 py-2.5 min-h-[44px] text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 focus:ring-1 focus:ring-[#ecb613]/50 outline-none appearance-none"
+                                            >
+                                                <option value="">-- Select batch to add all its students --</option>
+                                                {existingBatches.map(b => (
+                                                    <option key={b.id} value={b.id}>
+                                                        {b.name} ({b.studentIds.length} {b.studentIds.length === 1 ? 'student' : 'students'})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+                                        </div>
                                     </div>
                                 )}
 

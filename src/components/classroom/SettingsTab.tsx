@@ -73,13 +73,13 @@ export default function SettingsTab({
     return (
         <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
             <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-                <div className="p-8 border-b border-slate-200 dark:border-slate-800">
+                <div className="p-4 sm:p-6 md:p-8 border-b border-slate-200 dark:border-slate-800">
                     <h3 className="text-xl font-bold text-slate-900 dark:text-white">Classroom Settings</h3>
                     <p className="text-sm text-slate-500 mt-1">
                         {classroom?.type === 'temporary' ? 'Manage class details and timings.' : 'Manage class details and recurring schedule timings.'}
                     </p>
                 </div>
-                <div className="p-8 space-y-10">
+                <div className="p-4 sm:p-6 md:p-8 space-y-8 sm:space-y-10">
                     {/* Schedule Section */}
                     {classroom?.type !== 'temporary' && (
                         <section>
@@ -127,22 +127,22 @@ export default function SettingsTab({
                             </div>
 
                             {/* Add Schedule Form */}
-                            <div className="bg-slate-50 dark:bg-slate-800/30 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
-                                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Add New Timing</h5>
-                                <div className="space-y-5">
+                            <div className="bg-slate-50 dark:bg-slate-800/30 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 sm:mb-6">Add New Timing</h5>
+                                <div className="space-y-4 sm:space-y-5">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 mb-2 px-1 uppercase tracking-wide">Day of the Week</label>
                                         <select 
                                             value={newSchedule.day}
                                             onChange={(e) => setNewSchedule((prev: any) => ({ ...prev, day: parseInt(e.target.value) }))}
-                                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
+                                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-4 pr-10 py-2.5 min-h-[44px] text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100 cursor-pointer"
                                         >
                                             {DAY_NAMES.map((day, idx) => (
                                                 <option key={idx} value={idx}>{day}</option>
                                             ))}
                                         </select>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                         <div>
                                             <label className="block text-xs font-bold text-slate-505 mb-2 px-1 uppercase tracking-wide">Start Time</label>
                                             <input 
@@ -156,7 +156,7 @@ export default function SettingsTab({
                                                         end: addOneHour(newStart)
                                                     }));
                                                 }}
-                                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
+                                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 min-h-[44px] text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
                                             />
                                         </div>
                                         <div>
@@ -165,14 +165,14 @@ export default function SettingsTab({
                                                 type="time"
                                                 value={newSchedule.end}
                                                 onChange={(e) => setNewSchedule((prev: any) => ({ ...prev, end: e.target.value }))}
-                                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
+                                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 min-h-[44px] text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
                                             />
                                         </div>
                                     </div>
                                     <button 
                                         onClick={handleSaveSchedule}
                                         disabled={isSavingSchedule}
-                                        className="w-full bg-[#ecb613] text-slate-900 font-bold py-3 rounded-xl shadow-md shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-2 cursor-pointer"
+                                        className="w-full bg-[#ecb613] text-slate-900 font-bold py-3 min-h-[44px] rounded-xl shadow-md shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-2 cursor-pointer"
                                     >
                                         {isSavingSchedule ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlusCircle className="w-5 h-5" />}
                                         Save Schedule Slot

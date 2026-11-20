@@ -351,7 +351,7 @@ export default function AddStudentPage() {
                                                         type={showPassword ? 'text' : 'password'}
                                                         aria-required="true"
                                                         aria-label="Pre-generated Temporary Password"
-                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3 text-sm font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-3 min-h-[44px] text-sm font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                         placeholder="At least 6 characters"
                                                         value={formData.password}
                                                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -359,16 +359,16 @@ export default function AddStudentPage() {
                                                     <button
                                                         type="button"
                                                         onClick={() => setShowPassword(!showPassword)}
-                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                                        className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg transition-colors"
                                                         aria-label="Toggle password visibility"
                                                     >
-                                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                                     </button>
                                                 </div>
                                                 <button
                                                     type="button"
                                                     onClick={() => setFormData({ ...formData, password: generateTempPassword() })}
-                                                    className="px-3 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer shrink-0"
+                                                    className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer shrink-0"
                                                     title="Generate a new password"
                                                     aria-label="Generate a new temporary password"
                                                 >
@@ -381,7 +381,7 @@ export default function AddStudentPage() {
                                                         setCopiedPassword(true);
                                                         setTimeout(() => setCopiedPassword(false), 2000);
                                                     }}
-                                                    className="px-3 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer shrink-0"
+                                                    className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer shrink-0"
                                                     title="Copy temporary password"
                                                     aria-label="Copy temporary password"
                                                 >
@@ -398,7 +398,7 @@ export default function AddStudentPage() {
                                                 id="student-phone"
                                                 type="tel"
                                                 aria-label="Phone Number"
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                 placeholder="+91 98XXX XXXXX"
                                                 value={formData.phone}
                                                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -414,7 +414,7 @@ export default function AddStudentPage() {
                                                 type="date"
                                                 aria-required="true"
                                                 aria-label="Start Date"
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                 value={formData.startDate}
                                                 onChange={(e) => {
                                                     const newDate = e.target.value;
@@ -433,7 +433,7 @@ export default function AddStudentPage() {
                                                 <select
                                                     id="student-batch"
                                                     aria-label="Batch Assignment"
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-11 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
                                                     value={formData.batchId}
                                                     onChange={(e) => {
                                                         const newBatchId = e.target.value;
@@ -463,7 +463,7 @@ export default function AddStudentPage() {
                                                     <select
                                                         id="student-teacher"
                                                         aria-label="Teacher Assignment"
-                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-11 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
                                                         value={formData.teacherId}
                                                         onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
                                                     >
@@ -482,7 +482,7 @@ export default function AddStudentPage() {
                                                 <select
                                                     id="student-level"
                                                     aria-label="Experience Level"
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-11 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
                                                     value={formData.level}
                                                     onChange={(e) => setFormData({ ...formData, level: e.target.value })}
                                                 >
@@ -500,7 +500,7 @@ export default function AddStudentPage() {
                                                 <select
                                                     id="student-learning-mode"
                                                     aria-label="Class Learning Mode"
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-11 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
                                                     value={formData.learningMode}
                                                     onChange={(e) => setFormData({ ...formData, learningMode: e.target.value })}
                                                 >
@@ -519,7 +519,7 @@ export default function AddStudentPage() {
                                                         <select
                                                             id="student-fees-basis"
                                                             aria-label="Fees Payment Basis"
-                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-11 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
                                                             value={formData.feesBasis}
                                                             onChange={(e) => {
                                                                 const basis = e.target.value;
@@ -536,6 +536,15 @@ export default function AddStudentPage() {
                                                         </select>
                                                         <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                                     </div>
+                                                    {formData.feesBasis === 'monthly' ? (
+                                                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200/60 rounded-lg p-2 mt-1">
+                                                            Monthly Subscription: Standard 4 classes billed every cycle.
+                                                        </p>
+                                                    ) : (
+                                                        <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200/60 rounded-lg p-2 mt-1">
+                                                            Class-Basis: Advance booking per class.
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label htmlFor="student-fees-amount" className="text-sm font-bold text-slate-700 block cursor-pointer">
@@ -612,15 +621,15 @@ export default function AddStudentPage() {
                                     </div>
                                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-t border-slate-100 pt-6 sm:pt-8 gap-4">
                                         <div className="flex items-center gap-4">
-                                            <label htmlFor="student-welcome-kit" className="flex items-center gap-2 cursor-pointer group">
+                                            <label htmlFor="student-welcome-kit" className="flex items-center gap-2 cursor-pointer group min-h-[36px]">
                                                 <input id="student-welcome-kit" aria-label="Send Welcome Kit via Email" defaultChecked type="checkbox" className="size-4 rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/20 cursor-pointer" />
                                                 <span className="text-sm text-slate-500 group-hover:text-slate-700 transition-colors">Send Welcome Kit via Email</span>
                                             </label>
                                         </div>
-                                        <div className="flex items-center justify-end gap-3 sm:gap-4">
+                                        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 sm:gap-4 w-full sm:w-auto">
                                             <button
                                                 type="button"
-                                                className="px-4 sm:px-6 py-2.5 sm:py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                                                className="px-4 sm:px-6 py-2.5 sm:py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer min-h-[44px] flex items-center justify-center rounded-xl"
                                                 onClick={() => router.back()}
                                             >
                                                 Discard
@@ -628,7 +637,7 @@ export default function AddStudentPage() {
                                             <button
                                                 type="submit"
                                                 disabled={submitting}
-                                                className="bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 px-6 sm:px-10 py-2.5 sm:py-3 rounded-xl text-sm font-bold shadow-lg shadow-[#ecb613]/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer"
+                                                className="bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 px-6 sm:px-10 py-2.5 sm:py-3 rounded-xl text-sm font-bold shadow-lg shadow-[#ecb613]/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer min-h-[44px]"
                                             >
                                                 {submitting ? (
                                                     <><Loader2 className="animate-spin size-4" /> Processing...</>

@@ -214,13 +214,13 @@ export function HistoricalAttendanceCorrectionModal({
                         <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
                             Corrected Attendance Status:
                         </label>
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             {(['present', 'absent', 'late', 'excused'] as const).map(st => (
                                 <button
                                     key={st}
                                     type="button"
                                     onClick={() => setTargetStatus(st)}
-                                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold capitalize transition-all cursor-pointer text-center ${
+                                    className={`py-2 px-2.5 min-h-[44px] rounded-xl border text-xs font-bold capitalize transition-all cursor-pointer flex items-center justify-center text-center ${
                                         targetStatus === st
                                             ? 'border-amber-500 bg-amber-500 text-slate-950 shadow-sm'
                                             : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
@@ -254,7 +254,7 @@ export function HistoricalAttendanceCorrectionModal({
                         </div>
 
                         {previewData && (
-                            <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-center">
                                 <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                                     <div className="text-[10px] text-slate-400 font-semibold uppercase">Current Balance</div>
                                     <div className="text-sm font-black text-slate-900 dark:text-white">
@@ -300,12 +300,12 @@ export function HistoricalAttendanceCorrectionModal({
                 </div>
 
                 {/* Footer Actions */}
-                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-center justify-end gap-2.5">
+                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5">
                     <button
                         type="button"
                         onClick={onClose}
                         disabled={executeLoading}
-                        className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] flex items-center justify-center rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
                     >
                         Cancel
                     </button>
@@ -313,7 +313,7 @@ export function HistoricalAttendanceCorrectionModal({
                         type="button"
                         onClick={handleExecute}
                         disabled={executeLoading || !canExecute || targetStatus === record.currentStatus}
-                        className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                        className="w-full sm:w-auto px-5 py-2.5 min-h-[44px] rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                         {executeLoading ? (
                             <>

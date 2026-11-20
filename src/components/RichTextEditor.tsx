@@ -309,50 +309,54 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
             />
 
             {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-0.5 p-1.5 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 rounded-t-xl select-none">
-                <div className="flex items-center gap-0.5 pr-1 border-r border-slate-200 dark:border-slate-700">
+            <div className="flex flex-wrap items-center gap-1 p-2 sm:p-1.5 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 rounded-t-xl select-none overflow-x-auto">
+                <div className="flex items-center gap-1 pr-1 border-r border-slate-200 dark:border-slate-700">
                     <button
                         type="button"
                         onClick={() => editor.chain().focus().toggleBold().run()}
                         disabled={!editor.can().chain().focus().toggleBold().run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('bold') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('bold') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
                         title="Bold"
+                        aria-label="Bold text"
                     >
-                        <Bold size={14} />
+                        <Bold size={15} />
                     </button>
                     <button
                         type="button"
                         onClick={() => editor.chain().focus().toggleItalic().run()}
                         disabled={!editor.can().chain().focus().toggleItalic().run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('italic') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('italic') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
                         title="Italic"
+                        aria-label="Italic text"
                     >
-                        <Italic size={14} />
+                        <Italic size={15} />
                     </button>
                     <button
                         type="button"
                         onClick={() => editor.chain().focus().toggleUnderline().run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('underline') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('underline') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
                         title="Underline"
+                        aria-label="Underline text"
                     >
-                        <UnderlineIcon size={14} />
+                        <UnderlineIcon size={15} />
                     </button>
                     <button
                         type="button"
                         onClick={() => editor.chain().focus().toggleStrike().run()}
                         disabled={!editor.can().chain().focus().toggleStrike().run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('strike') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('strike') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
                         title="Strike"
+                        aria-label="Strikethrough text"
                     >
-                        <Type size={14} className="line-through" />
+                        <Type size={15} className="line-through" />
                     </button>
                 </div>
 
-                <div className="flex items-center gap-0.5 px-1 border-r border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-1 px-1 border-r border-slate-200 dark:border-slate-700">
                     <button
                         type="button"
                         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-                        className={`p-1 px-1.5 text-xs font-bold rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('heading', { level: 2 }) ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-400'}`}
+                        className={`px-2 py-1 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('heading', { level: 2 }) ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-400'}`}
                         title="Heading 2"
                     >
                         H2
@@ -360,19 +364,20 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                     <button
                         type="button"
                         onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-                        className={`p-1 px-1.5 text-xs font-bold rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('heading', { level: 3 }) ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-400'}`}
+                        className={`px-2 py-1 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('heading', { level: 3 }) ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-400'}`}
                         title="Heading 3"
                     >
                         H3
                     </button>
                 </div>
 
-                <div className="flex items-center gap-0.5 px-1 border-r border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-1 px-1 border-r border-slate-200 dark:border-slate-700">
                     <button
                         type="button"
                         onClick={() => changeFontSize(-2)}
-                        className="p-1 px-1.5 text-xs font-black rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors"
+                        className="px-2 py-1 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center text-xs font-black rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors"
                         title="Decrease Font Size"
+                        aria-label="Decrease font size"
                     >
                         A-
                     </button>
@@ -387,25 +392,28 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                                 editor.chain().focus().setFontSize(`${val}px`).run();
                             }
                         }}
-                        className="w-8 text-center text-xs font-extrabold bg-transparent border-0 focus:ring-0 select-all p-0 text-slate-700 dark:text-slate-350"
+                        className="w-8 text-center text-xs font-extrabold bg-transparent border-0 focus:ring-0 select-all p-0 text-slate-700 dark:text-slate-350 min-h-[32px]"
                         title="Font Size (px)"
+                        aria-label="Font size in pixels"
                     />
                     <button
                         type="button"
                         onClick={() => changeFontSize(2)}
-                        className="p-1 px-1.5 text-xs font-black rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors"
+                        className="px-2 py-1 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center text-xs font-black rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors"
                         title="Increase Font Size"
+                        aria-label="Increase font size"
                     >
                         A+
                     </button>
                 </div>
 
                 <div className="flex items-center gap-1 px-1 border-r border-slate-200 dark:border-slate-700">
-                    <span className="text-[9px] font-black text-slate-400 uppercase mr-1 select-none">Line Spacing</span>
+                    <span className="text-[11px] sm:text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase mr-1 select-none">Spacing</span>
                     <select
                         onChange={e => editor.chain().focus().setLineHeight(e.target.value).run()}
                         value={editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || 'normal'}
-                        className="bg-transparent border-0 text-[10px] font-bold text-slate-700 dark:text-slate-350 p-0 focus:ring-0 cursor-pointer outline-none bg-slate-50 dark:bg-slate-900 pr-4"
+                        className="bg-transparent border-0 text-xs font-bold text-slate-700 dark:text-slate-300 py-1 pl-1 pr-6 focus:ring-0 cursor-pointer outline-none bg-slate-50 dark:bg-slate-900 min-h-[34px] rounded-md"
+                        aria-label="Line spacing"
                     >
                         <option value="normal">Default</option>
                         <option value="1.0">Single (1.0)</option>
@@ -416,63 +424,69 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                     </select>
                 </div>
 
-                <div className="flex items-center gap-0.5 px-1 border-r border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-1 px-1 border-r border-slate-200 dark:border-slate-700">
                     <button
                         type="button"
                         onClick={() => editor.chain().focus().toggleBulletList().run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('bulletList') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('bulletList') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
                         title="Bullet List"
+                        aria-label="Bullet list"
                     >
-                        <List size={14} />
+                        <List size={15} />
                     </button>
                     <button
                         type="button"
                         onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('orderedList') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('orderedList') ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
                         title="Ordered List"
+                        aria-label="Numbered list"
                     >
-                        <ListOrdered size={14} />
-                    </button>
-                </div>
-
-                <div className="flex items-center gap-0.5 px-1 border-r border-slate-200 dark:border-slate-700">
-                    <button
-                        type="button"
-                        onClick={() => editor.chain().focus().setTextAlign('left').run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive({ textAlign: 'left' }) ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
-                        title="Align Left"
-                    >
-                        <AlignLeft size={14} />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => editor.chain().focus().setTextAlign('center').run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive({ textAlign: 'center' }) ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
-                        title="Align Center"
-                    >
-                        <AlignCenter size={14} />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => editor.chain().focus().setTextAlign('right').run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive({ textAlign: 'right' }) ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
-                        title="Align Right"
-                    >
-                        <AlignRight size={14} />
+                        <ListOrdered size={15} />
                     </button>
                 </div>
 
                 <div className="flex items-center gap-1 px-1 border-r border-slate-200 dark:border-slate-700">
+                    <button
+                        type="button"
+                        onClick={() => editor.chain().focus().setTextAlign('left').run()}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive({ textAlign: 'left' }) ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                        title="Align Left"
+                        aria-label="Align left"
+                    >
+                        <AlignLeft size={15} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => editor.chain().focus().setTextAlign('center').run()}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive({ textAlign: 'center' }) ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                        title="Align Center"
+                        aria-label="Align center"
+                    >
+                        <AlignCenter size={15} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => editor.chain().focus().setTextAlign('right').run()}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive({ textAlign: 'right' }) ? 'bg-[#ecb613]/25 text-[#d8a310] dark:text-[#ecb613] font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                        title="Align Right"
+                        aria-label="Align right"
+                    >
+                        <AlignRight size={15} />
+                    </button>
+                </div>
+
+                <div className="flex items-center gap-1.5 px-1 border-r border-slate-200 dark:border-slate-700">
                     {colors.map(color => (
                         <button
                             key={color}
                             type="button"
                             onClick={() => editor.chain().focus().setColor(color).run()}
-                            className="p-0.5 group relative"
+                            className="p-1 min-w-[32px] min-h-[32px] sm:min-w-[24px] sm:min-h-[24px] flex items-center justify-center rounded-md group relative"
                             title={`Color: ${color}`}
+                            aria-label={`Select text color ${color}`}
                         >
                             <div
-                                className={`w-3 h-3 rounded-full border border-slate-300 dark:border-slate-700 transition-transform ${editor.getAttributes('textStyle').color === color ? 'scale-125 ring-2 ring-amber-300 dark:ring-amber-500' : 'hover:scale-110'}`}
+                                className={`w-4 h-4 sm:w-3.5 sm:h-3.5 rounded-full border border-slate-300 dark:border-slate-700 transition-transform ${editor.getAttributes('textStyle').color === color ? 'scale-125 ring-2 ring-amber-400 dark:ring-amber-500' : 'hover:scale-110'}`}
                                 style={{ backgroundColor: color }}
                             />
                         </button>
@@ -480,23 +494,25 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                     <button
                         type="button"
                         onClick={() => editor.chain().focus().toggleHighlight().run()}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('highlight') ? 'bg-yellow-100 dark:bg-yellow-900/35 text-yellow-700 dark:text-yellow-300' : 'text-slate-600 dark:text-slate-400'}`}
+                        className={`p-2 sm:p-1.5 min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors ${editor.isActive('highlight') ? 'bg-yellow-100 dark:bg-yellow-900/35 text-yellow-700 dark:text-yellow-300' : 'text-slate-600 dark:text-slate-400'}`}
                         title="Highlight"
+                        aria-label="Highlight text"
                     >
-                        <Highlighter size={13} />
+                        <Highlighter size={14} />
                     </button>
                 </div>
 
                 {/* Insert Image Button */}
-                <div className="flex items-center gap-0.5 pl-1">
+                <div className="flex items-center gap-1 pl-1">
                     <button
                         type="button"
                         onClick={() => setShowImageModal(true)}
-                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 text-slate-600 dark:text-slate-400`}
+                        className={`p-2 sm:p-1.5 min-h-[36px] sm:min-h-[28px] rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-slate-600 dark:text-slate-400`}
                         title="Insert Image (or paste with Ctrl+V / Cmd+V)"
+                        aria-label="Insert image"
                     >
-                        <ImageIcon size={14} className="text-amber-600 dark:text-amber-400" />
-                        <span className="text-[10px] font-bold">Image</span>
+                        <ImageIcon size={15} className="text-amber-600 dark:text-amber-400" />
+                        <span className="text-xs sm:text-[10px] font-bold">Image</span>
                     </button>
                 </div>
             </div>

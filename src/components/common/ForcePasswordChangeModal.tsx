@@ -84,7 +84,7 @@ export default function ForcePasswordChangeModal({
             aria-labelledby="force-password-change-title"
             className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200"
         >
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-md w-full p-6 sm:p-8 text-left relative overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-md w-full p-4 sm:p-6 md:p-8 text-left relative max-h-[calc(100dvh-2rem)] flex flex-col overflow-y-auto">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#a15912] dark:text-[#ecb613] bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-900/40 px-3 py-1.5 rounded-full w-fit mb-4">
                     <Lock className="w-3.5 h-3.5" />
                     Security Step Required
@@ -132,12 +132,12 @@ export default function ForcePasswordChangeModal({
                                     required
                                     disabled={saving}
                                     autoComplete="new-password"
-                                    className="w-full h-11 pl-4 pr-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
+                                    className="w-full h-11 pl-4 pr-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowNewPassword(!showNewPassword)}
-                                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                    className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                                     aria-label="Toggle new password visibility"
                                 >
                                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -159,12 +159,12 @@ export default function ForcePasswordChangeModal({
                                     required
                                     disabled={saving}
                                     autoComplete="new-password"
-                                    className="w-full h-11 pl-4 pr-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
+                                    className="w-full h-11 pl-4 pr-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                    className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                                     aria-label="Toggle confirm password visibility"
                                 >
                                     {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -175,7 +175,7 @@ export default function ForcePasswordChangeModal({
                         <button
                             type="submit"
                             disabled={saving}
-                            className="w-full h-11 mt-2 bg-[#a15912] hover:bg-[#8a4b0f] text-white text-sm font-bold rounded-xl shadow-lg shadow-[#a15912]/20 transition-all flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer"
+                            className="w-full h-11 min-h-[44px] mt-2 bg-[#a15912] hover:bg-[#8a4b0f] text-white text-sm font-bold rounded-xl shadow-lg shadow-[#a15912]/20 transition-all flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer active:scale-98"
                         >
                             {saving ? (
                                 <>

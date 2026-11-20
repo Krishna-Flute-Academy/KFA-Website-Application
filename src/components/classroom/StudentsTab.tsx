@@ -834,17 +834,17 @@ export default function StudentsTab({
                     onClick={() => setIsMentorModalOpen(false)}
                 >
                     <div 
-                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl relative text-left"
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-6 max-w-lg w-full shadow-2xl relative text-left max-h-[calc(100dvh-2rem)] flex flex-col overflow-y-auto"
                         onClick={e => e.stopPropagation()}
                     >
                         <button
                             onClick={() => setIsMentorModalOpen(false)}
-                            className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            className="absolute right-3 sm:right-4 top-3 sm:top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                         >
                             <X className="w-5 h-5" />
                         </button>
 
-                        <div className="flex items-center gap-3 mb-4">
+                        <div className="flex items-center gap-3 mb-4 pr-10">
                             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
                                 <Lightbulb className="w-5 h-5" />
                             </div>
@@ -886,7 +886,7 @@ export default function StudentsTab({
                                         key={tpl.name}
                                         type="button"
                                         onClick={() => applyTemplate(tpl)}
-                                        className="text-[10.5px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 hover:text-amber-900 dark:bg-slate-800 dark:hover:bg-amber-950/40 dark:hover:text-amber-300 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                                        className="text-[10.5px] font-bold px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-amber-100 hover:text-amber-900 dark:bg-slate-800 dark:hover:bg-amber-950/40 dark:hover:text-amber-300 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer min-h-[32px] flex items-center"
                                     >
                                         + {tpl.name}
                                     </button>
@@ -895,7 +895,7 @@ export default function StudentsTab({
                         </div>
 
                         <form onSubmit={handleSaveMentorNotes} className="space-y-3.5">
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                                         Type
@@ -903,7 +903,7 @@ export default function StudentsTab({
                                     <select
                                         value={noteType}
                                         onChange={(e) => setNoteType(e.target.value as any)}
-                                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white"
+                                        className="w-full pl-3 pr-10 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white"
                                     >
                                         <option value="focus">Focus</option>
                                         <option value="practice">Practice</option>
@@ -922,7 +922,7 @@ export default function StudentsTab({
                                         placeholder="e.g. Focus this week"
                                         value={noteTitle}
                                         onChange={(e) => setNoteTitle(e.target.value)}
-                                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white"
+                                        className="w-full px-3.5 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white"
                                     />
                                 </div>
                             </div>
@@ -960,11 +960,11 @@ export default function StudentsTab({
                                 </label>
                             </div>
 
-                            <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                            <div className="pt-3 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5 sm:gap-3 border-t border-slate-100 dark:border-slate-800">
                                 <button
                                     type="button"
                                     onClick={() => setIsMentorModalOpen(false)}
-                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                    className="px-4 py-2.5 min-h-[44px] rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer flex items-center justify-center"
                                 >
                                     Cancel
                                 </button>
@@ -972,7 +972,7 @@ export default function StudentsTab({
                                 <button
                                     type="submit"
                                     disabled={isSavingNote}
-                                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-black text-xs transition-all shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer active:scale-95"
+                                    className="px-5 py-2.5 min-h-[44px] rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer active:scale-95"
                                 >
                                     {isSavingNote ? (
                                         <>
@@ -981,7 +981,7 @@ export default function StudentsTab({
                                         </>
                                     ) : (
                                         <>
-                                            <Send className="w-3.5 h-3.5" />
+                                            <Send className="w-4 h-4" />
                                             <span>{modalTargetStudents.length === 1 ? 'Save Mentor Note' : `Apply to ${modalTargetStudents.length} Students`}</span>
                                         </>
                                     )}

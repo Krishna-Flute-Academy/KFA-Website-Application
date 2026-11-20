@@ -1073,9 +1073,9 @@ export default function RoleAllocationDashboard() {
 
             {/* ─── Role Allocation Modal ───────────────────────────────────────────── */}
             {showAllocationModal && selectedUser && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="px-8 py-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/10">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[calc(100dvh-2rem)]">
+                        <div className="px-4 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/10 shrink-0">
                             <div className="flex items-center gap-3">
                                 <div className="size-10 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-black flex items-center justify-center border border-slate-100 dark:border-slate-800 overflow-hidden shrink-0">
                                     {selectedUser.profile_pic_url ? (
@@ -1085,24 +1085,25 @@ export default function RoleAllocationDashboard() {
                                     )}
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-black text-slate-900 dark:text-white">Allocate User Role</h3>
+                                    <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">Allocate User Role</h3>
                                     <p className="text-xs text-slate-400 mt-0.5">Configuring permissions and credentials for {selectedUser.name || selectedUser.email}</p>
                                 </div>
                             </div>
                             <button 
                                 onClick={() => { setShowAllocationModal(false); setSelectedUser(null); }}
-                                className="p-2 rounded-lg text-slate-400 hover:text-slate-650 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-650 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                aria-label="Close modal"
                             >
                                 <span className="material-symbols-outlined text-lg">close</span>
                             </button>
                         </div>
 
-                        <form onSubmit={handleAllocateRole} className="p-8 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
+                        <form onSubmit={handleAllocateRole} className="p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 overflow-y-auto custom-scrollbar flex-1">
                             
                             {/* Role Select Buttons */}
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Select Role</label>
-                                <div className="grid grid-cols-3 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
                                     {[
                                         { id: 'student', label: 'Student', icon: BookOpen, desc: 'Academy Learner' },
                                         { id: 'teacher', label: 'Teacher', icon: Award, desc: 'Music Instructor' },
@@ -1112,15 +1113,17 @@ export default function RoleAllocationDashboard() {
                                             key={roleItem.id}
                                             type="button"
                                             onClick={() => setAllocatedRole(roleItem.id)}
-                                            className={`py-3 px-4 border rounded-2xl font-bold flex flex-col items-center gap-1.5 text-center transition-all ${
+                                            className={`py-3 px-4 border rounded-2xl font-bold flex flex-row sm:flex-col items-center justify-start sm:justify-center gap-3 sm:gap-1.5 text-left sm:text-center transition-all min-h-[48px] ${
                                                 allocatedRole === roleItem.id
                                                     ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#b45309] dark:text-[#ecb613] shadow-sm'
                                                     : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500'
                                             }`}
                                         >
-                                            <roleItem.icon className="size-5" />
-                                            <span className="text-xs leading-none">{roleItem.label}</span>
-                                            <span className="text-[9px] font-normal opacity-80 leading-none">{roleItem.desc}</span>
+                                            <roleItem.icon className="size-5 shrink-0" />
+                                            <div className="flex flex-col sm:items-center">
+                                                <span className="text-xs leading-tight sm:leading-none">{roleItem.label}</span>
+                                                <span className="text-[10px] sm:text-[9px] font-normal opacity-80 leading-normal sm:leading-none mt-0.5 sm:mt-0">{roleItem.desc}</span>
+                                            </div>
                                         </button>
                                     ))}
                                 </div>
@@ -1128,19 +1131,20 @@ export default function RoleAllocationDashboard() {
 
                             {/* Student Fields */}
                             {allocatedRole === 'student' && (
-                                <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-6 animate-in slide-in-from-top-3 duration-300">
-                                    <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-5 sm:pt-6 animate-in slide-in-from-top-3 duration-300">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         {/* Select Teacher */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Assign Teacher</label>
+                                            <label htmlFor="role-select-teacher" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Assign Teacher</label>
                                             <select
+                                                id="role-select-teacher"
                                                 required={allocatedRole === 'student'}
                                                 value={selectedTeacherId}
                                                 onChange={e => {
                                                     setSelectedTeacherId(e.target.value);
                                                     setSelectedClassroomId(''); // Reset classroom when teacher changes
                                                 }}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-10 py-2.5 min-h-[44px] text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
                                             >
                                                 <option value="" disabled>Select an instructor...</option>
                                                 {teachers.map(t => (
@@ -1151,8 +1155,9 @@ export default function RoleAllocationDashboard() {
 
                                         {/* Select Classroom */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Assign Batch Class</label>
+                                            <label htmlFor="role-select-classroom" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Assign Batch Class</label>
                                             <select
+                                                id="role-select-classroom"
                                                 required={allocatedRole === 'student'}
                                                 value={selectedClassroomId}
                                                 disabled={!selectedTeacherId}
@@ -1164,7 +1169,7 @@ export default function RoleAllocationDashboard() {
                                                         setLearningMode(room.name.toLowerCase().includes('offline') ? 'offline' : 'online');
                                                     }
                                                 }}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-10 py-2.5 min-h-[44px] text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                                             >
                                                 <option value="">{selectedTeacherId ? 'Select classroom...' : 'Select a teacher first...'}</option>
                                                 {filteredClassrooms.map(c => (
@@ -1174,14 +1179,15 @@ export default function RoleAllocationDashboard() {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         {/* Experience Level */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Experience Level</label>
+                                            <label htmlFor="role-experience-level" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Experience Level</label>
                                             <select
+                                                id="role-experience-level"
                                                 value={experienceLevel}
                                                 onChange={e => setExperienceLevel(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-10 py-2.5 min-h-[44px] text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
                                             >
                                                 <option value="beginner">Beginner</option>
                                                 <option value="intermediate">Intermediate</option>
@@ -1191,11 +1197,12 @@ export default function RoleAllocationDashboard() {
 
                                         {/* Learning Mode */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Learning Mode</label>
+                                            <label htmlFor="role-learning-mode" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Learning Mode</label>
                                             <select
+                                                id="role-learning-mode"
                                                 value={learningMode}
                                                 onChange={e => setLearningMode(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-10 py-2.5 min-h-[44px] text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
                                             >
                                                 <option value="online">Online</option>
                                                 <option value="offline">Offline (In-Person)</option>
@@ -1203,9 +1210,10 @@ export default function RoleAllocationDashboard() {
                                         </div>
 
                                         {/* Fees Basis */}
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Billing Plan</label>
+                                        <div className="space-y-1.5 sm:col-span-2">
+                                            <label htmlFor="role-fees-basis" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Billing Plan</label>
                                             <select
+                                                id="role-fees-basis"
                                                 value={feesBasis}
                                                 onChange={e => {
                                                     const plan = e.target.value;
@@ -1218,7 +1226,7 @@ export default function RoleAllocationDashboard() {
                                                         setFeesClassesPaid('4');
                                                     }
                                                 }}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-10 py-2.5 min-h-[44px] text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
                                             >
                                                 <option value="monthly">Monthly Subscription</option>
                                                 <option value="class">Class-basis (Advance Booking)</option>
@@ -1229,8 +1237,9 @@ export default function RoleAllocationDashboard() {
                                     <div className="grid grid-cols-1 gap-4">
                                         {/* Joining Date */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Joining Date</label>
+                                            <label htmlFor="role-join-date" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Joining Date</label>
                                             <input
+                                                id="role-join-date"
                                                 required={allocatedRole === 'student'}
                                                 type="date"
                                                 value={joinDate}
@@ -1242,28 +1251,29 @@ export default function RoleAllocationDashboard() {
                                                         setFeesCollectionDate(String(Number(parts[2])));
                                                     }
                                                 }}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 min-h-[44px] text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
                                             />
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                         {/* Fees Amount */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Fees Amount (₹)</label>
+                                            <label htmlFor="role-fees-amount" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Fees Amount (₹)</label>
                                             <input
+                                                id="role-fees-amount"
                                                 required={allocatedRole === 'student'}
                                                 type="number"
                                                 value={feesAmount}
                                                 onChange={e => setFeesAmount(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 min-h-[44px] text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
                                             />
                                             {feesBasis === 'monthly' && (
-                                                <div className="flex gap-1 mt-1">
+                                                <div className="flex gap-1.5 mt-1.5">
                                                     <button
                                                         type="button"
                                                         onClick={() => setFeesAmount('2000')}
-                                                        className={`px-1.5 py-0.5 text-[9px] font-black rounded border transition-colors ${
+                                                        className={`px-2.5 py-1 text-[11px] font-black rounded-lg border transition-colors min-h-[32px] ${
                                                             feesAmount === '2000'
                                                                 ? 'bg-[#ecb613] text-white border-[#ecb613]'
                                                                 : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-350 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
@@ -1274,7 +1284,7 @@ export default function RoleAllocationDashboard() {
                                                     <button
                                                         type="button"
                                                         onClick={() => setFeesAmount('2400')}
-                                                        className={`px-1.5 py-0.5 text-[9px] font-black rounded border transition-colors ${
+                                                        className={`px-2.5 py-1 text-[11px] font-black rounded-lg border transition-colors min-h-[32px] ${
                                                             feesAmount === '2400'
                                                                 ? 'bg-[#ecb613] text-white border-[#ecb613]'
                                                                 : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-350 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
@@ -1285,11 +1295,11 @@ export default function RoleAllocationDashboard() {
                                                 </div>
                                             )}
                                             {feesBasis === 'class' && (
-                                                <div className="flex gap-1 mt-1">
+                                                <div className="flex gap-1.5 mt-1.5">
                                                     <button
                                                         type="button"
                                                         onClick={() => setFeesAmount('600')}
-                                                        className={`px-1.5 py-0.5 text-[9px] font-black rounded border transition-colors ${
+                                                        className={`px-2.5 py-1 text-[11px] font-black rounded-lg border transition-colors min-h-[32px] ${
                                                             feesAmount === '600'
                                                                 ? 'bg-[#ecb613] text-white border-[#ecb613]'
                                                                 : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-350 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
@@ -1303,31 +1313,33 @@ export default function RoleAllocationDashboard() {
 
                                         {/* Classes Prepaid */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
+                                            <label htmlFor="role-fees-classes-paid" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
                                                 {selectedUser.role === 'student' ? 'Prepaid Credits (Current)' : 'Opening Prepaid Credits'}
                                             </label>
                                             {selectedUser.role === 'student' ? (
-                                                <div className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 select-none">
-                                                    {feesClassesPaid} classes (Managed via Fees & Payments)
+                                                <div id="role-fees-classes-paid" className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 min-h-[44px] text-xs font-bold text-slate-700 dark:text-slate-300 select-none flex items-center">
+                                                    {feesClassesPaid} classes (Managed via Fees)
                                                 </div>
                                             ) : (
                                                 <input
+                                                    id="role-fees-classes-paid"
                                                     required={allocatedRole === 'student'}
                                                     type="number"
                                                     value={feesClassesPaid}
                                                     onChange={e => setFeesClassesPaid(e.target.value)}
-                                                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
+                                                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 min-h-[44px] text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
                                                 />
                                             )}
                                         </div>
 
                                         {/* Collection Date */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Due Day of Month</label>
+                                            <label htmlFor="role-fees-due-day" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Due Day of Month</label>
                                             <select
+                                                id="role-fees-due-day"
                                                 value={feesCollectionDate}
                                                 onChange={e => setFeesCollectionDate(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold cursor-pointer"
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-10 py-2.5 min-h-[44px] text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold cursor-pointer"
                                             >
                                                 <option value="" disabled>Select day...</option>
                                                 {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
@@ -1341,7 +1353,7 @@ export default function RoleAllocationDashboard() {
 
                             {/* Teacher Fields */}
                             {allocatedRole === 'teacher' && (
-                                <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-6 animate-in slide-in-from-top-3 duration-300">
+                                <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-5 sm:pt-6 animate-in slide-in-from-top-3 duration-300">
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Assign Classrooms</label>
                                         <p className="text-xs text-slate-500 mb-3">Select the classrooms/batches taught by this instructor:</p>
@@ -1389,18 +1401,18 @@ export default function RoleAllocationDashboard() {
                             )}
 
                             {/* Actions Footer */}
-                            <div className="flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800 pt-6">
+                            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800 pt-5 sm:pt-6">
                                 <button
                                     type="button"
                                     onClick={() => { setShowAllocationModal(false); setSelectedUser(null); }}
-                                    className="px-5 py-2.5 rounded-xl text-xs font-semibold text-slate-650 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                    className="px-5 py-3 rounded-xl text-xs font-bold text-slate-650 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors min-h-[44px] flex items-center justify-center"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={savingAllocation}
-                                    className="px-6 py-2.5 rounded-xl bg-[#ecb613] text-slate-900 text-xs font-black shadow-lg shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                                    className="px-6 py-3 rounded-xl bg-[#ecb613] text-slate-900 text-xs font-black shadow-lg shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 min-h-[44px]"
                                 >
                                     {savingAllocation ? (
                                         <><Loader2 className="size-3.5 animate-spin" /> Saving...</>
