@@ -163,6 +163,7 @@ export default function StudentDashboardContainer() {
     const [isSendingClassroomMessage, setIsSendingClassroomMessage] = useState(false);
     const [admins, setAdmins] = useState<any[]>([]);
     const [activeRooms, setActiveRooms] = useState<any[]>([]);
+    const [memberClassroomIds, setMemberClassroomIds] = useState<string[]>([]);
 
     // ── Two-Layer Live Class States ──
     const [dismissedPopupSessionKey, setDismissedPopupSessionKey] = useState<string | null>(null);
@@ -173,16 +174,46 @@ export default function StudentDashboardContainer() {
         return getStudentAccess(profile?.status);
     }, [profile?.status]);
 
+    const getLocalDateString = useCallback((d: Date = new Date()) => {
+        const yr = d.getFullYear();
+        const mo = String(d.getMonth() + 1).padStart(2, '0');
+        const da = String(d.getDate()).padStart(2, '0');
+        return `${yr}-${mo}-${da}`;
+    }, []);
+
+    const isRoomLiveEligibleForStudent = useCallback((room: any, overridesList: any[], memberIds: string[]) => {
+        if (!room || !room.is_live) return false;
+        const info = resolveClassroomMeetingInfo(room);
+        if (!info.effectiveMeetingLink) return false;
+
+        // Permanent members always get live access to their enrolled classroom
+        if (memberIds.includes(room.id)) return true;
+
+        const inactiveStatuses = new Set(['cancelled', 'expired', 'forfeited']);
+        const roomOverrides = (overridesList || []).filter(
+            (o: any) => o.target_classroom_id === room.id && !inactiveStatuses.has((o.booking_status || '').toLowerCase())
+        );
+        if (roomOverrides.length === 0) return false;
+
+        // Special / temporary sessions: any active override grants live access
+        if (room.type === 'temporary') return true;
+
+        // Permanent classroom makeup guest: grant live access only for today's / session date's override
+        const todayStr = getLocalDateString();
+        const startedDateStr = room.live_session_started_at
+            ? getLocalDateString(new Date(room.live_session_started_at))
+            : todayStr;
+        return roomOverrides.some((o: any) => o.override_date === todayStr || o.override_date === startedDateStr);
+    }, [getLocalDateString]);
+
     // Active live classroom resolution across student's primary/overridden classrooms
     const liveClassroom = useMemo(() => {
         if (!lifecycleAccess.canAccessLiveClass) return null;
-        const onlineRoom = (activeRooms || []).find(r => {
-            if (!r.is_live) return false;
-            const info = resolveClassroomMeetingInfo(r);
-            return Boolean(info.effectiveMeetingLink);
-        }) || (classroom?.is_live && resolveClassroomMeetingInfo(classroom).effectiveMeetingLink ? classroom : null);
+        const onlineRoom = (activeRooms || []).find(r =>
+            isRoomLiveEligibleForStudent(r, makeupSchedules, memberClassroomIds)
+        ) || (classroom && isRoomLiveEligibleForStudent(classroom, makeupSchedules, memberClassroomIds) ? classroom : null);
         return onlineRoom || null;
-    }, [activeRooms, classroom, lifecycleAccess.canAccessLiveClass]);
+    }, [activeRooms, classroom, lifecycleAccess.canAccessLiveClass, isRoomLiveEligibleForStudent, makeupSchedules, memberClassroomIds]);
 
     // Unique session key for current live class session
     const liveSessionKey = useMemo(() => {
@@ -779,8 +810,8 @@ export default function StudentDashboardContainer() {
                 // 2. Classroom Mapping
                 supabaseAuth.from('classroom_students').select('classroom_id, classrooms(id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status, users!classrooms_teacher_id_fkey(name, email))').eq('student_id', userId),
 
-                // 3. Overrides
-                supabaseAuth.from('session_student_overrides').select('id, student_id, override_date, reason, target_classroom_id, classrooms (id, name, description, status)').eq('student_id', userId)
+                // 3. Overrides (disambiguate target_classroom_id FK since original_classroom_id also references classrooms)
+                supabaseAuth.from('session_student_overrides').select('id, student_id, override_date, reason, target_classroom_id, booking_status, credit_treatment, missed_session_date, classrooms!target_classroom_id (id, name, description, status)').eq('student_id', userId)
             ]);
 
             const user = userRes.data;
@@ -885,16 +916,17 @@ export default function StudentDashboardContainer() {
             });
 
             const targetClassroomIds = activeOverrides.map(o => o.target_classroom_id).filter(Boolean);
-            const memberClassroomIds = filteredCsData
+            const resolvedMemberClassroomIds = filteredCsData
                 .map((row: any) => {
                     const r = Array.isArray(row.classrooms) ? row.classrooms[0] : row.classrooms;
                     return row.classroom_id || r?.id;
                 })
                 .filter(Boolean);
+            setMemberClassroomIds(resolvedMemberClassroomIds);
 
             const allClassroomIds = Array.from(new Set([
                 classroomId,
-                ...memberClassroomIds,
+                ...resolvedMemberClassroomIds,
                 ...targetClassroomIds
             ])).filter(id => id && id !== 'synthetic-classroom');
             classroomIdsRef.current = allClassroomIds;
@@ -903,7 +935,7 @@ export default function StudentDashboardContainer() {
             setLoading(false);
 
             // SECONDARY BACKGROUND LOADING: Asynchronously fetch and hydrate all secondary datasets
-            loadSecondaryData(userId, user, cls, classroomId, allClassroomIds, targetClassroomIds, activeOverrides);
+            loadSecondaryData(userId, user, cls, classroomId, allClassroomIds, targetClassroomIds, activeOverrides, resolvedMemberClassroomIds);
 
         } catch (err) {
             console.error('Error fetching dashboard data:', err);
@@ -920,7 +952,8 @@ export default function StudentDashboardContainer() {
         classroomId: string,
         allClassroomIds: string[],
         targetClassroomIds: string[],
-        activeOverrides: any[]
+        activeOverrides: any[],
+        resolvedMemberClassroomIds: string[] = []
     ) => {
         try {
             // Phase 2A Parallel Fetch (Independent secondary datasets)
@@ -1187,7 +1220,9 @@ export default function StudentDashboardContainer() {
             // Include permanent rooms and active/scheduled/completed special sessions
             setActiveRooms(enrichedActiveRooms);
 
-            const liveRoom = enrichedActiveRooms.find(r => r.is_live);
+            const liveRoom = enrichedActiveRooms.find(r =>
+                isRoomLiveEligibleForStudent(r, activeOverrides, resolvedMemberClassroomIds)
+            );
             const primaryRoom = cls ? (enrichedActiveRooms.find(r => r.id === cls.id) || enrichedActiveRooms[0]) : enrichedActiveRooms[0];
             const defaultRoom = liveRoom || primaryRoom;
 
@@ -1195,7 +1230,13 @@ export default function StudentDashboardContainer() {
                 setClassroom(prev => {
                     if (prev) {
                         const stillExists = enrichedActiveRooms.find(r => r.id === prev.id);
-                        if (stillExists) return stillExists;
+                        if (stillExists) {
+                            // If a makeup/special classroom is currently live and the currently selected room is not live, switch to the live room
+                            if (liveRoom && !stillExists.is_live) {
+                                return liveRoom;
+                            }
+                            return stillExists;
+                        }
                     }
                     return defaultRoom;
                 });
@@ -1438,6 +1479,11 @@ export default function StudentDashboardContainer() {
         }
     }, [classroom?.id]);
 
+    const activeRoomIdsKey = useMemo(
+        () => activeRooms.map(r => r.id).filter(Boolean).sort().join(','),
+        [activeRooms]
+    );
+
     // Realtime subscription for live classroom status changes
     useEffect(() => {
         const ids = classroomIdsRef.current.length > 0
@@ -1457,7 +1503,8 @@ export default function StudentDashboardContainer() {
                 },
                 (payload: any) => {
                     const updatedRoom = payload.new;
-                    if (updatedRoom && ids.includes(updatedRoom.id)) {
+                    const trackedIds = classroomIdsRef.current.length > 0 ? classroomIdsRef.current : ids;
+                    if (updatedRoom && trackedIds.includes(updatedRoom.id)) {
                         refreshClassroomLiveState();
                     }
                 }
@@ -1467,7 +1514,34 @@ export default function StudentDashboardContainer() {
         return () => {
             supabaseAuth.removeChannel(channel);
         };
-    }, [classroom?.id, refreshClassroomLiveState]);
+    }, [classroom?.id, activeRoomIdsKey, refreshClassroomLiveState]);
+
+    // Realtime subscription for makeup / temporary session overrides assigned to this student
+    useEffect(() => {
+        if (!profile?.id) return;
+
+        const overridesChannel = supabaseAuth
+            .channel(`student-overrides-realtime-${profile.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'session_student_overrides',
+                    filter: `student_id=eq.${profile.id}`
+                },
+                () => {
+                    if (refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(overridesChannel);
+        };
+    }, [profile?.id]);
 
     // Realtime subscriptions for live classrooms & notifications
     useEffect(() => {

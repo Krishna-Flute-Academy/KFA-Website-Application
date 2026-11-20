@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { 
     Calendar, UserPlus, Trash2, Loader2, Plus, 
@@ -158,6 +158,40 @@ export default function StudentsTab({
 }: StudentsTabProps) {
     // Multi-select state
     const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+    const [makeupViewTab, setMakeupViewTab] = useState<'active' | 'history'>('active');
+
+    // Local YYYY-MM-DD for highlighting & prioritizing today's makeup allocations
+    const todayLocalStr = useMemo(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }, []);
+
+    // Split makeup overrides into Active (Today & Upcoming) vs Past History
+    const { activeOverrides, pastOverrides } = useMemo(() => {
+        const inactiveStatuses = new Set(['cancelled', 'expired', 'forfeited']);
+        const active: any[] = [];
+        const past: any[] = [];
+
+        (sessionOverrides || []).forEach(o => {
+            const status = (o.booking_status || '').toLowerCase();
+            const isInactive = inactiveStatuses.has(status);
+            const dateStr = o.override_date || '';
+            if (!isInactive && dateStr >= todayLocalStr) {
+                active.push(o);
+            } else {
+                past.push(o);
+            }
+        });
+
+        // Active: Today first, then upcoming soonest first
+        active.sort((a, b) => (a.override_date || '').localeCompare(b.override_date || ''));
+        // Past History: Most recent first
+        past.sort((a, b) => (b.override_date || '').localeCompare(a.override_date || ''));
+
+        return { activeOverrides: active, pastOverrides: past };
+    }, [sessionOverrides, todayLocalStr]);
+
+    const visibleSessionOverrides = makeupViewTab === 'active' ? activeOverrides : pastOverrides;
 
     // Mentor Note Modal state
     const [isMentorModalOpen, setIsMentorModalOpen] = useState(false);
@@ -674,13 +708,53 @@ export default function StudentsTab({
                         </h4>
                         <p className="text-xs text-slate-500 mt-1">Students assigned to this classroom for a single class date (e.g. makeup sessions).</p>
                     </div>
-                    <button
-                        onClick={openMakeupModal}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:hover:bg-emerald-950/40 font-bold text-xs transition-colors cursor-pointer"
-                    >
-                        <Plus className="w-3.5 h-3.5" />
-                        Add Makeup
-                    </button>
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700">
+                            <button
+                                type="button"
+                                onClick={() => setMakeupViewTab('active')}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                    makeupViewTab === 'active'
+                                        ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                }`}
+                            >
+                                <span>Today &amp; Upcoming</span>
+                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                    makeupViewTab === 'active'
+                                        ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                        : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                                }`}>
+                                    {activeOverrides.length}
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setMakeupViewTab('history')}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                    makeupViewTab === 'history'
+                                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                }`}
+                            >
+                                <span>Past History</span>
+                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                    makeupViewTab === 'history'
+                                        ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                                        : 'bg-slate-200/70 dark:bg-slate-700/70 text-slate-500 dark:text-slate-400'
+                                }`}>
+                                    {pastOverrides.length}
+                                </span>
+                            </button>
+                        </div>
+                        <button
+                            onClick={openMakeupModal}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:hover:bg-emerald-950/40 font-bold text-xs transition-colors cursor-pointer"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add Makeup
+                        </button>
+                    </div>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -693,8 +767,22 @@ export default function StudentsTab({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                            {sessionOverrides.map(override => (
-                                <tr key={override.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
+                            {visibleSessionOverrides.map(override => {
+                                const bookingStatus = (override.booking_status || '').toLowerCase();
+                                const isInactive = bookingStatus === 'cancelled' || bookingStatus === 'expired' || bookingStatus === 'forfeited';
+                                const isToday = !isInactive && override.override_date === todayLocalStr;
+                                const isUpcoming = !isInactive && override.override_date > todayLocalStr;
+                                return (
+                                <tr
+                                    key={override.id}
+                                    className={`transition-colors group ${
+                                        isToday
+                                            ? 'bg-emerald-50/60 dark:bg-emerald-950/20 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                                            : isInactive
+                                                ? 'opacity-65 hover:bg-slate-50/50 dark:hover:bg-slate-800/30'
+                                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'
+                                    }`}
+                                >
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden border border-slate-200 dark:border-slate-600 flex items-center justify-center shrink-0">
@@ -710,6 +798,26 @@ export default function StudentsTab({
                                                     <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                                                         GUEST • MAKEUP
                                                     </span>
+                                                    {isToday && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
+                                                            TODAY
+                                                        </span>
+                                                    )}
+                                                    {isUpcoming && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-700">
+                                                            UPCOMING
+                                                        </span>
+                                                    )}
+                                                    {bookingStatus === 'completed' && !isToday && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                            COMPLETED
+                                                        </span>
+                                                    )}
+                                                    {isInactive && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                                            {bookingStatus.toUpperCase()}
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">{override.users?.level || 'Beginner'}</p>
                                             </div>
@@ -726,37 +834,63 @@ export default function StudentsTab({
                                                 Makeup for: {formatLocalDate(override.missed_session_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                                             </span>
                                         )}
-                                        <span className="italic">{override.reason || 'Temporary makeup attendance'}</span>
+                                        <span className="italic">
+                                            {(override.reason || '').replace(/\[MissedDate:\d{4}-\d{2}-\d{2}\]\s*/g, '').trim() || 'Temporary makeup attendance'}
+                                        </span>
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end items-center gap-2">
-                                            <button
-                                                onClick={() => openRescheduleModal(override)}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 rounded-lg transition-all cursor-pointer"
-                                                title="Reschedule makeup allocation"
-                                            >
-                                                <Calendar className="w-3.5 h-3.5" />
-                                                Reschedule
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteOverride(override.id)}
-                                                disabled={isDeletingOverrideId === override.id}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50 text-left cursor-pointer"
-                                                title="Cancel temporary allocation"
-                                            >
-                                                {isDeletingOverrideId === override.id
-                                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                    : <Trash2 className="w-3.5 h-3.5" />}
-                                                Cancel
-                                            </button>
+                                            {!isInactive && bookingStatus !== 'completed' && (
+                                                <button
+                                                    onClick={() => openRescheduleModal(override)}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 rounded-lg transition-all cursor-pointer"
+                                                    title="Reschedule makeup allocation"
+                                                >
+                                                    <Calendar className="w-3.5 h-3.5" />
+                                                    Reschedule
+                                                </button>
+                                            )}
+                                            {bookingStatus !== 'completed' && (
+                                                <button
+                                                    onClick={() => handleDeleteOverride(override.id)}
+                                                    disabled={isDeletingOverrideId === override.id}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50 text-left cursor-pointer"
+                                                    title="Remove temporary makeup allocation"
+                                                >
+                                                    {isDeletingOverrideId === override.id
+                                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                        : <Trash2 className="w-3.5 h-3.5" />}
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
-                            {sessionOverrides.length === 0 && (
+                                );
+                            })}
+                            {visibleSessionOverrides.length === 0 && (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
-                                        <p className="text-slate-500 dark:text-slate-400 text-xs italic">No temporary overrides or makeup bookings scheduled for this class.</p>
+                                    <td colSpan={4} className="px-6 py-10 text-center bg-slate-50 dark:bg-slate-800/30">
+                                        {makeupViewTab === 'active' ? (
+                                            <div className="space-y-1.5">
+                                                <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">
+                                                    No makeup students scheduled for today or upcoming dates.
+                                                </p>
+                                                {pastOverrides.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setMakeupViewTab('history')}
+                                                        className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                                                    >
+                                                        View {pastOverrides.length} past makeup record{pastOverrides.length > 1 ? 's' : ''}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <p className="text-slate-500 dark:text-slate-400 text-xs italic">
+                                                No past makeup history recorded for this class yet.
+                                            </p>
+                                        )}
                                     </td>
                                 </tr>
                             )}

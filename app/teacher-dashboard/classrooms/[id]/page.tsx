@@ -1574,6 +1574,33 @@ export default function ClassroomDashboardPage({
                     }
                 }
             )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'session_student_overrides', filter: `target_classroom_id=eq.${classroomId}` },
+                async () => {
+                    try {
+                        const { data: freshOverrides } = await supabaseAuth
+                            .from('session_student_overrides')
+                            .select(`
+                                id,
+                                student_id,
+                                override_date,
+                                missed_session_date,
+                                booking_status,
+                                credit_treatment,
+                                reason,
+                                users!student_id(name, email, profile_pic_url, level, status)
+                            `)
+                            .eq('target_classroom_id', classroomId)
+                            .order('override_date', { ascending: false });
+                        if (freshOverrides) {
+                            setSessionOverrides(freshOverrides.filter((o: any) => isStudentOperationallyActive(o.users?.status)));
+                        }
+                    } catch (e) {
+                        console.warn('Error refreshing session overrides on realtime event:', e);
+                    }
+                }
+            )
             .subscribe();
 
         return () => {
@@ -1724,7 +1751,7 @@ export default function ClassroomDashboardPage({
                             credit_treatment,
                             reason,
                             users!student_id(name, email, profile_pic_url, level, status)
-                          `).eq('target_classroom_id', classroomId).eq('override_date', tempClassData.class_date).order('override_date', { ascending: true })
+                          `).eq('target_classroom_id', classroomId).eq('override_date', tempClassData.class_date).order('override_date', { ascending: false })
                         : supabaseAuth.from('session_student_overrides').select(`
                             id,
                             student_id,
@@ -1734,7 +1761,7 @@ export default function ClassroomDashboardPage({
                             credit_treatment,
                             reason,
                             users!student_id(name, email, profile_pic_url, level, status)
-                          `).eq('target_classroom_id', classroomId).order('override_date', { ascending: true }),
+                          `).eq('target_classroom_id', classroomId).order('override_date', { ascending: false }),
                     (roomData.type === 'temporary' && tempClassData?.id)
                         ? supabaseAuth.from('temporary_class_students').select(`
                             id,
@@ -2440,10 +2467,10 @@ export default function ClassroomDashboardPage({
                         booking_status,
                         credit_treatment,
                         reason,
-                        users!student_id(name, profile_pic_url, level)
+                        users!student_id(name, email, profile_pic_url, level, status)
                     `)
                     .eq('target_classroom_id', classroomId)
-                    .order('override_date', { ascending: true }),
+                    .order('override_date', { ascending: false }),
                 supabaseAuth
                     .from('attendance')
                     .select('id, student_id, classroom_id, date, status, on_behalf_of_date')
@@ -2785,7 +2812,9 @@ export default function ClassroomDashboardPage({
         setOverrideStudentSearch('');
         setIsOverrideStudentDropdownOpen(false);
         setIsCustomMissedDate(false);
-        setOverrideForm({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '', missedSessionDate: '' });
+        const nowLocal = new Date();
+        const todayLocalStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
+        setOverrideForm({ studentId: '', date: todayLocalStr, reason: '', missedSessionDate: '' });
         try {
             const enrolledIds = new Set(students.map(s => s.student_id));
             const usersQuery = supabaseAuth
@@ -2892,18 +2921,19 @@ export default function ClassroomDashboardPage({
 
         setIsSavingOverride(true);
         try {
-            const cleanReason = overrideForm.missedSessionDate
-                ? (overrideForm.reason?.includes(`[MissedDate:${overrideForm.missedSessionDate}]`)
-                    ? overrideForm.reason
-                    : `[MissedDate:${overrideForm.missedSessionDate}] ${overrideForm.reason || ''}`.trim())
-                : overrideForm.reason || null;
+            const trimmedReason = (overrideForm.reason || '')
+                .replace(/\[MissedDate:\d{4}-\d{2}-\d{2}\]\s*/g, '')
+                .trim();
 
             if (editingOverrideId) {
+                const rescheduleNotes = overrideForm.missedSessionDate
+                    ? `[MissedDate:${overrideForm.missedSessionDate}]${trimmedReason ? ` ${trimmedReason}` : ''}`
+                    : (trimmedReason || null);
                 const { error } = await supabaseAuth.rpc('reschedule_makeup_session', {
                     p_override_id: editingOverrideId,
                     p_new_target_classroom_id: classroomId,
                     p_new_override_date: overrideForm.date,
-                    p_notes: cleanReason
+                    p_notes: rescheduleNotes
                 });
 
                 if (error) throw error;
@@ -2912,13 +2942,14 @@ export default function ClassroomDashboardPage({
                 setShowOverrideModal(false);
                 setEditingOverrideId(null);
             } else {
+                // book_makeup_session RPC automatically prepends [MissedDate:...] from p_missed_session_date
                 const { error } = await supabaseAuth.rpc('book_makeup_session', {
                     p_student_id: overrideForm.studentId,
                     p_target_classroom_id: classroomId,
                     p_override_date: overrideForm.date,
                     p_missed_session_date: overrideForm.missedSessionDate,
                     p_original_classroom_id: null,
-                    p_notes: cleanReason
+                    p_notes: trimmedReason || null
                 });
 
                 if (error) throw error;
@@ -2935,20 +2966,28 @@ export default function ClassroomDashboardPage({
     };
 
     const handleDeleteOverride = async (overrideId: string) => {
-        if (!window.confirm('Are you sure you want to cancel this temporary makeup class allocation?')) return;
+        const targetOverride = sessionOverrides.find(o => o.id === overrideId);
+        const status = (targetOverride?.booking_status || '').toLowerCase();
+        if (status === 'completed') {
+            alert('Completed makeup records cannot be removed.');
+            return;
+        }
+
+        if (!window.confirm('Are you sure you want to remove this temporary makeup allocation? You can add the student to another class anytime.')) return;
+
         setIsDeletingOverrideId(overrideId);
         try {
-            const { error } = await supabaseAuth.rpc('cancel_makeup_session', {
-                p_override_id: overrideId,
-                p_reason: 'Cancelled by teacher'
-            });
-
+            const { error } = await supabaseAuth
+                .from('session_student_overrides')
+                .delete()
+                .eq('id', overrideId);
             if (error) throw error;
 
+            setSessionOverrides(prev => prev.filter(o => o.id !== overrideId));
             await fetchClassroomAttendance();
         } catch (err: any) {
-            console.error('Error deleting override:', err);
-            alert(`Failed to cancel makeup: ${err.message || err}`);
+            console.error('Error removing override:', err);
+            alert(`Failed to remove makeup: ${err.message || err}`);
         } finally {
             setIsDeletingOverrideId(null);
         }
